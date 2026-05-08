@@ -6,11 +6,20 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openclaw/clickclack/apps/api/internal/store"
 )
+
+func formInt(r *http.Request, key string) int {
+	v, err := strconv.Atoi(r.FormValue(key))
+	if err != nil || v < 0 {
+		return 0
+	}
+	return v
+}
 
 func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	user, err := s.currentUser(r)
@@ -68,6 +77,9 @@ func (s *Server) createUpload(w http.ResponseWriter, r *http.Request) {
 		Filename:    filepath.Base(header.Filename),
 		ContentType: contentType,
 		ByteSize:    size,
+		Width:       formInt(r, "width"),
+		Height:      formInt(r, "height"),
+		DurationMS:  formInt(r, "duration_ms"),
 		StoragePath: tmp.Name(),
 	})
 	writeResultStatus(w, http.StatusCreated, map[string]any{"upload": upload}, err)

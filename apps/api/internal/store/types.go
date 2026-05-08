@@ -155,6 +155,9 @@ type Upload struct {
 	Filename    string `json:"filename"`
 	ContentType string `json:"content_type"`
 	ByteSize    int64  `json:"byte_size"`
+	Width       int    `json:"width"`
+	Height      int    `json:"height"`
+	DurationMS  int    `json:"duration_ms"`
 	StoragePath string `json:"storage_path,omitempty"`
 	CreatedAt   string `json:"created_at"`
 }
@@ -165,6 +168,9 @@ type CreateUploadInput struct {
 	Filename    string
 	ContentType string
 	ByteSize    int64
+	Width       int
+	Height      int
+	DurationMS  int
 	StoragePath string
 }
 

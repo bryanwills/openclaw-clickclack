@@ -9,12 +9,33 @@
 
   let { upload, url, onOpenImage = () => {} }: Props = $props();
 
+  const MAX_MEDIA_HEIGHT = 360;
+  const MIN_MEDIA_HEIGHT = 120;
+
   let videoEl: HTMLVideoElement | null = $state(null);
   let started = $state(false);
-  let durationLabel = $state("");
+  let loadedDurationLabel = $state("");
+  let durationLabel = $derived(loadedDurationLabel || formatDuration(upload.duration_ms ?? 0));
 
   let isImage = $derived(upload.content_type?.startsWith("image/") ?? false);
   let isVideo = $derived(upload.content_type?.startsWith("video/") ?? false);
+
+  let mediaStyle = $derived.by(() => {
+    const w = upload.width ?? 0;
+    const h = upload.height ?? 0;
+    if (w <= 0 || h <= 0) return "";
+    const cap = isImage ? 320 : MAX_MEDIA_HEIGHT;
+    const ratioH = Math.min(cap, Math.max(MIN_MEDIA_HEIGHT, h));
+    return `aspect-ratio: ${w} / ${h}; max-height: ${ratioH}px;`;
+  });
+
+  function formatDuration(ms: number): string {
+    if (!ms || ms <= 0) return "";
+    const total = Math.floor(ms / 1000);
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  }
 
   function handlePlay() {
     started = true;
@@ -22,10 +43,7 @@
 
   function handleLoadedMetadata() {
     if (!videoEl || !isFinite(videoEl.duration)) return;
-    const total = Math.floor(videoEl.duration);
-    const m = Math.floor(total / 60);
-    const s = total % 60;
-    durationLabel = `${m}:${s.toString().padStart(2, "0")}`;
+    loadedDurationLabel = formatDuration(videoEl.duration * 1000);
   }
 
   function startPlayback() {
@@ -49,7 +67,15 @@
       aria-label={`Open image ${upload.filename}`}
       onclick={() => onOpenImage(url, upload.filename)}
     >
-      <img src={url} alt={upload.filename} loading="lazy" />
+      <img
+        src={url}
+        alt={upload.filename}
+        loading="lazy"
+        decoding="async"
+        width={upload.width || undefined}
+        height={upload.height || undefined}
+        style={mediaStyle}
+      />
     </button>
     <div class="media-tile__caption">
       <span class="media-tile__name">{upload.filename}</span>
@@ -82,6 +108,9 @@
       controls={started}
       controlslist="nodownload"
       aria-label={upload.filename}
+      width={upload.width || undefined}
+      height={upload.height || undefined}
+      style={mediaStyle}
       onplay={handlePlay}
       onloadedmetadata={handleLoadedMetadata}
     >

@@ -1,13 +1,14 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from "svelte";
   import { APIError, api } from "./lib/api";
+  import { probeMediaDimensions } from "./lib/media";
   import { gifLibrary } from "./lib/gifs";
   import { collectRecentPeople, dmTitle } from "./lib/chat/people";
   import { redirectTypingToComposer } from "./lib/chat/typeToFocus";
   import { connectRealtime, type RealtimeConnection } from "./lib/realtime.svelte";
   import ChatComposer from "./components/composer/ChatComposer.svelte";
   import ImageViewer from "./components/media/ImageViewer.svelte";
-  import MessageList from "./components/messages/MessageList.svelte";
+  import MessageList, { type MessageListHandle, type MessageListState } from "./components/messages/MessageList.svelte";
   import GuildRail from "./components/navigation/GuildRail.svelte";
   import Sidebar from "./components/navigation/Sidebar.svelte";
   import ProfilePane from "./components/profile/ProfilePane.svelte";
@@ -50,7 +51,11 @@
   let status = "loading";
   let authRequired = false;
   let socket: RealtimeConnection | null = null;
-  let messageList: HTMLElement | null = null;
+  let messageList: MessageListHandle | null = null;
+  let scrollMemory = new Map<string, MessageListState>();
+  let viewKey = "";
+  let viewRestoreState: MessageListState | undefined = undefined;
+  let messagesLoading = true;
   let showWorkspaceCreate = false;
   let sidebarCollapsed = false;
   let mobileNavOpen = false;
@@ -205,24 +210,49 @@
   }
 
   async function loadMessages() {
-    if (selectedDirectID) {
-      const data = await api<{ messages: Message[] }>(`/api/dms/${selectedDirectID}/messages`);
-      messages = data.messages;
-      await scrollMessagesToBottom();
-      return;
+    captureScrollMemory();
+    const targetKey = currentConversationKey();
+    const isSwitching = targetKey !== viewKey;
+    if (isSwitching) messagesLoading = true;
+    try {
+      if (selectedDirectID) {
+        const data = await api<{ messages: Message[] }>(`/api/dms/${selectedDirectID}/messages`);
+        if (currentConversationKey() !== targetKey) return;
+        commitView(targetKey, data.messages);
+        return;
+      }
+      if (!selectedChannelID) {
+        commitView("", []);
+        return;
+      }
+      const data = await api<{ messages: Message[] }>(`/api/channels/${selectedChannelID}/messages`);
+      if (currentConversationKey() !== targetKey) return;
+      commitView(targetKey, data.messages);
+    } finally {
+      if (currentConversationKey() === targetKey) messagesLoading = false;
     }
-    if (!selectedChannelID) {
-      messages = [];
-      return;
-    }
-    const data = await api<{ messages: Message[] }>(`/api/channels/${selectedChannelID}/messages`);
-    messages = data.messages;
-    await scrollMessagesToBottom();
+  }
+
+  function currentConversationKey(): string {
+    return selectedDirectID || selectedChannelID || "";
+  }
+
+  function captureScrollMemory() {
+    if (!viewKey || !messageList) return;
+    const captured = messageList.captureState();
+    if (captured) scrollMemory.set(viewKey, captured);
+  }
+
+  function commitView(key: string, msgs: Message[]) {
+    // Update viewKey + messages atomically so MessageList sees the swap as one tick.
+    viewRestoreState = scrollMemory.get(key);
+    messages = msgs;
+    viewKey = key;
   }
 
   async function scrollMessagesToBottom() {
     await tick();
-    if (messageList) messageList.scrollTop = messageList.scrollHeight;
+    messageList?.scrollToBottom();
   }
 
   async function sendMessage() {
@@ -312,10 +342,11 @@
   async function jumpToQuotedMessage(message: Message) {
     const targetID = message.quoted_message_id;
     if (!targetID) return;
+    const scrolled = messageList?.scrollToMessage(targetID) ?? false;
+    if (!scrolled) return;
     await tick();
     const node = document.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(targetID)}"]`);
     if (!node) return;
-    node.scrollIntoView({ behavior: "smooth", block: "center" });
     node.classList.add("highlight");
     window.setTimeout(() => node.classList.remove("highlight"), 1500);
   }
@@ -354,9 +385,13 @@
     const input = event.currentTarget as HTMLInputElement;
     const file = input.files?.[0];
     if (!file || !selectedWorkspaceID) return;
+    const probe = await probeMediaDimensions(file);
     const form = new FormData();
     form.set("workspace_id", selectedWorkspaceID);
     form.set("file", file);
+    if (probe.width > 0) form.set("width", String(probe.width));
+    if (probe.height > 0) form.set("height", String(probe.height));
+    if (probe.durationMS > 0) form.set("duration_ms", String(probe.durationMS));
     const data = await api<{ upload: Upload }>("/api/uploads", { method: "POST", body: form });
     pendingUpload = data.upload;
     input.value = "";
@@ -651,9 +686,12 @@
       {messages}
       {selectedDirect}
       {selectedChannel}
+      restoreState={viewRestoreState}
+      {viewKey}
+      loading={messagesLoading}
       selectedThreadID={selectedThread?.id}
       currentUserID={user?.id}
-      onListRef={(node) => (messageList = node)}
+      onListRef={(handle) => (messageList = handle)}
       onActivateMessageComposer={() => (activeComposerContext = "message")}
       onInlineImagePointerUp={handleInlineImagePointerUp}
       onOpenProfile={openUserProfile}

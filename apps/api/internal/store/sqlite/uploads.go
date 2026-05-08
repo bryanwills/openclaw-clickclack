@@ -18,19 +18,22 @@ func (s *Store) CreateUpload(ctx context.Context, input store.CreateUploadInput)
 		Filename:    input.Filename,
 		ContentType: input.ContentType,
 		ByteSize:    input.ByteSize,
+		Width:       input.Width,
+		Height:      input.Height,
+		DurationMS:  input.DurationMS,
 		StoragePath: input.StoragePath,
 		CreatedAt:   now(),
 	}
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO uploads (id, workspace_id, owner_id, filename, content_type, byte_size, storage_path, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		upload.ID, upload.WorkspaceID, upload.OwnerID, upload.Filename, upload.ContentType, upload.ByteSize, upload.StoragePath, upload.CreatedAt)
+		INSERT INTO uploads (id, workspace_id, owner_id, filename, content_type, byte_size, width, height, duration_ms, storage_path, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		upload.ID, upload.WorkspaceID, upload.OwnerID, upload.Filename, upload.ContentType, upload.ByteSize, upload.Width, upload.Height, upload.DurationMS, upload.StoragePath, upload.CreatedAt)
 	return upload, err
 }
 
 func (s *Store) GetUpload(ctx context.Context, uploadID, userID string) (store.Upload, error) {
 	upload, err := scanUpload(s.db.QueryRowContext(ctx, `
-		SELECT id, workspace_id, owner_id, filename, content_type, byte_size, storage_path, created_at
+		SELECT id, workspace_id, owner_id, filename, content_type, byte_size, width, height, duration_ms, storage_path, created_at
 		FROM uploads
 		WHERE id = ?`, uploadID))
 	if err != nil {
@@ -71,14 +74,14 @@ func (s *Store) AttachUpload(ctx context.Context, input store.AttachUploadInput)
 
 func scanUpload(row scanner) (store.Upload, error) {
 	var upload store.Upload
-	err := row.Scan(&upload.ID, &upload.WorkspaceID, &upload.OwnerID, &upload.Filename, &upload.ContentType, &upload.ByteSize, &upload.StoragePath, &upload.CreatedAt)
+	err := row.Scan(&upload.ID, &upload.WorkspaceID, &upload.OwnerID, &upload.Filename, &upload.ContentType, &upload.ByteSize, &upload.Width, &upload.Height, &upload.DurationMS, &upload.StoragePath, &upload.CreatedAt)
 	return upload, err
 }
 
 func (s *Store) hydrateAttachments(ctx context.Context, messages []store.Message) ([]store.Message, error) {
 	for i := range messages {
 		rows, err := s.db.QueryContext(ctx, `
-			SELECT u.id, u.workspace_id, u.owner_id, u.filename, u.content_type, u.byte_size, u.storage_path, u.created_at
+			SELECT u.id, u.workspace_id, u.owner_id, u.filename, u.content_type, u.byte_size, u.width, u.height, u.duration_ms, u.storage_path, u.created_at
 			FROM uploads u
 			JOIN message_attachments ma ON ma.upload_id = u.id
 			WHERE ma.message_id = ?

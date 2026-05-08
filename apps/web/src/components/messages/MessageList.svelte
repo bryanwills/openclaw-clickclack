@@ -1,16 +1,39 @@
+<script lang="ts" module>
+  export type MessageListState = {
+    atBottom: boolean;
+    anchorMessageID?: string;
+    anchorPixelOffset?: number;
+  };
+
+  export type MessageListHandle = {
+    scrollToBottom: () => void;
+    scrollToMessage: (id: string) => boolean;
+    captureState: () => MessageListState | null;
+  };
+</script>
+
 <script lang="ts">
-  import { groupMessages } from "../../lib/chat/messages";
+  import { tick } from "svelte";
+  import { VList, type VListHandle } from "virtua/svelte";
+  import { groupMessages, type MessageGroup as Group } from "../../lib/chat/messages";
   import { dmTitle } from "../../lib/chat/people";
   import type { Channel, DirectConversation, Message } from "../../lib/types";
   import MessageGroup from "./MessageGroup.svelte";
 
+  type Item =
+    | { kind: "day"; id: string; label: string }
+    | { kind: "group"; id: string; group: Group };
+
   type Props = {
     messages: Message[];
+    viewKey: string;
+    loading?: boolean;
+    restoreState?: MessageListState;
     selectedDirect?: DirectConversation;
     selectedChannel?: Channel;
     selectedThreadID?: string;
     currentUserID?: string;
-    onListRef: (node: HTMLElement | null) => void;
+    onListRef: (handle: MessageListHandle | null) => void;
     onActivateMessageComposer: () => void;
     onInlineImagePointerUp: (event: PointerEvent) => void;
     onOpenProfile: (profile?: Message["author"]) => void;
@@ -22,6 +45,9 @@
 
   let {
     messages,
+    viewKey,
+    loading = false,
+    restoreState,
     selectedDirect,
     selectedChannel,
     selectedThreadID,
@@ -36,25 +62,171 @@
     onOpenImage,
   }: Props = $props();
 
-  let listNode: HTMLElement | null = $state(null);
-  let groupedMessages = $derived(groupMessages(messages));
+  const ANCHOR_THRESHOLD_PX = 120;
+
+  let vlist: VListHandle | undefined = $state();
   let replyContext = $derived(selectedDirect ? "dm" : "channel");
 
+  let items = $derived.by<Item[]>(() => {
+    const out: Item[] = [];
+    for (const group of groupMessages(messages)) {
+      if (group.dayLabel) {
+        out.push({ kind: "day", id: `day-${group.key}`, label: group.dayLabel });
+      }
+      out.push({ kind: "group", id: group.key, group });
+    }
+    return out;
+  });
+
+  let atBottom = $state(true);
+  let revealed = $state(false);
+  let lastViewKey: string | undefined;
+  let lastItemCount = 0;
+  let pendingRestore = false;
+
+  function checkAtBottom(): boolean {
+    if (!vlist) return true;
+    const offset = vlist.getScrollOffset();
+    const total = vlist.getScrollSize();
+    const viewport = vlist.getViewportSize();
+    return total - offset - viewport <= ANCHOR_THRESHOLD_PX;
+  }
+
+  function scrollToBottom() {
+    if (!vlist || items.length === 0) return;
+    vlist.scrollToIndex(items.length - 1, { align: "end" });
+  }
+
+  function findMessageIndex(messageID: string): number {
+    return items.findIndex(
+      (it) => it.kind === "group" && it.group.messages.some((m) => m.id === messageID),
+    );
+  }
+
+  function scrollToMessage(messageID: string): boolean {
+    if (!vlist) return false;
+    const idx = findMessageIndex(messageID);
+    if (idx < 0) return false;
+    vlist.scrollToIndex(idx, { align: "start" });
+    return true;
+  }
+
+  function captureState(): MessageListState | null {
+    if (!vlist) return null;
+    const isAtBottom = checkAtBottom();
+    if (isAtBottom) return { atBottom: true };
+    const offset = vlist.getScrollOffset();
+    const idx = vlist.findItemIndex(offset);
+    for (let i = Math.max(0, idx); i < items.length; i++) {
+      const it = items[i];
+      if (it.kind !== "group") continue;
+      const itemTop = vlist.getItemOffset(i);
+      const anchorMessageID = it.group.messages[0]?.id;
+      if (!anchorMessageID) continue;
+      return {
+        atBottom: false,
+        anchorMessageID,
+        anchorPixelOffset: Math.max(0, offset - itemTop),
+      };
+    }
+    return { atBottom: false };
+  }
+
   $effect(() => {
-    onListRef(listNode);
+    onListRef({ scrollToBottom, scrollToMessage, captureState });
     return () => onListRef(null);
   });
+
+  // Watch viewKey + items to drive: hide-on-switch, scroll-restore, autoscroll-on-new-message.
+  $effect(() => {
+    const key = viewKey;
+    const count = items.length;
+
+    if (key !== lastViewKey) {
+      lastViewKey = key;
+      lastItemCount = count;
+      atBottom = true;
+      revealed = false;
+      pendingRestore = true;
+      void runRestore(key);
+      return;
+    }
+
+    if (count > lastItemCount && atBottom && !pendingRestore) {
+      void pinAfterRender();
+    }
+    lastItemCount = count;
+  });
+
+  async function runRestore(key: string) {
+    // Wait two frames so VList mounts/measures with the new data.
+    await tick();
+    await new Promise((r) => requestAnimationFrame(r));
+    if (key !== lastViewKey) return;
+    const target = restoreState;
+    if (target && !target.atBottom && target.anchorMessageID) {
+      const restored = await restoreToAnchor(
+        key,
+        target.anchorMessageID,
+        target.anchorPixelOffset ?? 0,
+      );
+      if (key !== lastViewKey) return;
+      if (!restored) scrollToBottom();
+    } else {
+      scrollToBottom();
+    }
+    // Allow virtua one more frame to settle measurements before revealing.
+    await new Promise((r) => requestAnimationFrame(r));
+    if (key !== lastViewKey) return;
+    pendingRestore = false;
+    revealed = true;
+    atBottom = checkAtBottom();
+  }
+
+  // Iteratively converge on the target offset. virtua may not have measured
+  // every item yet; getItemOffset returns an estimate that becomes accurate
+  // as items render. We re-scroll on each frame until the offset is stable.
+  async function restoreToAnchor(
+    key: string,
+    messageID: string,
+    pixelOffset: number,
+  ): Promise<boolean> {
+    if (!vlist) return false;
+    const idx = findMessageIndex(messageID);
+    if (idx < 0) return false;
+    for (let attempt = 0; attempt < 8; attempt++) {
+      if (!vlist || key !== lastViewKey) return false;
+      const desired = vlist.getItemOffset(idx) + pixelOffset;
+      vlist.scrollTo(desired);
+      await new Promise((r) => requestAnimationFrame(r));
+      if (key !== lastViewKey) return false;
+      const recheck = vlist.getItemOffset(idx) + pixelOffset;
+      const current = vlist.getScrollOffset();
+      if (Math.abs(recheck - desired) < 1 && Math.abs(current - desired) < 1) break;
+    }
+    return true;
+  }
+
+  async function pinAfterRender() {
+    await tick();
+    scrollToBottom();
+  }
+
+  function handleScroll(_offset: number) {
+    if (pendingRestore) return;
+    atBottom = checkAtBottom();
+  }
 </script>
 
 <div
   class="messages"
+  class:is-revealing={loading || (!revealed && messages.length > 0)}
   role="log"
   aria-live="polite"
-  bind:this={listNode}
   onpointerdown={onActivateMessageComposer}
   onpointerup={onInlineImagePointerUp}
 >
-  {#if messages.length === 0}
+  {#if !loading && messages.length === 0}
     <div class="empty">
       <div class="empty-icon">
         {#if selectedDirect}@{:else}#{/if}
@@ -70,20 +242,31 @@
       </strong>
       <span>Send a message in Markdown — code fences, lists, links all work. Threads open from any message.</span>
     </div>
+  {:else if messages.length > 0}
+    <VList
+      bind:this={vlist}
+      data={items}
+      getKey={(item: Item) => item.id}
+      onscroll={handleScroll}
+      class="messages-vlist"
+      style="padding: 16px 4px 24px;"
+    >
+      {#snippet children(item: Item, _index: number)}
+        {#if item.kind === "day"}
+          <div class="day-divider"><span>{item.label}</span></div>
+        {:else}
+          <MessageGroup
+            group={item.group}
+            {selectedThreadID}
+            {replyContext}
+            {onOpenProfile}
+            {onReply}
+            {onOpenThread}
+            {onJumpToQuote}
+            {onOpenImage}
+          />
+        {/if}
+      {/snippet}
+    </VList>
   {/if}
-  {#each groupedMessages as group (group.key)}
-    {#if group.dayLabel}
-      <div class="day-divider"><span>{group.dayLabel}</span></div>
-    {/if}
-    <MessageGroup
-      {group}
-      {selectedThreadID}
-      {replyContext}
-      {onOpenProfile}
-      {onReply}
-      {onOpenThread}
-      {onJumpToQuote}
-      {onOpenImage}
-    />
-  {/each}
 </div>

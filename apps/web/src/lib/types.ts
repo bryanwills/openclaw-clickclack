@@ -52,6 +52,9 @@ export type Upload = {
   filename: string;
   content_type: string;
   byte_size: number;
+  width?: number;
+  height?: number;
+  duration_ms?: number;
   created_at: string;
 };
 

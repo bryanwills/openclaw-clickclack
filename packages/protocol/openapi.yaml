@@ -345,6 +345,15 @@ paths:
                 file:
                   type: string
                   format: binary
+                width:
+                  type: integer
+                  minimum: 0
+                height:
+                  type: integer
+                  minimum: 0
+                duration_ms:
+                  type: integer
+                  minimum: 0
       responses:
         "201":
           description: Created upload
