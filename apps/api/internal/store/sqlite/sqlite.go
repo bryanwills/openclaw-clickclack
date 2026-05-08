@@ -291,12 +291,7 @@ func (s *Store) ListMessages(ctx context.Context, channelID, userID string, afte
 	if err := s.requireMembership(ctx, workspaceID, userID); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT m.id, m.workspace_id, COALESCE(m.channel_id, ''), COALESCE(m.direct_conversation_id, ''), m.author_id, m.parent_message_id, m.thread_root_id, m.channel_seq, m.thread_seq,
-		       m.body, m.body_format, m.created_at, m.edited_at, m.deleted_at,
-		       u.id, u.display_name, u.handle, u.avatar_url, u.created_at
-		FROM messages m
-		JOIN users u ON u.id = m.author_id
+	rows, err := s.db.QueryContext(ctx, messageSelect()+`
 		WHERE m.channel_id = ? AND m.parent_message_id IS NULL AND m.channel_seq > ?
 		ORDER BY m.channel_seq
 		LIMIT ?`, channelID, afterSeq, limit)
@@ -334,9 +329,19 @@ func (s *Store) CreateMessage(ctx context.Context, input store.CreateMessageInpu
 	if body == "" {
 		return store.Message{}, store.Event{}, errors.New("message body is required")
 	}
+	var quotedID, quotedAuthorID, quotedSnapshot string
+	if input.QuotedMessageID != nil && strings.TrimSpace(*input.QuotedMessageID) != "" {
+		quotedID = strings.TrimSpace(*input.QuotedMessageID)
+		snap, authorID, err := resolveQuoteRefTx(ctx, tx, quotedID, quoteScope{kind: "channel", channelID: input.ChannelID})
+		if err != nil {
+			return store.Message{}, store.Event{}, err
+		}
+		quotedSnapshot = snap
+		quotedAuthorID = authorID
+	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO messages (id, workspace_id, channel_id, direct_conversation_id, author_id, parent_message_id, thread_root_id, channel_seq, thread_seq, body, body_format, created_at)
-		VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, NULL, ?, 'markdown', ?)`, id, workspaceID, input.ChannelID, input.AuthorID, id, seq, body, createdAt); err != nil {
+		INSERT INTO messages (id, workspace_id, channel_id, direct_conversation_id, author_id, parent_message_id, thread_root_id, channel_seq, thread_seq, body, body_format, created_at, quoted_message_id, quoted_body_snapshot, quoted_author_id)
+		VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, NULL, ?, 'markdown', ?, ?, ?, ?)`, id, workspaceID, input.ChannelID, input.AuthorID, id, seq, body, createdAt, nullableQuotedID(quotedID), quotedSnapshot, nullableQuotedID(quotedAuthorID)); err != nil {
 		return store.Message{}, store.Event{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO thread_state (root_message_id) VALUES (?)`, id); err != nil {
@@ -372,12 +377,7 @@ func (s *Store) GetThread(ctx context.Context, rootMessageID, userID string, lim
 		return store.Message{}, nil, store.ThreadState{}, err
 	}
 	root = roots[0]
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT m.id, m.workspace_id, COALESCE(m.channel_id, ''), COALESCE(m.direct_conversation_id, ''), m.author_id, m.parent_message_id, m.thread_root_id, m.channel_seq, m.thread_seq,
-		       m.body, m.body_format, m.created_at, m.edited_at, m.deleted_at,
-		       u.id, u.display_name, u.handle, u.avatar_url, u.created_at
-		FROM messages m
-		JOIN users u ON u.id = m.author_id
+	rows, err := s.db.QueryContext(ctx, messageSelect()+`
 		WHERE m.thread_root_id = ? AND m.parent_message_id = ?
 		ORDER BY m.thread_seq
 		LIMIT ?`, rootMessageID, rootMessageID, limit)
@@ -423,9 +423,19 @@ func (s *Store) CreateThreadReply(ctx context.Context, input store.CreateThreadR
 	if body == "" {
 		return store.Message{}, store.ThreadState{}, nil, errors.New("reply body is required")
 	}
+	var quotedID, quotedAuthorID, quotedSnapshot string
+	if input.QuotedMessageID != nil && strings.TrimSpace(*input.QuotedMessageID) != "" {
+		quotedID = strings.TrimSpace(*input.QuotedMessageID)
+		snap, authorID, err := resolveQuoteRefTx(ctx, tx, quotedID, quoteScope{kind: "thread", threadRootID: root.ID})
+		if err != nil {
+			return store.Message{}, store.ThreadState{}, nil, err
+		}
+		quotedSnapshot = snap
+		quotedAuthorID = authorID
+	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO messages (id, workspace_id, channel_id, direct_conversation_id, author_id, parent_message_id, thread_root_id, channel_seq, thread_seq, body, body_format, created_at)
-		VALUES (?, ?, ?, NULL, ?, ?, ?, NULL, ?, ?, 'markdown', ?)`, id, root.WorkspaceID, root.ChannelID, input.AuthorID, root.ID, root.ID, seq, body, createdAt); err != nil {
+		INSERT INTO messages (id, workspace_id, channel_id, direct_conversation_id, author_id, parent_message_id, thread_root_id, channel_seq, thread_seq, body, body_format, created_at, quoted_message_id, quoted_body_snapshot, quoted_author_id)
+		VALUES (?, ?, ?, NULL, ?, ?, ?, NULL, ?, ?, 'markdown', ?, ?, ?, ?)`, id, root.WorkspaceID, root.ChannelID, input.AuthorID, root.ID, root.ID, seq, body, createdAt, nullableQuotedID(quotedID), quotedSnapshot, nullableQuotedID(quotedAuthorID)); err != nil {
 		return store.Message{}, store.ThreadState{}, nil, err
 	}
 	state, err := updateThreadState(ctx, tx, root.ID, input.AuthorID, createdAt)

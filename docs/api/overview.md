@@ -31,6 +31,7 @@ The server resolves callers in this order (see
 | Channels      | `/api/workspaces/{id}/channels`, `/api/channels/{id}` | [workspaces](../features/workspaces.md) |
 | Messages      | `/api/channels/{id}/messages`, `/api/messages/{id}` | [messages](../features/messages.md) |
 | Threads       | `/api/messages/{id}/thread`, `/api/messages/{id}/thread/replies` | [threads](../features/threads.md) |
+| Replies       | `quoted_message_id` on any message-create endpoint | [replies](../features/replies.md) |
 | Reactions     | `/api/messages/{id}/reactions` | [reactions](../features/reactions.md) |
 | Realtime      | `/api/realtime/{ws,events,ephemeral}` | [realtime](../features/realtime.md) |
 | Search        | `/api/search` | [search](../features/search.md) |

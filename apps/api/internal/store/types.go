@@ -1,6 +1,14 @@
 package store
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// ErrQuotedMessageOutOfScope is returned when a message tries to quote another
+// message that does not belong to the same channel, direct conversation, or
+// thread. It is surfaced to API callers as a 400.
+var ErrQuotedMessageOutOfScope = errors.New("quoted message is not in this channel, conversation, or thread")
 
 type User struct {
 	ID          string `json:"id"`
@@ -43,6 +51,10 @@ type Message struct {
 	DeletedAt            *string  `json:"deleted_at,omitempty"`
 	Author               *User    `json:"author,omitempty"`
 	Attachments          []Upload `json:"attachments,omitempty"`
+	QuotedMessageID      *string  `json:"quoted_message_id,omitempty"`
+	QuotedBodySnapshot   string   `json:"quoted_body_snapshot,omitempty"`
+	QuotedAuthorID       *string  `json:"quoted_author_id,omitempty"`
+	QuotedAuthor         *User    `json:"quoted_author,omitempty"`
 }
 
 type ThreadState struct {
@@ -106,9 +118,10 @@ type UpdateChannelInput struct {
 }
 
 type CreateMessageInput struct {
-	ChannelID string
-	AuthorID  string
-	Body      string
+	ChannelID       string
+	AuthorID        string
+	Body            string
+	QuotedMessageID *string
 }
 
 type UpdateMessageInput struct {
@@ -123,9 +136,10 @@ type DeleteMessageInput struct {
 }
 
 type CreateThreadReplyInput struct {
-	RootMessageID string
-	AuthorID      string
-	Body          string
+	RootMessageID   string
+	AuthorID        string
+	Body            string
+	QuotedMessageID *string
 }
 
 type CreateReactionInput struct {
@@ -179,9 +193,10 @@ type CreateDirectConversationInput struct {
 }
 
 type CreateDirectMessageInput struct {
-	ConversationID string
-	AuthorID       string
-	Body           string
+	ConversationID  string
+	AuthorID        string
+	Body            string
+	QuotedMessageID *string
 }
 
 type Invite struct {

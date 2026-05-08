@@ -149,13 +149,14 @@ func (s *Server) createDirectMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Body string `json:"body"`
+		Body            string `json:"body"`
+		QuotedMessageID string `json:"quoted_message_id"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	message, event, err := s.store.CreateDirectMessage(r.Context(), store.CreateDirectMessageInput{ConversationID: chi.URLParam(r, "conversation_id"), AuthorID: user.ID, Body: body.Body})
+	message, event, err := s.store.CreateDirectMessage(r.Context(), store.CreateDirectMessageInput{ConversationID: chi.URLParam(r, "conversation_id"), AuthorID: user.ID, Body: body.Body, QuotedMessageID: optionalString(body.QuotedMessageID)})
 	if err == nil {
 		s.hub.Publish(event)
 	}

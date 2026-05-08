@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Added inline quote-replies in channels, DMs, and threads. Every
+  message-create endpoint now accepts an optional `quoted_message_id`; the
+  server captures a 280-rune trimmed snapshot of the quoted body plus the
+  quoted author at send time, and rejects cross-context quotes with
+  `HTTP 400`. The chat UI exposes a hover-revealed "Quote" affordance,
+  composer chip, click-to-jump quote block, and an "[original deleted]"
+  fallback when the source is hard-deleted (FK is `ON DELETE SET NULL` so
+  the snapshot survives). The `clickclack send` and `clickclack threads
+  reply` CLI commands gain `--reply-to msg_...` flags. See
+  [docs/features/replies.md](docs/features/replies.md). Thanks @shakkernerd.
 - Refined the chat app shell with denser Slack/Discord-style navigation,
   grouped message timelines, clearer empty states, responsive sidebars, and a
   send button that no longer appears active for attachment-only drafts.

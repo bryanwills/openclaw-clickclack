@@ -48,9 +48,12 @@ func getMessageTx(ctx context.Context, tx *sql.Tx, id string) (store.Message, er
 func messageSelect() string {
 	return `SELECT m.id, m.workspace_id, COALESCE(m.channel_id, ''), COALESCE(m.direct_conversation_id, ''), m.author_id, m.parent_message_id, m.thread_root_id, m.channel_seq, m.thread_seq,
 		       m.body, m.body_format, m.created_at, m.edited_at, m.deleted_at,
-		       u.id, u.display_name, u.handle, u.avatar_url, u.created_at
+		       u.id, u.display_name, u.handle, u.avatar_url, u.created_at,
+		       m.quoted_message_id, m.quoted_body_snapshot, m.quoted_author_id,
+		       qu.id, qu.display_name, qu.handle, qu.avatar_url, qu.created_at
 		FROM messages m
-		JOIN users u ON u.id = m.author_id`
+		JOIN users u ON u.id = m.author_id
+		LEFT JOIN users qu ON qu.id = m.quoted_author_id`
 }
 
 func scanMessage(row scanner) (store.Message, error) {
@@ -58,7 +61,15 @@ func scanMessage(row scanner) (store.Message, error) {
 	var parent, edited, deleted sql.NullString
 	var channelSeq, threadSeq sql.NullInt64
 	var author store.User
-	err := row.Scan(&m.ID, &m.WorkspaceID, &m.ChannelID, &m.DirectConversationID, &m.AuthorID, &parent, &m.ThreadRootID, &channelSeq, &threadSeq, &m.Body, &m.BodyFormat, &m.CreatedAt, &edited, &deleted, &author.ID, &author.DisplayName, &author.Handle, &author.AvatarURL, &author.CreatedAt)
+	var quotedMessageID, quotedAuthorID sql.NullString
+	var quAuthorID, quDisplayName, quHandle, quAvatarURL, quCreatedAt sql.NullString
+	err := row.Scan(
+		&m.ID, &m.WorkspaceID, &m.ChannelID, &m.DirectConversationID, &m.AuthorID, &parent, &m.ThreadRootID, &channelSeq, &threadSeq,
+		&m.Body, &m.BodyFormat, &m.CreatedAt, &edited, &deleted,
+		&author.ID, &author.DisplayName, &author.Handle, &author.AvatarURL, &author.CreatedAt,
+		&quotedMessageID, &m.QuotedBodySnapshot, &quotedAuthorID,
+		&quAuthorID, &quDisplayName, &quHandle, &quAvatarURL, &quCreatedAt,
+	)
 	if err != nil {
 		return store.Message{}, err
 	}
@@ -78,6 +89,21 @@ func scanMessage(row scanner) (store.Message, error) {
 		m.DeletedAt = &deleted.String
 	}
 	m.Author = &author
+	if quotedMessageID.Valid {
+		m.QuotedMessageID = &quotedMessageID.String
+	}
+	if quotedAuthorID.Valid {
+		m.QuotedAuthorID = &quotedAuthorID.String
+	}
+	if quAuthorID.Valid {
+		m.QuotedAuthor = &store.User{
+			ID:          quAuthorID.String,
+			DisplayName: quDisplayName.String,
+			Handle:      quHandle.String,
+			AvatarURL:   quAvatarURL.String,
+			CreatedAt:   quCreatedAt.String,
+		}
+	}
 	return m, nil
 }
 

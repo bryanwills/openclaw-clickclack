@@ -39,6 +39,10 @@ export type Message = {
   edited_at?: string;
   deleted_at?: string;
   author?: User;
+  quoted_message_id?: string;
+  quoted_body_snapshot?: string;
+  quoted_author_id?: string;
+  quoted_author?: User;
 };
 
 export type Upload = {
@@ -184,7 +188,10 @@ export class ClickClackClient {
       );
       return data.messages;
     },
-    sendMessage: async (channelId: string, input: { body: string }): Promise<Message> => {
+    sendMessage: async (
+      channelId: string,
+      input: { body: string; quoted_message_id?: string },
+    ): Promise<Message> => {
       const data = await this.request<{ message: Message }>(`/api/channels/${channelId}/messages`, {
         method: "POST",
         body: JSON.stringify(input),
@@ -213,7 +220,10 @@ export class ClickClackClient {
     get: async (messageId: string) => {
       return this.request(`/api/messages/${messageId}/thread`);
     },
-    reply: async (messageId: string, input: { body: string }): Promise<Message> => {
+    reply: async (
+      messageId: string,
+      input: { body: string; quoted_message_id?: string },
+    ): Promise<Message> => {
       const data = await this.request<{ message: Message }>(
         `/api/messages/${messageId}/thread/replies`,
         {
@@ -274,7 +284,10 @@ export class ClickClackClient {
       );
       return data.messages;
     },
-    sendMessage: async (conversationId: string, input: { body: string }): Promise<Message> => {
+    sendMessage: async (
+      conversationId: string,
+      input: { body: string; quoted_message_id?: string },
+    ): Promise<Message> => {
       const data = await this.request<{ message: Message }>(`/api/dms/${conversationId}/messages`, {
         method: "POST",
         body: JSON.stringify(input),

@@ -23,10 +23,13 @@ func (s *Store) SearchMessages(ctx context.Context, workspaceID, userID, query s
 		SELECT m.id, m.workspace_id, COALESCE(m.channel_id, ''), COALESCE(m.direct_conversation_id, ''), m.author_id, m.parent_message_id, m.thread_root_id, m.channel_seq, m.thread_seq,
 		       m.body, m.body_format, m.created_at, m.edited_at, m.deleted_at,
 		       u.id, u.display_name, u.handle, u.avatar_url, u.created_at,
+		       m.quoted_message_id, m.quoted_body_snapshot, m.quoted_author_id,
+		       qu.id, qu.display_name, qu.handle, qu.avatar_url, qu.created_at,
 		       bm25(messages_fts) AS rank
 		FROM messages_fts
 		JOIN messages m ON m.id = messages_fts.message_id
 		JOIN users u ON u.id = m.author_id
+		LEFT JOIN users qu ON qu.id = m.quoted_author_id
 		WHERE messages_fts.workspace_id = ? AND messages_fts MATCH ?
 		ORDER BY rank
 		LIMIT ?`, workspaceID, query, limit)
@@ -50,8 +53,17 @@ func scanSearchMessage(row scanner) (store.Message, float64, error) {
 	var parent, edited, deleted sql.NullString
 	var channelSeq, threadSeq sql.NullInt64
 	var author store.User
+	var quotedMessageID, quotedAuthorID sql.NullString
+	var quAuthorID, quDisplayName, quHandle, quAvatarURL, quCreatedAt sql.NullString
 	var rank float64
-	err := row.Scan(&msg.ID, &msg.WorkspaceID, &msg.ChannelID, &msg.DirectConversationID, &msg.AuthorID, &parent, &msg.ThreadRootID, &channelSeq, &threadSeq, &msg.Body, &msg.BodyFormat, &msg.CreatedAt, &edited, &deleted, &author.ID, &author.DisplayName, &author.Handle, &author.AvatarURL, &author.CreatedAt, &rank)
+	err := row.Scan(
+		&msg.ID, &msg.WorkspaceID, &msg.ChannelID, &msg.DirectConversationID, &msg.AuthorID, &parent, &msg.ThreadRootID, &channelSeq, &threadSeq,
+		&msg.Body, &msg.BodyFormat, &msg.CreatedAt, &edited, &deleted,
+		&author.ID, &author.DisplayName, &author.Handle, &author.AvatarURL, &author.CreatedAt,
+		&quotedMessageID, &msg.QuotedBodySnapshot, &quotedAuthorID,
+		&quAuthorID, &quDisplayName, &quHandle, &quAvatarURL, &quCreatedAt,
+		&rank,
+	)
 	if err != nil {
 		return store.Message{}, 0, err
 	}
@@ -71,5 +83,20 @@ func scanSearchMessage(row scanner) (store.Message, float64, error) {
 		msg.DeletedAt = &deleted.String
 	}
 	msg.Author = &author
+	if quotedMessageID.Valid {
+		msg.QuotedMessageID = &quotedMessageID.String
+	}
+	if quotedAuthorID.Valid {
+		msg.QuotedAuthorID = &quotedAuthorID.String
+	}
+	if quAuthorID.Valid {
+		msg.QuotedAuthor = &store.User{
+			ID:          quAuthorID.String,
+			DisplayName: quDisplayName.String,
+			Handle:      quHandle.String,
+			AvatarURL:   quAvatarURL.String,
+			CreatedAt:   quCreatedAt.String,
+		}
+	}
 	return msg, rank, nil
 }

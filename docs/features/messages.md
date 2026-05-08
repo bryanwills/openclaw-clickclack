@@ -9,7 +9,10 @@ read_when:
 
 Channel messages are the core durable object. Every message is Markdown text
 with optional attachments. Threads are modelled as messages with a non-null
-`parent_message_id` (see [threads.md](threads.md)).
+`parent_message_id` (see [threads.md](threads.md)). Inline quote-replies —
+the lightweight Discord/Telegram-style "reply with quote" pattern — live on
+the same row via `quoted_message_id` and friends, documented in
+[replies.md](replies.md).
 
 ## Endpoints
 

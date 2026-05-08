@@ -168,7 +168,7 @@ func (c apiClient) messages(args []string) error {
 
 func (c apiClient) send(args []string) error {
 	opts := c.opts
-	bodyFromFlag, stdin, file, rest, err := parseBodyCommand("send", args, &opts)
+	bodyFromFlag, stdin, file, replyTo, rest, err := parseBodyCommand("send", args, &opts)
 	if err != nil {
 		return err
 	}
@@ -185,7 +185,8 @@ func (c apiClient) send(args []string) error {
 		Message store.Message `json:"message"`
 		Event   store.Event   `json:"event"`
 	}
-	if err := c.doJSON(context.Background(), http.MethodPost, "/api/channels/"+url.PathEscape(channel.ID)+"/messages", map[string]string{"body": body}, &result); err != nil {
+	payload := messagePayload(body, *replyTo)
+	if err := c.doJSON(context.Background(), http.MethodPost, "/api/channels/"+url.PathEscape(channel.ID)+"/messages", payload, &result); err != nil {
 		return err
 	}
 	return c.write(result, result.Message.ID, fmt.Sprintf("sent %s to #%s\n", result.Message.ID, channel.Name))
@@ -277,7 +278,7 @@ func (c apiClient) threadOpen(messageID string, args []string) error {
 
 func (c apiClient) threadReply(messageID string, args []string) error {
 	opts := c.opts
-	bodyFromFlag, stdin, file, rest, err := parseBodyCommand("threads reply", args, &opts)
+	bodyFromFlag, stdin, file, replyTo, rest, err := parseBodyCommand("threads reply", args, &opts)
 	if err != nil {
 		return err
 	}
@@ -291,22 +292,32 @@ func (c apiClient) threadReply(messageID string, args []string) error {
 		ThreadState store.ThreadState `json:"thread_state"`
 		Events      []store.Event     `json:"events"`
 	}
-	if err := c.doJSON(context.Background(), http.MethodPost, "/api/messages/"+url.PathEscape(messageID)+"/thread/replies", map[string]string{"body": body}, &result); err != nil {
+	payload := messagePayload(body, *replyTo)
+	if err := c.doJSON(context.Background(), http.MethodPost, "/api/messages/"+url.PathEscape(messageID)+"/thread/replies", payload, &result); err != nil {
 		return err
 	}
 	return c.write(result, result.Message.ID, fmt.Sprintf("replied %s to %s\n", result.Message.ID, messageID))
 }
 
-func parseBodyCommand(name string, args []string, opts *clientOptions) (*string, *bool, *string, []string, error) {
+func parseBodyCommand(name string, args []string, opts *clientOptions) (*string, *bool, *string, *string, []string, error) {
 	flags := flag.NewFlagSet(name, flag.ExitOnError)
 	addClientFlags(flags, opts)
 	body := flags.String("body", "", "message body")
 	stdin := flags.Bool("stdin", false, "read message body from stdin")
 	file := flags.String("file", "", "read message body from file")
+	replyTo := flags.String("reply-to", "", "quote a message ID (must be in the same channel, conversation, or thread)")
 	if err := flags.Parse(args); err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
-	return body, stdin, file, flags.Args(), nil
+	return body, stdin, file, replyTo, flags.Args(), nil
+}
+
+func messagePayload(body, replyTo string) map[string]string {
+	payload := map[string]string{"body": body}
+	if trimmed := strings.TrimSpace(replyTo); trimmed != "" {
+		payload["quoted_message_id"] = trimmed
+	}
+	return payload
 }
 
 func resolveBody(bodyFlag, file string, stdin bool, args []string) (string, error) {

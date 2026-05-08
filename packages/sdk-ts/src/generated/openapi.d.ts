@@ -468,6 +468,13 @@ export interface components {
        * @enum {string}
        */
       body_format: "markdown";
+      /**
+       * @description Optional ID of a message to quote. The quoted message must live in
+       *     the same channel, DM conversation, or thread as the new message;
+       *     cross-context quoting is rejected with 400. The server captures a
+       *     soft snapshot of the quoted body at send time.
+       */
+      quoted_message_id?: string;
     };
     AddReactionRequest: {
       emoji: string;

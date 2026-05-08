@@ -94,12 +94,7 @@ func (s *Store) ListDirectMessages(ctx context.Context, conversationID, userID s
 	if err := s.requireDirectMembership(ctx, conversationID, userID); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT m.id, m.workspace_id, COALESCE(m.channel_id, ''), COALESCE(m.direct_conversation_id, ''), m.author_id, m.parent_message_id, m.thread_root_id, m.channel_seq, m.thread_seq,
-		       m.body, m.body_format, m.created_at, m.edited_at, m.deleted_at,
-		       u.id, u.display_name, u.handle, u.avatar_url, u.created_at
-		FROM messages m
-		JOIN users u ON u.id = m.author_id
+	rows, err := s.db.QueryContext(ctx, messageSelect()+`
 		WHERE m.direct_conversation_id = ? AND m.channel_seq > ?
 		ORDER BY m.channel_seq
 		LIMIT ?`, conversationID, afterSeq, limit)
@@ -137,9 +132,19 @@ func (s *Store) CreateDirectMessage(ctx context.Context, input store.CreateDirec
 	if body == "" {
 		return store.Message{}, store.Event{}, errors.New("message body is required")
 	}
+	var quotedID, quotedAuthorID, quotedSnapshot string
+	if input.QuotedMessageID != nil && strings.TrimSpace(*input.QuotedMessageID) != "" {
+		quotedID = strings.TrimSpace(*input.QuotedMessageID)
+		snap, authorID, err := resolveQuoteRefTx(ctx, tx, quotedID, quoteScope{kind: "dm", directConversationID: input.ConversationID})
+		if err != nil {
+			return store.Message{}, store.Event{}, err
+		}
+		quotedSnapshot = snap
+		quotedAuthorID = authorID
+	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO messages (id, workspace_id, channel_id, direct_conversation_id, author_id, parent_message_id, thread_root_id, channel_seq, thread_seq, body, body_format, created_at)
-		VALUES (?, ?, NULL, ?, ?, NULL, ?, ?, NULL, ?, 'markdown', ?)`, id, workspaceID, input.ConversationID, input.AuthorID, id, seq, body, createdAt); err != nil {
+		INSERT INTO messages (id, workspace_id, channel_id, direct_conversation_id, author_id, parent_message_id, thread_root_id, channel_seq, thread_seq, body, body_format, created_at, quoted_message_id, quoted_body_snapshot, quoted_author_id)
+		VALUES (?, ?, NULL, ?, ?, NULL, ?, ?, NULL, ?, 'markdown', ?, ?, ?, ?)`, id, workspaceID, input.ConversationID, input.AuthorID, id, seq, body, createdAt, nullableQuotedID(quotedID), quotedSnapshot, nullableQuotedID(quotedAuthorID)); err != nil {
 		return store.Message{}, store.Event{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO thread_state (root_message_id) VALUES (?)`, id); err != nil {

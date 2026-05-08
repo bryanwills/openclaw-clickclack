@@ -547,6 +547,13 @@ components:
           type: string
           enum: [markdown]
           default: markdown
+        quoted_message_id:
+          type: string
+          description: |
+            Optional ID of a message to quote. The quoted message must live in
+            the same channel, DM conversation, or thread as the new message;
+            cross-context quoting is rejected with 400. The server captures a
+            soft snapshot of the quoted body at send time.
     AddReactionRequest:
       type: object
       required: [emoji]

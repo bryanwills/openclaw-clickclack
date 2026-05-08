@@ -7,7 +7,9 @@ read_when:
 # Threads
 
 Threads are Slack-style: every root message can have one flat list of replies.
-Nested replies are explicitly rejected.
+Nested replies are explicitly rejected. For lighter-weight inline replies that
+keep the new message in the parent stream and just quote what they're
+answering, see [replies.md](replies.md).
 
 ## Endpoints
 

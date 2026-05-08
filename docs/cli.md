@@ -192,8 +192,10 @@ clickclack --server http://localhost:8080 --token sst_... threads reply msg_... 
 ```
 
 `send` and `threads reply` accept the body from a positional argument,
-`--body`, `--file`, or `--stdin`. `--plain` prints only the created message ID;
-`--json` prints the API response.
+`--body`, `--file`, or `--stdin`. Both also accept `--reply-to msg_...` to
+inline-quote an existing message in the same channel/thread (see
+[features/replies.md](features/replies.md)). `--plain` prints only the
+created message ID; `--json` prints the API response.
 
 ## Exit codes
 
