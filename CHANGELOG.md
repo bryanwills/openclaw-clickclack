@@ -15,3 +15,5 @@
   flow for hosted agents.
 - Added more visible GitHub links to the product website and improved the docs
   quickstart CTA contrast in dark mode.
+- Split GitHub Actions into explicit Go, TypeScript, Playwright, and Docker
+  gates, with `gofmt` and `oxfmt --check` enforced in CI.

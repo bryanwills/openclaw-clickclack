@@ -151,10 +151,11 @@ provided.
 - Coverage gate: `pnpm coverage` fails under 90% Go line coverage.
 
 ```sh
-pnpm check        # go test + typecheck + lint
+pnpm check        # go test + root/workspace typecheck + lint + format check
 pnpm coverage     # Go coverage with 90% gate
 pnpm test:e2e     # Playwright
-pnpm fmt          # gofmt + oxfmt
+pnpm fmt          # gofmt + oxfmt write
+pnpm fmt:check    # gofmt + oxfmt check, CI-compatible
 ```
 
 ## Deployment

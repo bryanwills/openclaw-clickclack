@@ -14,14 +14,16 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  NODE_VERSION: "24"
+  PNPM_VERSION: "11.0.7"
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  backend:
-    name: Backend
+  go:
+    name: Go
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -34,6 +36,17 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Download modules
+        run: go mod download
+
+      - name: Check gofmt
+        run: |
+          files="$(gofmt -l apps/api)"
+          if [ -n "$files" ]; then
+            echo "$files"
+            exit 1
+          fi
+
       - name: Test
         run: go test ./...
 
@@ -43,8 +56,8 @@ jobs:
           go tool cover -func=coverage.out | tee coverage.txt
           awk '/^total:/ { sub(/%/, "", $3); if ($3 + 0 < 90) exit 1 }' coverage.txt
 
-  frontend:
-    name: Frontend and Docs
+  typescript:
+    name: TypeScript
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -54,22 +67,28 @@ jobs:
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 11.0.7
+          version: ${{ env.PNPM_VERSION }}
 
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: "24"
+          node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Typecheck
+      - name: Check TypeScript formatting
+        run: pnpm fmt:ts:check
+
+      - name: Lint TypeScript
+        run: pnpm lint
+
+      - name: Typecheck root tests
         run: pnpm typecheck
 
-      - name: Lint
-        run: pnpm lint
+      - name: Typecheck workspaces
+        run: pnpm -r typecheck
 
       - name: Build embedded app
         run: pnpm build
@@ -82,6 +101,9 @@ jobs:
 
   e2e:
     name: Playwright E2E
+    needs:
+      - go
+      - typescript
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -97,12 +119,12 @@ jobs:
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 11.0.7
+          version: ${{ env.PNPM_VERSION }}
 
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: "24"
+          node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
       - name: Install dependencies
@@ -119,6 +141,9 @@ jobs:
 
   docker:
     name: Docker Image
+    needs:
+      - go
+      - typescript
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
