@@ -135,7 +135,9 @@ test("sends messages, searches, uploads, opens a thread, and creates a DM", asyn
   await expect(page.getByText("pixel.png")).toBeVisible();
   await page.getByLabel("Message body").fill("inline image upload");
   await page.getByRole("button", { name: "Send" }).click();
-  await expect(page.locator(".image-attachment").filter({ hasText: "pixel.png" })).toBeVisible();
+  const imageAttachment = page.locator(".media-tile--image").filter({ hasText: "pixel.png" });
+  await expect(imageAttachment).toBeVisible();
+  await expect(imageAttachment.getByRole("link", { name: "Download pixel.png" })).toBeAttached();
   await page.getByRole("button", { name: "Open image pixel.png" }).click();
   await expect(
     page.getByLabel("Image viewer").getByRole("img", { name: "pixel.png" }),
@@ -153,7 +155,32 @@ test("sends messages, searches, uploads, opens a thread, and creates a DM", asyn
   await expect(page.getByText("clip.mp4")).toBeVisible();
   await page.getByLabel("Message body").fill("inline video upload");
   await page.getByRole("button", { name: "Send" }).click();
-  await expect(page.locator('.video-attachment video[aria-label="clip.mp4"]')).toBeVisible();
+  const videoAttachment = page.locator(".media-tile--video").filter({ hasText: "clip.mp4" });
+  const inlineVideo = videoAttachment.locator('video[aria-label="clip.mp4"]');
+  const videoDownload = videoAttachment.getByRole("link", { name: "Download clip.mp4" });
+  await expect(inlineVideo).toBeVisible();
+  await page.evaluate(() => {
+    (window as unknown as { __videoDownloadClicked: boolean }).__videoDownloadClicked = false;
+  });
+  await videoDownload.evaluate((node) => {
+    node.addEventListener(
+      "click",
+      (event) => {
+        event.preventDefault();
+        (window as unknown as { __videoDownloadClicked: boolean }).__videoDownloadClicked = true;
+      },
+      { once: true },
+    );
+  });
+  await videoDownload.click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as unknown as { __videoDownloadClicked: boolean }).__videoDownloadClicked,
+      ),
+    )
+    .toBe(true);
+  await expect(inlineVideo).not.toHaveAttribute("controls", "");
 
   await page.getByRole("button", { name: "GIF picker" }).click();
   await page.getByLabel("Search GIFs").fill("ship");

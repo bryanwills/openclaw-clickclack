@@ -2,6 +2,7 @@
   import { onDestroy, onMount, tick } from "svelte";
   import { APIError, api } from "./lib/api";
   import { markdown, time } from "./lib/format";
+  import MediaAttachment from "./components/MediaAttachment.svelte";
   import type { Channel, DirectConversation, Message, RealtimeEvent, SearchResult, ThreadState, Upload, User, Workspace } from "./lib/types";
 
   let user: User | null = null;
@@ -1254,32 +1255,11 @@
                   {#if message.attachments?.length}
                     <div class="attachment-grid" aria-label="Attachments">
                       {#each message.attachments as attachment (attachment.id)}
-                        {#if isImageUpload(attachment)}
-                          <button
-                            type="button"
-                            class="image-attachment"
-                            aria-label={`Open image ${attachment.filename}`}
-                            onclick={() => openImageViewer(uploadURL(attachment), attachment.filename)}
-                          >
-                            <img src={uploadURL(attachment)} alt={attachment.filename} loading="lazy" />
-                            <span>{attachment.filename}</span>
-                          </button>
-                        {:else if isVideoUpload(attachment)}
-                          <div class="video-attachment">
-                            <video controls preload="metadata" aria-label={attachment.filename}>
-                              <source src={uploadURL(attachment)} type={attachment.content_type} />
-                            </video>
-                            <a href={uploadURL(attachment)} target="_blank" rel="noreferrer">{attachment.filename}</a>
-                          </div>
-                        {:else}
-                          <a class="file-attachment" href={uploadURL(attachment)} target="_blank" rel="noreferrer">
-                            <span class="file-icon" aria-hidden="true">↧</span>
-                            <span>
-                              <strong>{attachment.filename}</strong>
-                              <small>{formatBytes(attachment.byte_size)}</small>
-                            </span>
-                          </a>
-                        {/if}
+                        <MediaAttachment
+                          upload={attachment}
+                          url={uploadURL(attachment)}
+                          onOpenImage={openImageViewer}
+                        />
                       {/each}
                     </div>
                   {/if}
@@ -1466,32 +1446,11 @@
             {#if selectedThread.attachments?.length}
               <div class="attachment-grid compact" aria-label="Attachments">
                 {#each selectedThread.attachments as attachment (attachment.id)}
-                  {#if isImageUpload(attachment)}
-                    <button
-                      type="button"
-                      class="image-attachment"
-                      aria-label={`Open image ${attachment.filename}`}
-                      onclick={() => openImageViewer(uploadURL(attachment), attachment.filename)}
-                    >
-                      <img src={uploadURL(attachment)} alt={attachment.filename} loading="lazy" />
-                      <span>{attachment.filename}</span>
-                    </button>
-                  {:else if isVideoUpload(attachment)}
-                    <div class="video-attachment">
-                      <video controls preload="metadata" aria-label={attachment.filename}>
-                        <source src={uploadURL(attachment)} type={attachment.content_type} />
-                      </video>
-                      <a href={uploadURL(attachment)} target="_blank" rel="noreferrer">{attachment.filename}</a>
-                    </div>
-                  {:else}
-                    <a class="file-attachment" href={uploadURL(attachment)} target="_blank" rel="noreferrer">
-                      <span class="file-icon" aria-hidden="true">↧</span>
-                      <span>
-                        <strong>{attachment.filename}</strong>
-                        <small>{formatBytes(attachment.byte_size)}</small>
-                      </span>
-                    </a>
-                  {/if}
+                  <MediaAttachment
+                    upload={attachment}
+                    url={uploadURL(attachment)}
+                    onOpenImage={openImageViewer}
+                  />
                 {/each}
               </div>
             {/if}
@@ -1545,32 +1504,11 @@
                 {#if reply.attachments?.length}
                   <div class="attachment-grid compact" aria-label="Attachments">
                     {#each reply.attachments as attachment (attachment.id)}
-                      {#if isImageUpload(attachment)}
-                        <button
-                          type="button"
-                          class="image-attachment"
-                          aria-label={`Open image ${attachment.filename}`}
-                          onclick={() => openImageViewer(uploadURL(attachment), attachment.filename)}
-                        >
-                          <img src={uploadURL(attachment)} alt={attachment.filename} loading="lazy" />
-                          <span>{attachment.filename}</span>
-                        </button>
-                      {:else if isVideoUpload(attachment)}
-                        <div class="video-attachment">
-                          <video controls preload="metadata" aria-label={attachment.filename}>
-                            <source src={uploadURL(attachment)} type={attachment.content_type} />
-                          </video>
-                          <a href={uploadURL(attachment)} target="_blank" rel="noreferrer">{attachment.filename}</a>
-                        </div>
-                      {:else}
-                        <a class="file-attachment" href={uploadURL(attachment)} target="_blank" rel="noreferrer">
-                          <span class="file-icon" aria-hidden="true">↧</span>
-                          <span>
-                            <strong>{attachment.filename}</strong>
-                            <small>{formatBytes(attachment.byte_size)}</small>
-                          </span>
-                        </a>
-                      {/if}
+                      <MediaAttachment
+                        upload={attachment}
+                        url={uploadURL(attachment)}
+                        onOpenImage={openImageViewer}
+                      />
                     {/each}
                   </div>
                 {/if}
