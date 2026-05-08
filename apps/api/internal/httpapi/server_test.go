@@ -276,6 +276,9 @@ func TestHTTPErrorPathsAndSPA(t *testing.T) {
 		t.Fatalf("expected bearer auth success, got %s %s", resp.Status, string(body))
 	}
 
+	expectStatus(t, http.MethodPatch, server.URL+"/api/me", strings.NewReader("{"), http.StatusBadRequest)
+	expectStatus(t, http.MethodPatch, server.URL+"/api/me", strings.NewReader(`{"display_name":"Owner","handle":"x"}`), http.StatusBadRequest)
+	expectStatus(t, http.MethodPatch, server.URL+"/api/me", strings.NewReader(`{"display_name":"Owner","avatar_url":"ftp://example.com/a.png"}`), http.StatusBadRequest)
 	expectStatus(t, http.MethodPost, server.URL+"/api/workspaces", strings.NewReader("{"), http.StatusBadRequest)
 	expectStatus(t, http.MethodPost, server.URL+"/api/auth/magic/request", strings.NewReader(`{"email":""}`), http.StatusBadRequest)
 	expectStatus(t, http.MethodPost, server.URL+"/api/auth/magic/consume", strings.NewReader(`{"token":"missing"}`), http.StatusBadRequest)
@@ -453,6 +456,7 @@ func TestDisableDevAuthRequiresSession(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	expectStatus(t, http.MethodGet, server.URL+"/api/me", nil, http.StatusUnauthorized)
+	expectStatus(t, http.MethodPatch, server.URL+"/api/me", strings.NewReader(`{"display_name":"Nope"}`), http.StatusUnauthorized)
 	req, err := http.NewRequest(http.MethodGet, server.URL+"/api/me", nil)
 	if err != nil {
 		t.Fatal(err)
