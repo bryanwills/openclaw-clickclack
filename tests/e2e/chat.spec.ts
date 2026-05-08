@@ -164,7 +164,7 @@ test("sends messages, searches, uploads, opens a thread, and creates a DM", asyn
   await expect(page.getByText("Thread", { exact: true })).toBeVisible();
 
   await page.getByLabel("Reply body").fill("thread _reply_");
-  await page.getByRole("button", { name: "Reply" }).click();
+  await page.locator(".reply-composer").getByRole("button", { name: "Reply" }).click();
   await expect(page.locator(".reply .markdown").filter({ hasText: "thread reply" })).toBeVisible();
 
   await page.reload();
