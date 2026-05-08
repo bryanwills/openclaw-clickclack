@@ -1,0 +1,16 @@
+{
+  "name": "@clickclack/sdk-ts",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsgo -p tsconfig.json && mkdir -p dist/generated && cp src/generated/openapi.d.ts dist/generated/openapi.d.ts",
+    "typecheck": "tsgo --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@typescript/native-preview": "7.0.0-dev.20260507.1"
+  }
+}

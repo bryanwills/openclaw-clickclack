@@ -1,0 +1,105 @@
+package httpapi
+
+import (
+	"errors"
+	"net/http"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/openclaw/clickclack/apps/api/internal/store"
+)
+
+func (s *Server) updateChannel(w http.ResponseWriter, r *http.Request) {
+	user, err := s.currentUser(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	var body struct {
+		Name     string `json:"name"`
+		Kind     string `json:"kind"`
+		Archived *bool  `json:"archived"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	channel, event, err := s.store.UpdateChannel(r.Context(), store.UpdateChannelInput{ChannelID: chi.URLParam(r, "channel_id"), UserID: user.ID, Name: body.Name, Kind: body.Kind, Archived: body.Archived})
+	if err == nil {
+		s.hub.Publish(event)
+	}
+	writeResult(w, map[string]any{"channel": channel, "event": event}, err)
+}
+
+func (s *Server) updateMessage(w http.ResponseWriter, r *http.Request) {
+	user, err := s.currentUser(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	var body struct {
+		Body string `json:"body"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	message, event, err := s.store.UpdateMessage(r.Context(), store.UpdateMessageInput{MessageID: chi.URLParam(r, "message_id"), UserID: user.ID, Body: body.Body})
+	if err == nil {
+		s.hub.Publish(event)
+	}
+	writeResult(w, map[string]any{"message": message, "event": event}, err)
+}
+
+func (s *Server) deleteMessage(w http.ResponseWriter, r *http.Request) {
+	user, err := s.currentUser(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	message, event, err := s.store.DeleteMessage(r.Context(), store.DeleteMessageInput{MessageID: chi.URLParam(r, "message_id"), UserID: user.ID})
+	if err == nil {
+		s.hub.Publish(event)
+	}
+	writeResult(w, map[string]any{"message": message, "event": event}, err)
+}
+
+func (s *Server) publishEphemeral(w http.ResponseWriter, r *http.Request) {
+	user, err := s.currentUser(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	var body struct {
+		WorkspaceID string         `json:"workspace_id"`
+		ChannelID   string         `json:"channel_id"`
+		Type        string         `json:"type"`
+		Payload     map[string]any `json:"payload"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if body.Type != "typing.started" && body.Type != "typing.stopped" && body.Type != "presence.changed" {
+		writeError(w, http.StatusBadRequest, errors.New("unsupported ephemeral event type"))
+		return
+	}
+	if _, err := s.store.GetWorkspace(r.Context(), body.WorkspaceID, user.ID); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	if body.Payload == nil {
+		body.Payload = map[string]any{}
+	}
+	body.Payload["user_id"] = user.ID
+	event := store.Event{
+		ID:          "eph_" + time.Now().UTC().Format("20060102150405.000000000"),
+		Type:        body.Type,
+		WorkspaceID: body.WorkspaceID,
+		ChannelID:   body.ChannelID,
+		CreatedAt:   time.Now().UTC().Format(time.RFC3339Nano),
+		Payload:     body.Payload,
+	}
+	s.hub.Publish(event)
+	writeJSON(w, http.StatusAccepted, map[string]any{"event": event})
+}

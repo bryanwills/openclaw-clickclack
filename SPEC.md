@@ -11,6 +11,18 @@ ClickClack is a self-hostable, API-first chat app for internal testing, small te
 - Ship a TypeScript SDK for bots, integrations, and community tooling.
 - Feel playful and memorable without sacrificing dense, practical chat workflows.
 
+## Locked V1 Decisions
+
+- First implementation target: realtime channel chat plus Slack-style threads, not skeleton-only.
+- Auth starts CLI-manageable: local owner/user bootstrap and invite/token management from `clickclack admin ...`.
+- GitHub OAuth is optional V1, after local auth is usable.
+- Frontend is Svelte 5 + Vite SPA. No SvelteKit server layer.
+- API contract is OpenAPI-first, with `packages/protocol/openapi.yaml` as the source of truth.
+- IDs use ULID-style sortable text IDs with semantic prefixes such as `usr_`, `wsp_`, `chn_`, `msg_`, `evt_`.
+- Message body format starts as Markdown. Clients render a safe Markdown subset.
+- Search, uploads, and DMs are V1 product scope, but come after the realtime channel/thread vertical slice is working.
+- Monorepo layout is the canonical repo shape.
+
 ## Non-Goals For V1
 
 - Voice/video rooms.
@@ -72,14 +84,21 @@ The first useful build should support:
 
 - Create/select workspace.
 - Create/select channel.
-- Send text message.
+- Send Markdown text message.
 - Realtime message delivery over WebSocket.
 - Open message thread in right pane.
 - Send thread reply.
 - Persist everything in SQLite.
 - Reload/reconnect and recover state.
-- Basic dev/local auth.
+- CLI-manageable local auth/bootstrap.
 - Embedded web app served by Go.
+
+After that vertical slice is stable, V1 expands to:
+
+- Direct messages.
+- SQLite FTS5 message search.
+- Local file uploads and message attachments.
+- GitHub OAuth as an optional login path.
 
 ## Architecture
 
@@ -127,7 +146,7 @@ Future hosted runtime:
 - Postgres later: `pgx`.
 - Queries: start handwritten or `sqlc` once schema settles.
 - Migrations: embedded SQL migrations with a tiny internal runner, or `goose` if the runner grows.
-- IDs: UUIDv7 or ULID.
+- IDs: ULID-style sortable text IDs with type prefixes.
 
 ### CLI
 
@@ -140,10 +159,19 @@ clickclack serve
 clickclack migrate
   --db sqlite://./data/clickclack.db
 
-clickclack admin invite
+clickclack admin bootstrap
+  --name "Peter"
+  --email steipete@gmail.com
+
+clickclack admin user create
+  --name "Ari"
+  --email ari@example.com
+
+clickclack admin invite create
+  --workspace wsp_...
 ```
 
-Default `clickclack serve` should be enough for local use.
+Default `clickclack serve` should be enough for local development. Production-like local use should bootstrap an owner through the CLI before exposing the instance.
 
 ## Frontend
 
@@ -188,9 +216,12 @@ GET    /api/workspaces/{workspace_id}
 
 GET    /api/workspaces/{workspace_id}/channels
 POST   /api/workspaces/{workspace_id}/channels
+PATCH  /api/channels/{channel_id}
 
 GET    /api/channels/{channel_id}/messages?before=&after_seq=&limit=
 POST   /api/channels/{channel_id}/messages
+PATCH  /api/messages/{message_id}
+DELETE /api/messages/{message_id}
 
 GET    /api/messages/{message_id}/thread
 POST   /api/messages/{message_id}/thread/replies
@@ -199,7 +230,18 @@ POST   /api/messages/{message_id}/reactions
 DELETE /api/messages/{message_id}/reactions/{emoji}
 
 GET    /api/realtime/events?after_cursor=
+POST   /api/realtime/ephemeral
 GET    /api/realtime/ws
+
+GET    /api/search?workspace_id=&q=&limit=
+
+POST   /api/uploads
+GET    /api/uploads/{upload_id}
+
+GET    /api/dms
+POST   /api/dms
+GET    /api/dms/{conversation_id}/messages?before=&after_seq=&limit=
+POST   /api/dms/{conversation_id}/messages
 ```
 
 ## Realtime
@@ -337,6 +379,31 @@ events
   type
   payload_json
   created_at
+
+uploads
+  id
+  workspace_id
+  owner_id
+  filename
+  content_type
+  byte_size
+  storage_path
+  created_at
+
+message_attachments
+  message_id
+  upload_id
+  created_at
+
+direct_conversations
+  id
+  workspace_id
+  created_at
+
+direct_conversation_members
+  conversation_id
+  user_id
+  created_at
 ```
 
 Thread rules:
@@ -374,13 +441,17 @@ data/
 
 V0:
 
-- Dev/local auth for quick testing.
-- Owner bootstrap on first run.
+- CLI owner bootstrap.
+- CLI user/invite management.
+- Dev/local auth for quick testing, gated to local/dev mode.
+- CLI-generated magic-link tokens.
+- Bearer session tokens and HTTP-only cookie sessions.
 
 V1:
 
-- Magic links.
-- GitHub OAuth.
+- Magic-link token issuance and consume flow, with CLI/local delivery first.
+- GitHub OAuth as optional login, enabled via self-host config.
+- SMTP or provider-backed email delivery later, once deployment mail settings are known.
 - Optional local email/password only if needed for fully offline/self-hosted deployments.
 
 Auth principles:
@@ -401,7 +472,7 @@ packages/sdk-ts
 
 Layering:
 
-- Generated OpenAPI client.
+- Generated OpenAPI types.
 - Friendly wrapper.
 - WebSocket/event subscription helper.
 
@@ -499,26 +570,39 @@ top: channel title, members, search
 - Thread pane.
 - Thread reply counts and last reply state.
 
-### M4: Self-Host Polish
+### M4: Search, Uploads, DMs
+
+- SQLite FTS5 message search.
+- Local upload storage.
+- Message attachments.
+- Direct message conversations.
+
+### M5: Self-Host Polish
 
 - First-run owner setup.
+- CLI-generated magic-link auth.
 - Config file/env.
-- Local upload storage.
 - Docker image.
 - Backups/export.
 
-### M5: SDK
+### M6: SDK And Integrations
 
 - OpenAPI generation.
 - TypeScript SDK.
 - Incoming webhooks.
 - Basic bot example.
 
+## Answered Questions
+
+- Setup starts with CLI owner bootstrap. A setup UI can be added later.
+- Markdown is the initial rich text format.
+- DMs are V1 scope, after channel chat and threads.
+- Search starts with SQLite FTS5.
+- Uploads are V1 scope, after core chat is solid.
+- OpenAPI remains source of truth from the first scaffold.
+- TypeScript compilation uses `tsgo`; lint/format use `oxlint` and `oxfmt`.
+- GitHub OAuth ships in V1 as an optional configured auth provider.
+
 ## Open Questions
 
-- Should `clickclack serve` expose setup UI on first run or require CLI owner bootstrap?
-- How much markdown/rich text in V1?
-- Do we need DMs in V1, or only channels and threads?
-- Should search start with SQLite FTS5?
-- Should uploads exist in V1 or wait until core chat is solid?
-- Which generated OpenAPI toolchain is least annoying for Go plus TypeScript?
+- Whether to add generated Go request/response validation from OpenAPI in V1 or keep the first backend on hand-written handlers.

@@ -1,0 +1,296 @@
+package httpapi
+
+import (
+	"bytes"
+	"context"
+	"io"
+	"io/fs"
+	"mime/multipart"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/openclaw/clickclack/apps/api/internal/realtime"
+	"github.com/openclaw/clickclack/apps/api/internal/store"
+	sqlitestore "github.com/openclaw/clickclack/apps/api/internal/store/sqlite"
+	"github.com/openclaw/clickclack/apps/api/internal/webassets"
+)
+
+func TestHTTPUnauthorizedRoutes(t *testing.T) {
+	t.Parallel()
+	st := newEmptyHTTPStore(t)
+	server := httptest.NewServer(New(st, realtime.NewHub(), Options{UploadDir: filepath.Join(t.TempDir(), "uploads")}).Handler())
+	t.Cleanup(server.Close)
+
+	cases := []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{http.MethodGet, "/api/me", ""},
+		{http.MethodGet, "/api/workspaces", ""},
+		{http.MethodPost, "/api/workspaces", `{"name":"x"}`},
+		{http.MethodGet, "/api/workspaces/wsp_missing", ""},
+		{http.MethodGet, "/api/workspaces/wsp_missing/channels", ""},
+		{http.MethodPost, "/api/workspaces/wsp_missing/channels", `{"name":"x"}`},
+		{http.MethodGet, "/api/channels/chn_missing/messages", ""},
+		{http.MethodPost, "/api/channels/chn_missing/messages", `{"body":"x"}`},
+		{http.MethodGet, "/api/messages/msg_missing/thread", ""},
+		{http.MethodPost, "/api/messages/msg_missing/thread/replies", `{"body":"x"}`},
+		{http.MethodPost, "/api/messages/msg_missing/reactions", `{"emoji":"x"}`},
+		{http.MethodDelete, "/api/messages/msg_missing/reactions/x", ""},
+		{http.MethodGet, "/api/realtime/events?workspace_id=wsp_missing", ""},
+		{http.MethodGet, "/api/realtime/ws?workspace_id=wsp_missing", ""},
+		{http.MethodGet, "/api/search?workspace_id=wsp_missing&q=x", ""},
+		{http.MethodPost, "/api/uploads", ""},
+		{http.MethodGet, "/api/uploads/upl_missing", ""},
+		{http.MethodPost, "/api/messages/msg_missing/attachments", `{"upload_id":"upl_missing"}`},
+		{http.MethodGet, "/api/dms?workspace_id=wsp_missing", ""},
+		{http.MethodPost, "/api/dms", `{"workspace_id":"wsp_missing","member_ids":[]}`},
+		{http.MethodGet, "/api/dms/dm_missing/messages", ""},
+		{http.MethodPost, "/api/dms/dm_missing/messages", `{"body":"x"}`},
+		{http.MethodPost, "/api/hooks/mattermost/chn_missing", `{"text":"x"}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
+			req, err := http.NewRequest(tc.method, server.URL+tc.path, strings.NewReader(tc.body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.body != "" {
+				req.Header.Set("Content-Type", "application/json")
+			}
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusUnauthorized {
+				body, _ := io.ReadAll(resp.Body)
+				t.Fatalf("expected unauthorized, got %s %s", resp.Status, string(body))
+			}
+		})
+	}
+}
+
+func TestHTTPUploadNotConfiguredAndCookieAuth(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	st := newHTTPStore(t)
+	owner, err := st.EnsureBootstrap(ctx, "Owner", "owner@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	link, err := st.CreateMagicLink(ctx, "cookie@example.com", "Cookie User")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, session, err := st.ConsumeMagicLink(ctx, link.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewServer(New(st, realtime.NewHub(), Options{}).Handler())
+	t.Cleanup(server.Close)
+
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/api/me", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.AddCookie(&http.Cookie{Name: "cc_session", Value: session.Token})
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected cookie auth, got %s", resp.Status)
+	}
+	resp.Body.Close()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("workspace_id", "unused"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	req, err = http.NewRequest(http.MethodPost, server.URL+"/api/uploads", &body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("X-ClickClack-User", owner.ID)
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("expected upload config error, got %s", resp.Status)
+	}
+}
+
+func TestHTTPMalformedJSONRoutes(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dataDir := t.TempDir()
+	st, err := sqlitestore.Open("sqlite://" + filepath.Join(dataDir, "clickclack.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := st.EnsureBootstrap(ctx, "Owner", "owner@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaces, err := st.ListWorkspaces(ctx, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	channels, err := st.ListChannels(ctx, workspaces[0].ID, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, _, err := st.CreateMessage(ctx, store.CreateMessageInput{ChannelID: channels[0].ID, AuthorID: owner.ID, Body: "root"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewServer(New(st, realtime.NewHub(), Options{UploadDir: filepath.Join(dataDir, "uploads")}).Handler())
+	t.Cleanup(server.Close)
+	paths := []string{
+		"/api/auth/magic/request",
+		"/api/auth/magic/consume",
+		"/api/workspaces",
+		"/api/workspaces/" + workspaces[0].ID + "/channels",
+		"/api/channels/" + channels[0].ID + "/messages",
+		"/api/messages/" + root.ID + "/thread/replies",
+		"/api/messages/" + root.ID + "/reactions",
+		"/api/messages/" + root.ID + "/attachments",
+		"/api/dms",
+		"/api/hooks/mattermost/" + channels[0].ID,
+	}
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			req, err := http.NewRequest(http.MethodPost, server.URL+path, strings.NewReader("{"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusBadRequest {
+				body, _ := io.ReadAll(resp.Body)
+				t.Fatalf("expected bad request, got %s %s", resp.Status, string(body))
+			}
+		})
+	}
+
+	other, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: "Other", Email: "other@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AddWorkspaceMember(ctx, workspaces[0].ID, other.ID, "member"); err != nil {
+		t.Fatal(err)
+	}
+	dm, err := st.CreateDirectConversation(ctx, store.CreateDirectConversationInput{WorkspaceID: workspaces[0].ID, UserID: owner.ID, MemberIDs: []string{other.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := http.NewRequest(http.MethodPost, server.URL+"/api/dms/"+dm.ID+"/messages", strings.NewReader("{"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected malformed dm message error, got %s", resp.Status)
+	}
+	resp.Body.Close()
+
+	resp, err = http.PostForm(server.URL+"/api/hooks/slash/"+channels[0].ID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected empty slash command error, got %s", resp.Status)
+	}
+}
+
+func TestHTTPServesEmbeddedAsset(t *testing.T) {
+	t.Parallel()
+	st := newEmptyHTTPStore(t)
+	server := httptest.NewServer(New(st, realtime.NewHub(), Options{}).Handler())
+	t.Cleanup(server.Close)
+
+	assets, err := fs.ReadDir(webassets.Dist, "dist/assets")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(assets) == 0 {
+		t.Fatal("expected embedded assets")
+	}
+	resp, err := http.Get(server.URL + "/assets/" + assets[0].Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected asset response, got %s", resp.Status)
+	}
+}
+
+func TestListenAndServeStopsWithContext(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- ListenAndServe(ctx, "127.0.0.1:0", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusNoContent)
+		}))
+	}()
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("server did not stop")
+	}
+}
+
+func newEmptyHTTPStore(t *testing.T) *sqlitestore.Store {
+	t.Helper()
+	st, err := sqlitestore.Open("sqlite://" + filepath.Join(t.TempDir(), "clickclack.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	if err := st.Migrate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	return st
+}
+
+func newHTTPStore(t *testing.T) *sqlitestore.Store {
+	t.Helper()
+	st := newEmptyHTTPStore(t)
+	_, _ = st.CreateUser(context.Background(), store.CreateUserInput{DisplayName: "seed", Email: "seed@example.com"})
+	return st
+}

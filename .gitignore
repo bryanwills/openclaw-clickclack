@@ -1,0 +1,12 @@
+node_modules/
+apps/web/dist/
+packages/sdk-ts/dist/
+data/
+coverage.out
+coverage.txt
+test-results/
+playwright-report/
+*.db
+*.db-shm
+*.db-wal
+.DS_Store

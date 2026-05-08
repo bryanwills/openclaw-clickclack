@@ -1,0 +1,323 @@
+export type { components, paths } from "./generated/openapi";
+
+export type User = {
+  id: string;
+  display_name: string;
+  avatar_url: string;
+  created_at: string;
+};
+
+export type Workspace = {
+  id: string;
+  name: string;
+  slug: string;
+  created_at: string;
+};
+
+export type Channel = {
+  id: string;
+  workspace_id: string;
+  name: string;
+  kind: string;
+  created_at: string;
+  archived_at?: string;
+};
+
+export type Message = {
+  id: string;
+  workspace_id: string;
+  channel_id: string;
+  author_id: string;
+  parent_message_id?: string;
+  thread_root_id: string;
+  channel_seq?: number;
+  thread_seq?: number;
+  body: string;
+  body_format: "markdown";
+  created_at: string;
+  edited_at?: string;
+  deleted_at?: string;
+  author?: User;
+};
+
+export type Upload = {
+  id: string;
+  workspace_id: string;
+  owner_id: string;
+  filename: string;
+  content_type: string;
+  byte_size: number;
+  created_at: string;
+};
+
+export type DirectConversation = {
+  id: string;
+  workspace_id: string;
+  created_at: string;
+  members: User[];
+};
+
+export type RealtimeEvent = {
+  id: string;
+  cursor: string;
+  type: string;
+  workspace_id: string;
+  channel_id?: string;
+  seq?: number;
+  created_at: string;
+  payload: unknown;
+};
+
+export type ClickClackClientOptions = {
+  baseUrl: string;
+  userId?: string;
+  token?: string;
+  fetch?: typeof fetch;
+};
+
+export class ClickClackClient {
+  private readonly baseUrl: string;
+  private readonly userId?: string;
+  private token?: string;
+  private readonly fetcher: typeof fetch;
+
+  constructor(options: ClickClackClientOptions) {
+    this.baseUrl = options.baseUrl.replace(/\/$/, "");
+    this.userId = options.userId;
+    this.token = options.token;
+    this.fetcher = options.fetch ?? fetch;
+  }
+
+  auth = {
+    requestMagicLink: async (input: { email: string; display_name?: string }) => {
+      return this.request("/api/auth/magic/request", {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
+    },
+    consumeMagicLink: async (
+      token: string,
+    ): Promise<{ user: User; session: { token: string } }> => {
+      const data = await this.request<{ user: User; session: { token: string } }>(
+        "/api/auth/magic/consume",
+        {
+          method: "POST",
+          body: JSON.stringify({ token }),
+        },
+      );
+      this.token = data.session.token;
+      return data;
+    },
+    setToken: (token: string) => {
+      this.token = token;
+    },
+    githubStartUrl: (): string => {
+      return `${this.baseUrl}/api/auth/github/start`;
+    },
+  };
+
+  async me(): Promise<User> {
+    const data = await this.request<{ user: User }>("/api/me");
+    return data.user;
+  }
+
+  workspaces = {
+    list: async (): Promise<Workspace[]> => {
+      const data = await this.request<{ workspaces: Workspace[] }>("/api/workspaces");
+      return data.workspaces;
+    },
+    create: async (input: { name: string; slug?: string }): Promise<Workspace> => {
+      const data = await this.request<{ workspace: Workspace }>("/api/workspaces", {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
+      return data.workspace;
+    },
+  };
+
+  channels = {
+    list: async (workspaceId: string): Promise<Channel[]> => {
+      const data = await this.request<{ channels: Channel[] }>(
+        `/api/workspaces/${workspaceId}/channels`,
+      );
+      return data.channels;
+    },
+    create: async (
+      workspaceId: string,
+      input: { name: string; kind?: string },
+    ): Promise<Channel> => {
+      const data = await this.request<{ channel: Channel }>(
+        `/api/workspaces/${workspaceId}/channels`,
+        {
+          method: "POST",
+          body: JSON.stringify(input),
+        },
+      );
+      return data.channel;
+    },
+    update: async (
+      channelId: string,
+      input: { name?: string; kind?: string; archived?: boolean },
+    ): Promise<Channel> => {
+      const data = await this.request<{ channel: Channel }>(`/api/channels/${channelId}`, {
+        method: "PATCH",
+        body: JSON.stringify(input),
+      });
+      return data.channel;
+    },
+    messages: async (channelId: string, afterSeq = 0): Promise<Message[]> => {
+      const data = await this.request<{ messages: Message[] }>(
+        `/api/channels/${channelId}/messages?after_seq=${afterSeq}`,
+      );
+      return data.messages;
+    },
+    sendMessage: async (channelId: string, input: { body: string }): Promise<Message> => {
+      const data = await this.request<{ message: Message }>(`/api/channels/${channelId}/messages`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
+      return data.message;
+    },
+  };
+
+  messages = {
+    update: async (messageId: string, input: { body: string }): Promise<Message> => {
+      const data = await this.request<{ message: Message }>(`/api/messages/${messageId}`, {
+        method: "PATCH",
+        body: JSON.stringify(input),
+      });
+      return data.message;
+    },
+    delete: async (messageId: string): Promise<Message> => {
+      const data = await this.request<{ message: Message }>(`/api/messages/${messageId}`, {
+        method: "DELETE",
+      });
+      return data.message;
+    },
+  };
+
+  threads = {
+    get: async (messageId: string) => {
+      return this.request(`/api/messages/${messageId}/thread`);
+    },
+    reply: async (messageId: string, input: { body: string }): Promise<Message> => {
+      const data = await this.request<{ message: Message }>(
+        `/api/messages/${messageId}/thread/replies`,
+        {
+          method: "POST",
+          body: JSON.stringify(input),
+        },
+      );
+      return data.message;
+    },
+  };
+
+  search = async (workspaceId: string, query: string) => {
+    return this.request(
+      `/api/search?workspace_id=${encodeURIComponent(workspaceId)}&q=${encodeURIComponent(query)}`,
+    );
+  };
+
+  uploads = {
+    create: async (
+      workspaceId: string,
+      file: File | Blob,
+      filename = "upload.bin",
+    ): Promise<Upload> => {
+      const form = new FormData();
+      form.set("workspace_id", workspaceId);
+      form.set("file", file, filename);
+      const data = await this.request<{ upload: Upload }>("/api/uploads", {
+        method: "POST",
+        body: form,
+      });
+      return data.upload;
+    },
+    attach: async (messageId: string, uploadId: string): Promise<void> => {
+      await this.request(`/api/messages/${messageId}/attachments`, {
+        method: "POST",
+        body: JSON.stringify({ upload_id: uploadId }),
+      });
+    },
+  };
+
+  dms = {
+    list: async (workspaceId: string): Promise<DirectConversation[]> => {
+      const data = await this.request<{ conversations: DirectConversation[] }>(
+        `/api/dms?workspace_id=${encodeURIComponent(workspaceId)}`,
+      );
+      return data.conversations;
+    },
+    create: async (workspaceId: string, memberIds: string[]): Promise<DirectConversation> => {
+      const data = await this.request<{ conversation: DirectConversation }>("/api/dms", {
+        method: "POST",
+        body: JSON.stringify({ workspace_id: workspaceId, member_ids: memberIds }),
+      });
+      return data.conversation;
+    },
+    messages: async (conversationId: string, afterSeq = 0): Promise<Message[]> => {
+      const data = await this.request<{ messages: Message[] }>(
+        `/api/dms/${conversationId}/messages?after_seq=${afterSeq}`,
+      );
+      return data.messages;
+    },
+    sendMessage: async (conversationId: string, input: { body: string }): Promise<Message> => {
+      const data = await this.request<{ message: Message }>(`/api/dms/${conversationId}/messages`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
+      return data.message;
+    },
+  };
+
+  events = {
+    publishEphemeral: async (input: {
+      workspaceId: string;
+      channelId?: string;
+      type: "typing.started" | "typing.stopped" | "presence.changed";
+      payload?: Record<string, unknown>;
+    }): Promise<RealtimeEvent> => {
+      const data = await this.request<{ event: RealtimeEvent }>("/api/realtime/ephemeral", {
+        method: "POST",
+        body: JSON.stringify({
+          workspace_id: input.workspaceId,
+          channel_id: input.channelId,
+          type: input.type,
+          payload: input.payload,
+        }),
+      });
+      return data.event;
+    },
+    subscribe: (options: {
+      workspaceId: string;
+      afterCursor?: string;
+      onEvent: (event: RealtimeEvent) => void;
+      onClose?: () => void;
+    }): WebSocket => {
+      const url = new URL(`${this.baseUrl}/api/realtime/ws`);
+      url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+      url.searchParams.set("workspace_id", options.workspaceId);
+      if (options.afterCursor) url.searchParams.set("after_cursor", options.afterCursor);
+      const socket = new WebSocket(url);
+      socket.addEventListener("message", (message) =>
+        options.onEvent(JSON.parse(String(message.data))),
+      );
+      if (options.onClose) socket.addEventListener("close", options.onClose);
+      return socket;
+    },
+  };
+
+  private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+    const headers = new Headers(init.headers);
+    headers.set("Accept", "application/json");
+    if (init.body && !(init.body instanceof FormData))
+      headers.set("Content-Type", "application/json");
+    if (this.token) headers.set("Authorization", `Bearer ${this.token}`);
+    if (this.userId) headers.set("X-ClickClack-User", this.userId);
+    const response = await this.fetcher(`${this.baseUrl}${path}`, { ...init, headers });
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    return response.json() as Promise<T>;
+  }
+}

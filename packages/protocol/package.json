@@ -1,0 +1,15 @@
+{
+  "name": "@clickclack/protocol",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "generate": "openapi-typescript openapi.yaml -o ../sdk-ts/src/generated/openapi.d.ts"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.13.0"
+  },
+  "files": [
+    "openapi.yaml"
+  ]
+}

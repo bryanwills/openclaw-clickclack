@@ -1,0 +1,23 @@
+{
+  "name": "@clickclack/web",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "typecheck": "tsgo --noEmit -p tsconfig.json",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "dependencies": {
+    "@sveltejs/vite-plugin-svelte": "^6.2.1",
+    "dompurify": "^3.3.0",
+    "marked": "^17.0.1",
+    "svelte": "^5.45.6",
+    "vite": "^7.2.4"
+  },
+  "devDependencies": {
+    "@typescript/native-preview": "7.0.0-dev.20260507.1"
+  }
+}

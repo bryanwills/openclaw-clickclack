@@ -1,0 +1,542 @@
+openapi: 3.1.0
+info:
+  title: ClickClack API
+  version: 0.1.0
+  license:
+    name: MIT
+servers:
+  - url: http://localhost:8080
+paths:
+  /api/auth/magic/request:
+    post:
+      operationId: requestMagicLink
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestMagicLinkRequest"
+      responses:
+        "201":
+          description: Created local magic-link token
+  /api/auth/magic/consume:
+    post:
+      operationId: consumeMagicLink
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConsumeMagicLinkRequest"
+      responses:
+        "200":
+          description: Created session
+  /api/auth/github/start:
+    get:
+      operationId: startGitHubOAuth
+      responses:
+        "302":
+          description: Redirect to GitHub OAuth authorization
+        "501":
+          description: GitHub OAuth not configured
+  /api/auth/github/callback:
+    get:
+      operationId: finishGitHubOAuth
+      parameters:
+        - name: code
+          in: query
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+      responses:
+        "302":
+          description: Session created and redirected to app
+        "400":
+          description: Invalid OAuth callback
+  /api/me:
+    get:
+      operationId: getMe
+      responses:
+        "200":
+          description: Current local user
+  /api/workspaces:
+    get:
+      operationId: listWorkspaces
+      responses:
+        "200":
+          description: Workspace list
+    post:
+      operationId: createWorkspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWorkspaceRequest"
+      responses:
+        "201":
+          description: Created workspace
+  /api/workspaces/{workspace_id}:
+    get:
+      operationId: getWorkspace
+      parameters:
+        - $ref: "#/components/parameters/workspace_id"
+      responses:
+        "200":
+          description: Workspace
+  /api/workspaces/{workspace_id}/channels:
+    get:
+      operationId: listChannels
+      parameters:
+        - $ref: "#/components/parameters/workspace_id"
+      responses:
+        "200":
+          description: Channel list
+    post:
+      operationId: createChannel
+      parameters:
+        - $ref: "#/components/parameters/workspace_id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateChannelRequest"
+      responses:
+        "201":
+          description: Created channel
+  /api/channels/{channel_id}:
+    patch:
+      operationId: updateChannel
+      parameters:
+        - $ref: "#/components/parameters/channel_id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateChannelRequest"
+      responses:
+        "200":
+          description: Updated channel
+  /api/channels/{channel_id}/messages:
+    get:
+      operationId: listMessages
+      parameters:
+        - $ref: "#/components/parameters/channel_id"
+        - name: after_seq
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Root channel messages
+    post:
+      operationId: createMessage
+      parameters:
+        - $ref: "#/components/parameters/channel_id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMessageRequest"
+      responses:
+        "201":
+          description: Created message
+  /api/messages/{message_id}:
+    patch:
+      operationId: updateMessage
+      parameters:
+        - $ref: "#/components/parameters/message_id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMessageRequest"
+      responses:
+        "200":
+          description: Updated message
+    delete:
+      operationId: deleteMessage
+      parameters:
+        - $ref: "#/components/parameters/message_id"
+      responses:
+        "200":
+          description: Soft-deleted message
+  /api/messages/{message_id}/thread:
+    get:
+      operationId: getThread
+      parameters:
+        - $ref: "#/components/parameters/message_id"
+      responses:
+        "200":
+          description: Thread root and replies
+  /api/messages/{message_id}/thread/replies:
+    post:
+      operationId: createThreadReply
+      parameters:
+        - $ref: "#/components/parameters/message_id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMessageRequest"
+      responses:
+        "201":
+          description: Created thread reply
+  /api/messages/{message_id}/reactions:
+    post:
+      operationId: addReaction
+      parameters:
+        - $ref: "#/components/parameters/message_id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddReactionRequest"
+      responses:
+        "201":
+          description: Added reaction
+  /api/messages/{message_id}/attachments:
+    post:
+      operationId: attachUpload
+      parameters:
+        - $ref: "#/components/parameters/message_id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AttachUploadRequest"
+      responses:
+        "200":
+          description: Attached upload to message
+  /api/messages/{message_id}/reactions/{emoji}:
+    delete:
+      operationId: removeReaction
+      parameters:
+        - $ref: "#/components/parameters/message_id"
+        - name: emoji
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Removed reaction
+  /api/realtime/events:
+    get:
+      operationId: listEvents
+      parameters:
+        - name: workspace_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: after_cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Durable events after cursor
+  /api/realtime/ephemeral:
+    post:
+      operationId: publishEphemeral
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EphemeralEventRequest"
+      responses:
+        "202":
+          description: Ephemeral event accepted
+  /api/realtime/ws:
+    get:
+      operationId: realtimeWebSocket
+      parameters:
+        - name: workspace_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: after_cursor
+          in: query
+          schema:
+            type: string
+      responses:
+        "101":
+          description: WebSocket upgrade
+  /api/search:
+    get:
+      operationId: search
+      parameters:
+        - name: workspace_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Search results
+  /api/uploads:
+    post:
+      operationId: createUpload
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [workspace_id, file]
+              properties:
+                workspace_id:
+                  type: string
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: Created upload
+  /api/uploads/{upload_id}:
+    get:
+      operationId: getUpload
+      parameters:
+        - name: upload_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Upload bytes
+  /api/dms:
+    get:
+      operationId: listDirectConversations
+      parameters:
+        - name: workspace_id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: DM list
+    post:
+      operationId: createDirectConversation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDirectConversationRequest"
+      responses:
+        "201":
+          description: Created DM
+  /api/dms/{conversation_id}/messages:
+    get:
+      operationId: listDirectMessages
+      parameters:
+        - $ref: "#/components/parameters/conversation_id"
+        - name: after_seq
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Direct messages
+    post:
+      operationId: createDirectMessage
+      parameters:
+        - $ref: "#/components/parameters/conversation_id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMessageRequest"
+      responses:
+        "201":
+          description: Created direct message
+  /api/hooks/mattermost/{channel_id}:
+    post:
+      operationId: mattermostIncomingWebhook
+      parameters:
+        - $ref: "#/components/parameters/channel_id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MattermostWebhookRequest"
+      responses:
+        "201":
+          description: Created message from incoming webhook
+  /api/hooks/slash/{channel_id}:
+    post:
+      operationId: slashCommand
+      parameters:
+        - $ref: "#/components/parameters/channel_id"
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/SlashCommandRequest"
+      responses:
+        "201":
+          description: Slash-command callback response
+components:
+  parameters:
+    workspace_id:
+      name: workspace_id
+      in: path
+      required: true
+      schema:
+        type: string
+    channel_id:
+      name: channel_id
+      in: path
+      required: true
+      schema:
+        type: string
+    message_id:
+      name: message_id
+      in: path
+      required: true
+      schema:
+        type: string
+    conversation_id:
+      name: conversation_id
+      in: path
+      required: true
+      schema:
+        type: string
+  schemas:
+    CreateWorkspaceRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+    RequestMagicLinkRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+    ConsumeMagicLinkRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+    CreateChannelRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+          default: public
+    UpdateChannelRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+        archived:
+          type: boolean
+    CreateMessageRequest:
+      type: object
+      required: [body]
+      properties:
+        body:
+          type: string
+        body_format:
+          type: string
+          enum: [markdown]
+          default: markdown
+    AddReactionRequest:
+      type: object
+      required: [emoji]
+      properties:
+        emoji:
+          type: string
+    AttachUploadRequest:
+      type: object
+      required: [upload_id]
+      properties:
+        upload_id:
+          type: string
+    CreateDirectConversationRequest:
+      type: object
+      required: [workspace_id, member_ids]
+      properties:
+        workspace_id:
+          type: string
+        member_ids:
+          type: array
+          items:
+            type: string
+    EphemeralEventRequest:
+      type: object
+      required: [workspace_id, type]
+      properties:
+        workspace_id:
+          type: string
+        channel_id:
+          type: string
+        type:
+          type: string
+          enum: [typing.started, typing.stopped, presence.changed]
+        payload:
+          type: object
+          additionalProperties: true
+    MattermostWebhookRequest:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+    SlashCommandRequest:
+      type: object
+      properties:
+        command:
+          type: string
+        text:
+          type: string
+        user_name:
+          type: string
