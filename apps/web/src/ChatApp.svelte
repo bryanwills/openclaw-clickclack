@@ -2,24 +2,18 @@
   import { onDestroy, onMount, tick } from "svelte";
   import { APIError, api } from "./lib/api";
   import { gifLibrary } from "./lib/gifs";
-  import {
-    avatarHue,
-    avatarInitial,
-    collectRecentPeople,
-    directConversationForUser,
-    dmAvatarUser,
-    dmTitle,
-    handleLabel,
-    workspaceInitial,
-  } from "./lib/chat/people";
+  import { collectRecentPeople, dmTitle } from "./lib/chat/people";
   import { redirectTypingToComposer } from "./lib/chat/typeToFocus";
   import ChatComposer from "./components/composer/ChatComposer.svelte";
   import ImageViewer from "./components/media/ImageViewer.svelte";
   import MessageList from "./components/messages/MessageList.svelte";
+  import GuildRail from "./components/navigation/GuildRail.svelte";
+  import Sidebar from "./components/navigation/Sidebar.svelte";
   import ProfilePane from "./components/profile/ProfilePane.svelte";
   import ProfileSettingsModal from "./components/profile/ProfileSettingsModal.svelte";
+  import SearchResults from "./components/search/SearchResults.svelte";
   import ThreadPanel from "./components/thread/ThreadPanel.svelte";
-  import { time } from "./lib/format";
+  import Topbar from "./components/topbar/Topbar.svelte";
   import type { Channel, DirectConversation, Message, RealtimeEvent, SearchResult, ThreadState, Upload, User, Workspace } from "./lib/types";
 
   let user: User | null = null;
@@ -170,6 +164,13 @@
     connectRealtime();
   }
 
+  async function selectWorkspace(workspaceID: string) {
+    selectedWorkspaceID = workspaceID;
+    await loadChannels();
+    await loadDirectConversations();
+    connectRealtime();
+  }
+
   async function loadChannels() {
     if (!selectedWorkspaceID) return;
     const data = await api<{ channels: Channel[] }>(`/api/workspaces/${selectedWorkspaceID}/channels`);
@@ -192,6 +193,16 @@
     channels = [...channels, data.channel];
     selectedChannelID = data.channel.id;
     selectedDirectID = "";
+    await loadMessages();
+  }
+
+  async function selectChannel(channelID: string) {
+    selectedChannelID = channelID;
+    selectedDirectID = "";
+    selectedThread = null;
+    selectedProfile = null;
+    activeComposerContext = "message";
+    mobileNavOpen = false;
     await loadMessages();
   }
 
@@ -322,6 +333,25 @@
     searchResults = data.results;
   }
 
+  function resetSearch() {
+    searchQuery = "";
+    searchResults = [];
+  }
+
+  async function openSearchResult(result: SearchResult) {
+    searchResults = [];
+    if (result.message.channel_id) {
+      selectedChannelID = result.message.channel_id;
+      selectedDirectID = "";
+      await loadMessages();
+    }
+    if (result.message.direct_conversation_id) {
+      selectedDirectID = result.message.direct_conversation_id;
+      selectedChannelID = "";
+      await loadMessages();
+    }
+  }
+
   async function uploadFile(event: Event) {
     const input = event.currentTarget as HTMLInputElement;
     const file = input.files?.[0];
@@ -353,6 +383,16 @@
     selectedThread = null;
     selectedProfile = null;
     activeComposerContext = "message";
+    await loadMessages();
+  }
+
+  async function selectDirectConversation(conversationID: string) {
+    selectedDirectID = conversationID;
+    selectedChannelID = "";
+    selectedThread = null;
+    selectedProfile = null;
+    activeComposerContext = "message";
+    mobileNavOpen = false;
     await loadMessages();
   }
 
@@ -495,6 +535,11 @@
     replies = [];
   }
 
+  function toggleSidePanelFromTopbar() {
+    if (sidePanelOpen) closeSidePanel();
+    else status = "pick a message to open its thread";
+  }
+
   function closeModal() {
     selectedImage = null;
     showProfileSettings = false;
@@ -565,339 +610,63 @@
     {#if mobileNavOpen}&times;{:else}<span class="bars"><i></i><i></i><i></i></span>{/if}
   </button>
 
-  <nav class="guild-rail" aria-label="Workspaces">
-    <a class="guild home" title="ClickClack home" href="/">
-      <span>cc</span>
-    </a>
-    <div class="guild-divider" aria-hidden="true"></div>
-    <div class="guild-list">
-      {#each workspaces as workspace (workspace.id)}
-        <div class="guild-wrap" class:active={workspace.id === selectedWorkspaceID}>
-          <button
-            class="guild"
-            title={workspace.name}
-            onclick={async () => {
-              selectedWorkspaceID = workspace.id;
-              await loadChannels();
-              await loadDirectConversations();
-              connectRealtime();
-            }}
-          >
-            <span>{workspaceInitial(workspace.name)}</span>
-          </button>
-        </div>
-      {/each}
-      <button
-        class="guild add"
-        title="Create workspace"
-        aria-label="Create workspace"
-        onclick={() => (showWorkspaceCreate = !showWorkspaceCreate)}
-      >+</button>
-    </div>
-    {#if showWorkspaceCreate}
-      <form
-        class="guild-create"
-        onsubmit={(event) => {
-          event.preventDefault();
-          void createWorkspace();
-        }}
-      >
-        <input bind:value={workspaceName} placeholder="Workspace name" aria-label="Workspace name" />
-      </form>
-    {/if}
-  </nav>
+  <GuildRail
+    {workspaces}
+    {selectedWorkspaceID}
+    {workspaceName}
+    {showWorkspaceCreate}
+    onSelectWorkspace={(workspaceID) => void selectWorkspace(workspaceID)}
+    onToggleWorkspaceCreate={() => (showWorkspaceCreate = !showWorkspaceCreate)}
+    onWorkspaceName={(value) => (workspaceName = value)}
+    onCreateWorkspace={() => void createWorkspace()}
+  />
 
-  <aside class="sidebar" aria-label="Channels and DMs">
-    <header class="workspace-header">
-      <div class="workspace-name">
-        <strong>{selectedWorkspace?.name || "Pick a workspace"}</strong>
-        <span class="presence" class:online={connected}>{connected ? "Connected" : status}</span>
-      </div>
-      <button
-        type="button"
-        class="sidebar-collapse"
-        aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-        title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-        onclick={() => (sidebarCollapsed = !sidebarCollapsed)}
-      >
-        <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
-          <path
-            fill="none"
-            stroke="currentColor"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d={sidebarCollapsed ? "m9 6 6 6-6 6" : "m15 6-6 6 6 6"}
-          />
-        </svg>
-      </button>
-    </header>
-
-    <div class="sidebar-scroll">
-      <section class="nav-section">
-        <div class="section-title">
-          <span class="caret" aria-hidden="true">▾</span>
-          <span class="label">Channels</span>
-        </div>
-        <div class="nav-list">
-          {#each channels as channel (channel.id)}
-            <button
-              class="nav-item channel"
-              class:active={channel.id === selectedChannelID && !selectedDirectID}
-              onclick={async () => {
-                selectedChannelID = channel.id;
-                selectedDirectID = "";
-                selectedThread = null;
-                selectedProfile = null;
-                activeComposerContext = "message";
-                mobileNavOpen = false;
-                await loadMessages();
-              }}
-            >
-              <span class="hash">#</span> <span class="nav-label">{channel.name}</span>
-            </button>
-          {/each}
-          {#if channels.length === 0}
-            <p class="nav-empty">No channels yet</p>
-          {/if}
-        </div>
-        <form
-          class="inline-create"
-          onsubmit={(event) => {
-            event.preventDefault();
-            void createChannel();
-          }}
-        >
-          <input bind:value={channelName} placeholder="add-channel" aria-label="New channel name" />
-          <button type="submit" class="ghost" aria-label="Create channel">＋</button>
-        </form>
-      </section>
-
-      <section class="nav-section">
-        <div class="section-title">
-          <span class="caret" aria-hidden="true">▾</span>
-          <span class="label">Direct messages</span>
-        </div>
-        <div class="nav-list">
-          {#each directConversations as conversation (conversation.id)}
-            {@const dmUser = dmAvatarUser(conversation, user?.id)}
-            <button
-              class="nav-item dm"
-              class:active={conversation.id === selectedDirectID}
-              onclick={async () => {
-                selectedDirectID = conversation.id;
-                selectedChannelID = "";
-                selectedThread = null;
-                selectedProfile = null;
-                activeComposerContext = "message";
-                mobileNavOpen = false;
-                await loadMessages();
-              }}
-            >
-              <span class="dm-avatar" style="--hue: {avatarHue(dmUser?.id || conversation.id)}deg">
-                {#if dmUser?.avatar_url}
-                  <img src={dmUser.avatar_url} alt="" loading="lazy" />
-                {:else}
-                  {avatarInitial(dmUser?.display_name)}
-                {/if}
-              </span>
-              <span class="nav-label">{dmTitle(conversation, user?.id)}</span>
-              <span class="presence-dot" aria-hidden="true"></span>
-            </button>
-          {/each}
-          {#if directConversations.length === 0}
-            <p class="nav-empty">No direct messages yet</p>
-          {/if}
-        </div>
-        <form
-          class="inline-create"
-          onsubmit={(event) => {
-            event.preventDefault();
-            void createDirectConversation();
-          }}
-        >
-          <input bind:value={directMemberID} placeholder="user id" aria-label="DM member user ID" />
-          <button type="submit" class="ghost" aria-label="Start DM">＋</button>
-        </form>
-      </section>
-
-      <section class="nav-section">
-        <div class="section-title">
-          <span class="caret" aria-hidden="true">▾</span>
-          <span class="label">People</span>
-        </div>
-        <div class="nav-list">
-          {#each recentPeople as person (person.id)}
-            {@const conversation = directConversationForUser(directConversations, person.id)}
-            <button
-              class="nav-item dm"
-              class:active={conversation?.id === selectedDirectID || selectedProfile?.id === person.id}
-              onclick={async () => {
-                if (conversation) {
-                  selectedDirectID = conversation.id;
-                  selectedChannelID = "";
-                  selectedThread = null;
-                  selectedProfile = null;
-                  activeComposerContext = "message";
-                  mobileNavOpen = false;
-                  await loadMessages();
-                } else {
-                  openUserProfile(person);
-                }
-              }}
-            >
-              <span class="dm-avatar" style="--hue: {avatarHue(person.id)}deg">
-                {#if person.avatar_url}
-                  <img src={person.avatar_url} alt="" loading="lazy" />
-                {:else}
-                  {avatarInitial(person.display_name)}
-                {/if}
-              </span>
-              <span class="nav-label">{person.display_name}</span>
-              <span class="presence-dot active" aria-hidden="true"></span>
-            </button>
-          {/each}
-          {#if recentPeople.length === 0}
-            <p class="nav-empty">People appear here as you chat</p>
-          {/if}
-        </div>
-      </section>
-    </div>
-
-    {#if user}
-      <button
-        class="user-card"
-        type="button"
-        onclick={openProfileSettings}
-        oncontextmenu={(event) => {
-          event.preventDefault();
-          openProfileSettings();
-        }}
-        aria-label={`Account settings for ${user.display_name} ${handleLabel(user.handle)}`}
-      >
-        <span class="dm-avatar" style="--hue: {avatarHue(user.id)}deg">
-          {#if user.avatar_url}
-            <img src={user.avatar_url} alt="" loading="lazy" />
-          {:else}
-            {avatarInitial(user.display_name)}
-          {/if}
-        </span>
-        <div class="user-meta">
-          <strong>{user.display_name}</strong>
-          <span>{user.handle ? handleLabel(user.handle) : connected ? "Active" : "Reconnecting…"}</span>
-        </div>
-        <span class="presence-dot active" aria-hidden="true"></span>
-      </button>
-    {/if}
-  </aside>
+  <Sidebar
+    workspaceName={selectedWorkspace?.name}
+    {status}
+    {connected}
+    {sidebarCollapsed}
+    {channels}
+    {directConversations}
+    {recentPeople}
+    currentUser={user}
+    {selectedChannelID}
+    {selectedDirectID}
+    {selectedProfile}
+    {channelName}
+    {directMemberID}
+    onToggleCollapse={() => (sidebarCollapsed = !sidebarCollapsed)}
+    onSelectChannel={(channelID) => void selectChannel(channelID)}
+    onChannelName={(value) => (channelName = value)}
+    onCreateChannel={() => void createChannel()}
+    onSelectDirect={(conversationID) => void selectDirectConversation(conversationID)}
+    onDirectMemberID={(value) => (directMemberID = value)}
+    onCreateDirect={() => void createDirectConversation()}
+    onOpenProfile={openUserProfile}
+    onOpenSettings={openProfileSettings}
+  />
 
   <main class="timeline">
-    <header class="topbar">
-      <div class="topbar-title">
-        {#if selectedDirect}
-          <h1 class="with-glyph dm">{`@${dmTitle(selectedDirect, user?.id)}`}</h1>
-        {:else if selectedChannel}
-          <h1 class="with-glyph channel">{`#${selectedChannel.name}`}</h1>
-        {:else}
-          <h1 class="with-glyph">ClickClack</h1>
-        {/if}
-        <span class="topbar-divider" aria-hidden="true"></span>
-        <p class="topbar-meta">{selectedWorkspace?.name || "no workspace"}</p>
-      </div>
-      <form
-        class="search"
-        onsubmit={(event) => {
-          event.preventDefault();
-          void searchMessages();
-        }}
-      >
-        <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-          <circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/>
-          <path d="m20 20-3.5-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-        </svg>
-        <input bind:value={searchQuery} placeholder="Search messages" aria-label="Search messages" />
-        {#if searchQuery}
-          <button
-            type="button"
-            class="search-clear"
-            aria-label="Reset"
-            onclick={() => {
-              searchQuery = "";
-              searchResults = [];
-            }}
-          >×</button>
-        {/if}
-        <button type="submit" class="search-submit">Search</button>
-      </form>
-      <div class="topbar-actions" aria-label="Channel tools">
-        <button
-          type="button"
-          title={selectedThread ? "Close thread" : "Open a message thread"}
-          aria-label={selectedThread ? "Close thread" : "Open a message thread"}
-          class:active={sidePanelOpen}
-          onclick={() => {
-            if (sidePanelOpen) closeSidePanel();
-            else status = "pick a message to open its thread";
-          }}
-        >
-          <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
-            <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 12a8 8 0 0 1-11.6 7.16L3 21l1.84-6.4A8 8 0 1 1 21 12Z"/>
-          </svg>
-        </button>
-        <button type="button" title="Pinned items" aria-label="Pinned items" onclick={() => (status = "no pinned items")}>
-          <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
-            <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m14 4 6 6-4 4v5l-2 2-5-5-4 4-1-1 4-4-5-5 2-2h5l4-4Z"/>
-          </svg>
-        </button>
-      </div>
-    </header>
+    <Topbar
+      {selectedDirect}
+      {selectedChannel}
+      workspaceName={selectedWorkspace?.name}
+      currentUserID={user?.id}
+      {searchQuery}
+      {sidePanelOpen}
+      threadOpen={selectedThread !== null}
+      onSearchQuery={(value) => (searchQuery = value)}
+      onSearch={() => void searchMessages()}
+      onResetSearch={resetSearch}
+      onToggleThread={toggleSidePanelFromTopbar}
+      onPinnedItems={() => (status = "no pinned items")}
+    />
 
-    {#if searchResults.length > 0}
-      <div class="search-results" aria-label="Search results">
-        <div class="search-results-head">
-          <strong>{searchResults.length} {searchResults.length === 1 ? "result" : "results"}</strong>
-          <button
-            type="button"
-            onclick={() => {
-              searchResults = [];
-            }}
-          >Close</button>
-        </div>
-        {#each searchResults as result (result.message.id)}
-          <button
-            class="search-result"
-            onclick={async () => {
-              searchResults = [];
-              if (result.message.channel_id) {
-                selectedChannelID = result.message.channel_id;
-                selectedDirectID = "";
-                await loadMessages();
-              }
-              if (result.message.direct_conversation_id) {
-                selectedDirectID = result.message.direct_conversation_id;
-                selectedChannelID = "";
-                await loadMessages();
-              }
-            }}
-          >
-            <span class="dm-avatar" style="--hue: {avatarHue(result.message.author?.id || result.message.author_id || 'x')}deg">
-              {#if result.message.author?.avatar_url}
-                <img src={result.message.author.avatar_url} alt="" loading="lazy" />
-              {:else}
-                {avatarInitial(result.message.author?.display_name)}
-              {/if}
-            </span>
-            <div class="search-result-body">
-              <div>
-                <strong>{result.message.author?.display_name || "Local User"}</strong>
-                <time>{time(result.message.created_at)}</time>
-              </div>
-              <span>{result.message.body}</span>
-            </div>
-          </button>
-        {/each}
-      </div>
-    {/if}
+    <SearchResults
+      results={searchResults}
+      onClose={() => (searchResults = [])}
+      onOpenResult={(result) => void openSearchResult(result)}
+    />
 
     <MessageList
       {messages}
