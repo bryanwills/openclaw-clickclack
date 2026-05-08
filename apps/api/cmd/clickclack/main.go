@@ -40,7 +40,7 @@ func run() error {
 	case "export":
 		return exportData(os.Args[2:])
 	default:
-		return fmt.Errorf("unknown command %q", cmd)
+		return client(os.Args[1:])
 	}
 }
 
