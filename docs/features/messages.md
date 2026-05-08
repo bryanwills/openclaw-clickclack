@@ -1,0 +1,72 @@
+---
+read_when:
+  - changing message create/edit/delete or pagination
+  - touching the `messages` table or `channel_seq`
+  - changing the Markdown body format
+---
+
+# Messages
+
+Channel messages are the core durable object. Every message is Markdown text
+with optional attachments. Threads are modelled as messages with a non-null
+`parent_message_id` (see [threads.md](threads.md)).
+
+## Endpoints
+
+```http
+GET    /api/channels/{channel_id}/messages?after_seq=&limit=
+POST   /api/channels/{channel_id}/messages
+PATCH  /api/messages/{message_id}
+DELETE /api/messages/{message_id}
+```
+
+- `GET` returns root messages only (`parent_message_id IS NULL`) for the
+  channel, ordered by `channel_seq` ascending. `after_seq` is exclusive;
+  `limit` is clamped to `1..200` (default 100).
+- `POST` accepts `{body}`. Empty bodies are rejected.
+- `PATCH` accepts `{body}` and only the original author can edit. Sets
+  `edited_at`.
+- `DELETE` is a soft delete — sets `deleted_at`, keeps the row and the
+  `channel_seq` slot so cursors stay valid.
+
+All four emit durable events: `message.created`, `message.updated`,
+`message.deleted`.
+
+## Sequence numbers
+
+Every channel message gets a per-channel `channel_seq` assigned inside the
+insert transaction:
+
+```sql
+SELECT COALESCE(MAX(channel_seq), 0) + 1
+FROM messages
+WHERE channel_id = ? AND parent_message_id IS NULL
+```
+
+That sequence is what clients page by, what the realtime event carries, and
+what reconnect uses to backfill. It is monotonic per channel but not globally.
+Thread replies use a separate `thread_seq` instead.
+
+## Body format
+
+Bodies are stored as Markdown text. The `body_format` column is hard-coded to
+`markdown` in V1 and exists so a future format (rich text, plain) can be added
+without a migration. The frontend renders a sanitized subset.
+
+## Attachments
+
+Messages carry zero or more attachments via the `message_attachments` join
+table. Hydration happens in `hydrateAttachments` and surfaces as the
+`attachments` field on `Message`. See [uploads.md](uploads.md) for the
+two-step upload-then-attach flow.
+
+## Author hydration
+
+`ListMessages` and `GetThread` join `users` and populate `Message.author` so
+clients don't need a second round-trip. Avatar URLs are passed through as-is.
+
+## What is intentionally missing
+
+- Hard delete. The soft-delete row stays for cursor stability.
+- Pinning, bookmarks, read receipts.
+- Per-message permissions beyond "the author can edit/delete".

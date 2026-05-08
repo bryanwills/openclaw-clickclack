@@ -4,6 +4,7 @@
   "license": "MIT",
   "scripts": {
     "build": "pnpm --filter @clickclack/web build && pnpm --filter @clickclack/sdk-ts build && rm -rf apps/api/internal/webassets/dist && cp -R apps/web/dist apps/api/internal/webassets/dist",
+    "docs:site": "node scripts/build-docs-site.mjs",
     "check": "go test ./... && pnpm -r typecheck && pnpm lint",
     "coverage": "go test ./apps/api/internal/... -coverprofile=coverage.out && go tool cover -func=coverage.out | tee coverage.txt && awk '/^total:/ { sub(/%/, \"\", $3); if ($3 + 0 < 90) exit 1 }' coverage.txt",
     "dev:web": "pnpm --filter @clickclack/web dev",

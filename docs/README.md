@@ -1,0 +1,82 @@
+---
+title: ClickClack
+description: A self-hostable chat server with Slack-style threads, an OpenAPI-first surface, embedded SQLite, and a TypeScript SDK. One Go binary. Bring your own pincers.
+permalink: /
+---
+
+# Tiny chat. Big claws.
+
+ClickClack is a self-hostable chat server that fits in a single Go binary. SQLite by
+default, an embedded Svelte SPA, Slack-style threads, durable realtime over a
+WebSocket pipe, and a framework-neutral TypeScript SDK so the bots feel at home.
+
+It's built for small teams, internal tools, communities, and anyone who would
+rather host their own.
+
+## Why ClickClack
+
+- **One binary, zero ceremony.** Drop it on a box, point at a data directory,
+  reverse-proxy if you want TLS. SQLite ships inside.
+- **Realtime that recovers.** WebSocket is a pipe; SQLite is the truth. Reconnect
+  with a cursor and you're back, even after a long offline.
+- **Threads that don't nest.** One level deep, on purpose. Discussion stays
+  scannable.
+- **Bots that aren't second-class.** Same auth surface as humans, a typed
+  TypeScript SDK, and a Mattermost-shaped webhook for drop-in scripts.
+- **Crustacean, lightly.** Lobster mascot, claw reactions, `:molting:` status.
+  Normal controls stay normal.
+
+## Five-minute test drive
+
+```sh
+pnpm install
+pnpm build
+go run ./apps/api/cmd/clickclack serve
+# open http://localhost:8080
+```
+
+The dev fallback boots a default user, workspace, and channel so the SPA loads
+into something useful on first hit. Disable it for anything that isn't a local
+clone.
+
+[Get the full quickstart →](quickstart.html)
+
+## What's in the box
+
+| Feature | Doc |
+| --- | --- |
+| Channels, messages, edits, soft-delete | [Messages](features/messages.md) |
+| Slack-style threads, one level deep | [Threads](features/threads.md) |
+| Reactions on every message | [Reactions](features/reactions.md) |
+| Realtime over WebSocket with cursor recovery | [Realtime](features/realtime.md) |
+| SQLite FTS5 full-text search | [Search](features/search.md) |
+| Local file uploads + message attachments | [Uploads](features/uploads.md) |
+| Workspace-scoped direct messages | [Direct messages](features/dms.md) |
+| Magic-link auth, GitHub OAuth, dev fallback | [Auth](features/auth.md) |
+| Mattermost-shaped webhooks and slash commands | [Integrations](features/integrations.md) |
+| TypeScript SDK + bot example | [SDK](sdk.md) |
+
+## Operate it
+
+- [CLI](cli.md) — `serve · migrate · admin · backup · export`.
+- [Configuration](configuration.md) — flag/env/file precedence.
+- [Deployment](deployment.md) — single binary, Docker, data layout, OAuth.
+- [Development](development.md) — pnpm scripts, monorepo layout, gates.
+
+## Look under the hood
+
+- [Architecture](architecture/overview.md) — durable vs realtime, where each
+  layer lives.
+- [API overview](api/overview.md) — REST/WebSocket surface, auth headers.
+- [Data model](data-model.md) — tables, IDs, thread invariants.
+- [SPEC.md](https://github.com/openclaw/clickclack/blob/main/SPEC.md) — locked
+  V1 decisions, milestones, open questions.
+
+## Status
+
+V1 is in flight. The vertical slice — workspaces, channels, Markdown messages,
+threads, realtime, reactions, search, uploads, DMs, magic-link auth, GitHub
+OAuth, Docker — is implemented. Multi-node websocket fanout, Postgres, federation,
+voice/video, and full Mattermost compatibility are intentionally out of scope.
+
+Made with ✦ and a little brine. The lobster is on duty.

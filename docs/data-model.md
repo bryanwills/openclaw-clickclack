@@ -1,0 +1,89 @@
+---
+read_when:
+  - changing tables, IDs, or invariants
+  - planning Postgres support
+---
+
+# Data Model
+
+Schema lives in `apps/api/internal/store/sqlite/migrations/`. The mirror in
+`infra/migrations/sqlite` is for tooling and stays in sync. `infra/migrations/postgres`
+is reserved for the future Postgres backend.
+
+## IDs
+
+Sortable ULID-style text IDs with semantic prefixes:
+
+| Prefix  | Object |
+|---------|--------|
+| `usr_`  | user |
+| `idn_`  | identity (provider link) |
+| `wsp_`  | workspace |
+| `chn_`  | channel |
+| `msg_`  | message |
+| `evt_`  | durable event |
+| `eph_`  | ephemeral event (in-memory only) |
+| `upl_`  | upload |
+| `inv_`  | invite |
+| `mlk_`  | magic link |
+| `ses_`  | session |
+
+## Tables (V1)
+
+```text
+users                              identities
+workspaces                         workspace_members
+channels
+messages                           thread_state
+reactions
+events                             auth_magic_links / sessions
+uploads                            message_attachments
+direct_conversations               direct_conversation_members
+invites
+messages_fts                       (FTS5 virtual)
+```
+
+Full SQL is in
+[`apps/api/internal/store/sqlite/migrations/0001_initial.sql`](../apps/api/internal/store/sqlite/migrations/0001_initial.sql)
+and
+[`0002_auth.sql`](../apps/api/internal/store/sqlite/migrations/0002_auth.sql).
+
+## Thread invariants
+
+For any row in `messages`:
+
+- Root: `parent_message_id IS NULL`, `thread_root_id = id`,
+  `channel_seq IS NOT NULL`, `thread_seq IS NULL`.
+- Reply: `parent_message_id = root.id`, `thread_root_id = root.id`,
+  `channel_seq IS NULL`, `thread_seq IS NOT NULL`.
+- DM: `direct_conversation_id IS NOT NULL`, `channel_id IS NULL`,
+  `parent_message_id IS NULL`, `channel_seq` used as the per-conversation
+  sequence.
+
+Nested replies are forbidden — the API rejects replies to non-root messages.
+
+## Sequences
+
+- `channels.channel_seq` (computed): `MAX(channel_seq) + 1` per channel for
+  root messages, assigned in the insert tx.
+- `thread_root.thread_seq` (computed): `MAX(thread_seq) + 1` per root message
+  for replies.
+- `events.cursor`: globally sortable opaque cursor used by realtime
+  recovery.
+
+## Soft-deletes
+
+Messages set `deleted_at` instead of removing the row. This keeps
+`channel_seq`/`thread_seq` stable for cursors and reconnect.
+
+## FTS
+
+`messages_fts` mirrors `messages.body` with `porter unicode61`. Three triggers
+keep it in sync on insert/delete/update-of-body. See
+[features/search.md](features/search.md).
+
+## Postgres path
+
+Postgres tables will live in `infra/migrations/postgres/`. The store
+interface in `apps/api/internal/store/types.go` is the abstraction line —
+handlers should keep calling store methods, not embed dialect-specific SQL.

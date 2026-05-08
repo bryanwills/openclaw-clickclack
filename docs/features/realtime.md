@@ -1,0 +1,95 @@
+---
+read_when:
+  - changing the websocket endpoint, event hub, or cursor logic
+  - adding a new durable event type
+  - touching reconnect/recovery semantics
+---
+
+# Realtime
+
+The realtime layer is a notification pipe over WebSocket plus a recovery
+endpoint over HTTP. SQLite is the source of truth; the websocket is allowed
+to drop events.
+
+## Components
+
+- `apps/api/internal/realtime/hub.go` — in-process pub/sub keyed by
+  `workspace_id`. Buffered per-subscriber channel (32 events) with non-blocking
+  send.
+- `events` table — append-only log scoped to a workspace, with a sortable
+  `cursor`.
+- `httpapi.websocket` — accepts a connection, validates membership, drains
+  backlog from `events`, then forwards live publishes from the hub.
+
+## Endpoints
+
+```http
+GET  /api/realtime/ws?workspace_id=&after_cursor=
+GET  /api/realtime/events?workspace_id=&after_cursor=&limit=
+POST /api/realtime/ephemeral
+```
+
+- `GET /ws` upgrades to a WebSocket. On connect it backfills up to 500
+  durable events newer than `after_cursor`, then streams live publishes until
+  the client disconnects. Membership is rechecked on every connect.
+- `GET /events` is the same backfill in pull form. Use it after a long offline
+  period instead of relying on the connect-time backfill.
+- `POST /ephemeral` publishes a non-durable typing/presence event into the
+  hub.
+
+## Event shape
+
+```jsonc
+{
+  "id":           "evt_...",
+  "cursor":       "...",                 // sortable; opaque to clients
+  "type":         "message.created",
+  "workspace_id": "wsp_...",
+  "channel_id":   "chn_...",             // omitted for workspace-wide events
+  "seq":          124,                   // present when tied to channel_seq
+  "created_at":   "2026-05-08T12:00:00Z",
+  "payload":      { /* type-specific */ }
+}
+```
+
+## Durable events
+
+Inserted in the same transaction as the underlying mutation:
+
+- `channel.created`, `channel.updated`
+- `message.created`, `message.updated`, `message.deleted`
+- `thread.reply_created`, `thread.state_updated`
+- `reaction.added`, `reaction.removed`
+
+Direct messages also publish into the workspace event stream so DM lists stay
+fresh.
+
+## Ephemeral events
+
+Not persisted, not delivered after disconnect, may be dropped under load:
+
+- `typing.started`
+- `typing.stopped`
+- `presence.changed`
+
+`POST /api/realtime/ephemeral` validates workspace membership and tags the
+payload with `user_id` from the caller before publishing.
+
+## Recovery rules
+
+- The client sends `after_cursor` on every connect/reconnect.
+- Server returns up to 500 durable events with a higher `cursor`. Anything
+  older than that window must be re-fetched through the HTTP API
+  (`/messages`, `/thread`, `/channels`) — clients should treat the gap as
+  "resync_required".
+- The websocket itself does not drop durable events — they are always in
+  `events`. A buffered hub channel that overflows simply stops receiving live
+  events; the next reconnect with `after_cursor` will fill in.
+
+## Implementation pointers
+
+- `coder/websocket` is the WebSocket library. The current accept call passes
+  `InsecureSkipVerify` for the local dev case; production should put the
+  server behind a reverse proxy that validates `Origin`, or harden the accept
+  options.
+- The hub is single-process. Multi-node fanout is out of V1 scope.

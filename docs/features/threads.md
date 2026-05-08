@@ -1,0 +1,65 @@
+---
+read_when:
+  - changing thread reply behavior or thread state
+  - adding nested replies (don't, V1 forbids it)
+---
+
+# Threads
+
+Threads are Slack-style: every root message can have one flat list of replies.
+Nested replies are explicitly rejected.
+
+## Endpoints
+
+```http
+GET  /api/messages/{message_id}/thread                    # root + replies + state
+POST /api/messages/{message_id}/thread/replies            # body
+```
+
+`GET` returns:
+
+```jsonc
+{
+  "root":          Message,
+  "replies":       Message[],          // ordered by thread_seq asc, capped 1..200 (default 100)
+  "thread_state":  ThreadState         // counters/last reply summary
+}
+```
+
+`POST` accepts `{body}`. Empty replies are rejected; replying to a non-root
+message returns an error (`nested thread replies are not supported`).
+
+## Schema invariants
+
+For any message:
+
+- Root: `parent_message_id IS NULL`, `thread_root_id = id`, `channel_seq IS NOT NULL`,
+  `thread_seq IS NULL`.
+- Reply: `parent_message_id = root.id`, `thread_root_id = root.id`,
+  `channel_seq IS NULL`, `thread_seq` assigned per-root.
+
+## Thread state
+
+`thread_state` is one row per root message, kept in sync inside the same
+transaction as the reply insert. It carries:
+
+- `reply_count`
+- `last_reply_at`
+- `last_reply_author_ids_json` — small ring of recent author IDs for "X, Y and 3
+  others replied" UI.
+
+A reply emits two durable events: `thread.reply_created` and
+`thread.state_updated`. Both go into the workspace event stream and reach
+subscribers via the realtime hub.
+
+## Ordering and pagination
+
+Replies are ordered by `thread_seq` ascending. `limit` is clamped to `1..200`
+(default 100). There's no `after_seq` parameter on the thread endpoint yet —
+clients fetch the head of the thread and use realtime events for new replies.
+
+## What is intentionally missing
+
+- Multi-level threads.
+- Promoting a reply to a channel post.
+- Following/unfollowing threads.

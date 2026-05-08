@@ -1,0 +1,76 @@
+---
+title: Install
+description: Ways to get a ClickClack binary running — from-source, Docker, or build-and-copy.
+---
+
+# Install
+
+ClickClack ships as a single Go binary that embeds the Svelte SPA and the SQL
+migrations. There are three sensible ways to install it.
+
+## From source
+
+You'll need a recent Go and pnpm 11 (auto-managed via `corepack`).
+
+```sh
+git clone https://github.com/openclaw/clickclack.git
+cd clickclack
+pnpm install
+pnpm build
+go run ./apps/api/cmd/clickclack serve
+# open http://localhost:8080
+```
+
+`pnpm build` builds the SPA + the TypeScript SDK and copies
+`apps/web/dist` into `apps/api/internal/webassets/dist` so `go:embed` can
+bake it into the binary. The Go build will fail without that step.
+
+To produce a standalone binary instead of `go run`:
+
+```sh
+pnpm build
+go build -o clickclack ./apps/api/cmd/clickclack
+./clickclack serve --addr :8080 --data /var/lib/clickclack
+```
+
+## Docker
+
+The repo ships a multi-stage `Dockerfile`:
+
+```sh
+docker build -t clickclack .
+docker run --rm -p 8080:8080 -v clickclack-data:/app/data clickclack
+```
+
+The image runs as a non-root `clickclack` user, exposes `8080`, and mounts
+`/app/data` as a volume. Override the entrypoint command to run admin
+tasks:
+
+```sh
+docker run --rm -v clickclack-data:/app/data clickclack \
+  admin bootstrap --name "Peter" --email steipete@gmail.com
+```
+
+## Pre-built binaries
+
+There are no published release artifacts yet — V1 ships from source. Once
+binaries land, this page will list the canonical install line.
+
+## What you get
+
+Either path produces the same `clickclack` binary with the SPA, migrations,
+and assets baked in. Data lives in whatever directory you pass to `--data`
+(default `./data`).
+
+```
+<data>/
+  clickclack.db
+  uploads/
+  logs/
+```
+
+## Next
+
+- [Quickstart](quickstart.html) — the first 5 minutes.
+- [Configuration](configuration.html) — flags, env vars, config file.
+- [Deployment](deployment.html) — reverse proxy, OAuth, backups.
