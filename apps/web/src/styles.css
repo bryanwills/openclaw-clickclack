@@ -1493,40 +1493,66 @@ button.ghost {
   position: relative;
 }
 
+.composer-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.composer:focus-within .composer-card {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line-strong));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
 .composer-toolbar {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   width: 100%;
-  padding: 6px 8px;
-  border: 1px solid var(--line);
-  border-bottom: 0;
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  background: color-mix(in srgb, var(--panel-2) 72%, var(--panel));
+  padding: 4px 6px;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: color-mix(in srgb, var(--panel-2) 35%, transparent);
   box-shadow: none;
 }
 
 .composer-toolbar button {
-  min-width: 30px;
-  height: 28px;
+  min-width: 28px;
+  height: 26px;
   display: grid;
   place-items: center;
   border: 0;
-  border-radius: 7px;
+  border-radius: 6px;
   background: transparent;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 800;
+  color: var(--text);
+  opacity: 0.78;
+  font-size: 11.5px;
+  font-weight: 700;
   transition:
     background 100ms ease,
     color 100ms ease,
+    opacity 100ms ease,
     transform 80ms ease;
 }
 
-.composer-toolbar button:hover,
+.composer-toolbar button:hover {
+  background: var(--hover-strong);
+  color: var(--text-strong);
+  opacity: 1;
+}
+
 .composer-toolbar button.active {
   background: var(--accent-soft);
   color: var(--accent);
+  opacity: 1;
 }
 
 .composer-toolbar button:active {
@@ -1636,22 +1662,19 @@ button.ghost {
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: end;
   gap: 6px;
-  padding: 10px 8px 8px 10px;
-  background: var(--panel);
-  border: 1px solid var(--line-strong);
-  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
-  transition:
-    border-color 120ms ease,
-    box-shadow 120ms ease;
+  padding: 6px 8px 6px 10px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
 }
 
 .composer:focus-within .composer-toolbar,
 .composer-row:focus-within {
-  border-color: var(--accent);
+  border-color: transparent;
 }
 
 .composer-row:focus-within {
-  box-shadow: var(--accent-glow);
+  box-shadow: none;
 }
 
 .composer-icon {
@@ -1930,7 +1953,7 @@ button.ghost {
 }
 
 .reply-composer .composer-row {
-  border-radius: var(--radius-lg);
+  border-radius: 0;
 }
 
 .thread-empty {
@@ -2591,14 +2614,16 @@ button.ghost {
 
 .quote-preview {
   display: flex;
-  align-items: stretch;
+  align-items: center;
   gap: 0.5rem;
-  padding: 0.4rem 0.5rem;
-  margin-bottom: 0.4rem;
-  background: rgba(99, 102, 241, 0.08);
-  border-left: 3px solid var(--accent, #6366f1);
-  border-radius: 6px;
-  font-size: 0.85rem;
+  padding: 6px 10px 6px 12px;
+  margin: 0;
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  font-size: 12.5px;
+  color: var(--muted);
 }
 
 .quote-preview .quote-bar {
@@ -2607,36 +2632,51 @@ button.ghost {
 
 .quote-preview-body {
   display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
+  align-items: baseline;
+  gap: 0.4rem;
   flex: 1;
   min-width: 0;
+  overflow: hidden;
 }
 
 .quote-preview-label {
-  font-size: 0.75rem;
-  color: var(--text-muted, #6b7280);
+  font-size: 12px;
+  color: color-mix(in srgb, var(--accent) 85%, var(--text));
+  white-space: nowrap;
+}
+
+.quote-preview-label strong {
+  color: var(--text-strong);
+  font-weight: 600;
 }
 
 .quote-preview-snippet {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--text, inherit);
+  color: var(--muted);
+  font-size: 12px;
+  flex: 1;
+  min-width: 0;
 }
 
 .quote-preview-clear {
   background: transparent;
   border: 0;
-  color: var(--text-muted, #6b7280);
-  font-size: 1.1rem;
+  color: var(--muted);
+  font-size: 16px;
   line-height: 1;
   cursor: pointer;
-  padding: 0 0.25rem;
+  padding: 2px 6px;
+  border-radius: 6px;
+  transition:
+    background 100ms ease,
+    color 100ms ease;
 }
 
 .quote-preview-clear:hover {
-  color: var(--text, inherit);
+  color: var(--text-strong);
+  background: var(--hover-strong);
 }
 
 .reply-quote-btn {

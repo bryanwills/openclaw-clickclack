@@ -788,7 +788,15 @@
 
 <svelte:window
   onkeydown={(event) => {
-    if (event.key === "Escape") closeModal();
+    if (event.key === "Escape") {
+      if (isModalOpen()) {
+        closeModal();
+      } else if (replyTarget) {
+        event.preventDefault();
+        clearReplyTarget();
+        return;
+      }
+    }
     redirectTypingToComposer(event);
   }}
 />
@@ -1314,34 +1322,6 @@
         void sendMessage();
       }}
     >
-      <div class="composer-toolbar" aria-label="Message tools">
-        <button type="button" title="Bold" aria-label="Bold" onclick={() => applyMarkdownWrap("**")}>
-          <strong>B</strong>
-        </button>
-        <button type="button" title="Italic" aria-label="Italic" onclick={() => applyMarkdownWrap("_")}>
-          <em>I</em>
-        </button>
-        <button type="button" title="Code" aria-label="Code" onclick={() => applyMarkdownWrap("`")}>
-          <span>{`<>`}</span>
-        </button>
-        <button type="button" title="Code block" aria-label="Code block" onclick={() => applyMarkdownWrap("```", "\n```")}>
-          <span>{`{}`}</span>
-        </button>
-        <button type="button" title="Link" aria-label="Link" onclick={() => appendToComposer("[label](https://)")}>
-          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-            <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M10 13a5 5 0 0 0 7.07 0l2.12-2.12a5 5 0 0 0-7.07-7.07L11 4.93M14 11a5 5 0 0 0-7.07 0L4.81 13.12a5 5 0 0 0 7.07 7.07L13 19.07"/>
-          </svg>
-        </button>
-        <button
-          type="button"
-          title="GIF picker"
-          aria-label="GIF picker"
-          class:active={showGifPicker}
-          onclick={() => (showGifPicker = !showGifPicker)}
-        >
-          GIF
-        </button>
-      </div>
       {#if showGifPicker}
         <section class="gif-picker" aria-label="GIF picker panel">
           <div class="gif-picker-head">
@@ -1358,50 +1338,80 @@
           </div>
         </section>
       {/if}
-      {#if pendingUpload}
-        <div class="composer-attachment">
-          <span class="attachment-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="14" height="14"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M21.44 11.05 12.5 20a6 6 0 0 1-8.49-8.49l8.49-8.48a4 4 0 0 1 5.66 5.66l-8.49 8.49a2 2 0 0 1-2.83-2.83L13.41 7.5"/></svg>
-          </span>
-          {#if isImageUpload(pendingUpload)}
-            <img class="pending-image" src={uploadURL(pendingUpload)} alt={pendingUpload.filename} />
-          {/if}
-          <span class="attachment-name">{pendingUpload.filename} · {formatBytes(pendingUpload.byte_size)}</span>
-          <button type="button" class="attachment-remove" aria-label="Remove attachment" onclick={() => (pendingUpload = null)}>×</button>
+      <div class="composer-card">
+        {#if pendingUpload}
+          <div class="composer-attachment">
+            <span class="attachment-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="14" height="14"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M21.44 11.05 12.5 20a6 6 0 0 1-8.49-8.49l8.49-8.48a4 4 0 0 1 5.66 5.66l-8.49 8.49a2 2 0 0 1-2.83-2.83L13.41 7.5"/></svg>
+            </span>
+            {#if isImageUpload(pendingUpload)}
+              <img class="pending-image" src={uploadURL(pendingUpload)} alt={pendingUpload.filename} />
+            {/if}
+            <span class="attachment-name">{pendingUpload.filename} · {formatBytes(pendingUpload.byte_size)}</span>
+            <button type="button" class="attachment-remove" aria-label="Remove attachment" onclick={() => (pendingUpload = null)}>×</button>
+          </div>
+        {/if}
+        {#if replyTarget && replyContext === (selectedDirectID ? "dm" : "channel")}
+          <div class="quote-preview" aria-label="Replying to message">
+            <span class="quote-bar" aria-hidden="true"></span>
+            <span class="quote-preview-body">
+              <span class="quote-preview-label">Replying to <strong>{replyTarget.author?.display_name || "Local User"}</strong></span>
+              <span class="quote-preview-snippet">{quoteSnippet(replyTarget.body)}</span>
+            </span>
+            <button type="button" class="quote-preview-clear" aria-label="Cancel reply" onclick={clearReplyTarget}>×</button>
+          </div>
+        {/if}
+        <div class="composer-row">
+          <label class="composer-icon" title="Upload file">
+            <input type="file" aria-label="Upload file" onchange={uploadFile} />
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M21.44 11.05 12.5 20a6 6 0 0 1-8.49-8.49l8.49-8.48a4 4 0 0 1 5.66 5.66l-8.49 8.49a2 2 0 0 1-2.83-2.83L13.41 7.5"/>
+            </svg>
+          </label>
+          <textarea
+            bind:this={messageInput}
+            bind:value={messageBody}
+            use:autoGrow={messageBody}
+            rows="1"
+            placeholder={selectedDirect ? `Message ${dmTitle(selectedDirect)}` : selectedChannel ? `Message #${selectedChannel.name}` : "Pick a channel to start"}
+            aria-label="Message body"
+            onfocus={() => (activeComposerContext = "message")}
+            onkeydown={handleComposerKey}
+          ></textarea>
+          <button type="submit" class="send" aria-label="Send" disabled={!messageBody.trim()}>
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+              <path fill="currentColor" d="M3 3.5 21 12 3 20.5l3.6-7.5L15 12 6.6 11l-3.6-7.5Z"/>
+            </svg>
+          </button>
         </div>
-      {/if}
-      {#if replyTarget && replyContext === (selectedDirectID ? "dm" : "channel")}
-        <div class="quote-preview" aria-label="Replying to message">
-          <span class="quote-bar" aria-hidden="true"></span>
-          <span class="quote-preview-body">
-            <span class="quote-preview-label">Replying to <strong>{replyTarget.author?.display_name || "Local User"}</strong></span>
-            <span class="quote-preview-snippet">{quoteSnippet(replyTarget.body)}</span>
-          </span>
-          <button type="button" class="quote-preview-clear" aria-label="Cancel reply" onclick={clearReplyTarget}>×</button>
+        <div class="composer-toolbar" aria-label="Message tools">
+          <button type="button" title="Bold" aria-label="Bold" onclick={() => applyMarkdownWrap("**")}>
+            <strong>B</strong>
+          </button>
+          <button type="button" title="Italic" aria-label="Italic" onclick={() => applyMarkdownWrap("_")}>
+            <em>I</em>
+          </button>
+          <button type="button" title="Code" aria-label="Code" onclick={() => applyMarkdownWrap("`")}>
+            <span>{`<>`}</span>
+          </button>
+          <button type="button" title="Code block" aria-label="Code block" onclick={() => applyMarkdownWrap("```", "\n```")}>
+            <span>{`{}`}</span>
+          </button>
+          <button type="button" title="Link" aria-label="Link" onclick={() => appendToComposer("[label](https://)")}>
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+              <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M10 13a5 5 0 0 0 7.07 0l2.12-2.12a5 5 0 0 0-7.07-7.07L11 4.93M14 11a5 5 0 0 0-7.07 0L4.81 13.12a5 5 0 0 0 7.07 7.07L13 19.07"/>
+            </svg>
+          </button>
+          <button
+            type="button"
+            title="GIF picker"
+            aria-label="GIF picker"
+            class:active={showGifPicker}
+            onclick={() => (showGifPicker = !showGifPicker)}
+          >
+            GIF
+          </button>
         </div>
-      {/if}
-      <div class="composer-row">
-        <label class="composer-icon" title="Upload file">
-          <input type="file" aria-label="Upload file" onchange={uploadFile} />
-          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-            <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M21.44 11.05 12.5 20a6 6 0 0 1-8.49-8.49l8.49-8.48a4 4 0 0 1 5.66 5.66l-8.49 8.49a2 2 0 0 1-2.83-2.83L13.41 7.5"/>
-          </svg>
-        </label>
-        <textarea
-          bind:this={messageInput}
-          bind:value={messageBody}
-          use:autoGrow={messageBody}
-          rows="1"
-          placeholder={selectedDirect ? `Message ${dmTitle(selectedDirect)}` : selectedChannel ? `Message #${selectedChannel.name}` : "Pick a channel to start"}
-          aria-label="Message body"
-          onfocus={() => (activeComposerContext = "message")}
-          onkeydown={handleComposerKey}
-        ></textarea>
-        <button type="submit" class="send" aria-label="Send" disabled={!messageBody.trim()}>
-          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-            <path fill="currentColor" d="M3 3.5 21 12 3 20.5l3.6-7.5L15 12 6.6 11l-3.6-7.5Z"/>
-          </svg>
-        </button>
       </div>
       <div class="composer-hint">
         <span><kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for newline · Markdown supported</span>
@@ -1576,32 +1586,34 @@
           void sendReply();
         }}
       >
-        {#if replyTarget && replyContext === "thread"}
-          <div class="quote-preview" aria-label="Replying to message">
-            <span class="quote-bar" aria-hidden="true"></span>
-            <span class="quote-preview-body">
-              <span class="quote-preview-label">Replying to <strong>{replyTarget.author?.display_name || "Local User"}</strong></span>
-              <span class="quote-preview-snippet">{quoteSnippet(replyTarget.body)}</span>
-            </span>
-            <button type="button" class="quote-preview-clear" aria-label="Cancel reply" onclick={clearReplyTarget}>×</button>
+        <div class="composer-card">
+          {#if replyTarget && replyContext === "thread"}
+            <div class="quote-preview" aria-label="Replying to message">
+              <span class="quote-bar" aria-hidden="true"></span>
+              <span class="quote-preview-body">
+                <span class="quote-preview-label">Replying to <strong>{replyTarget.author?.display_name || "Local User"}</strong></span>
+                <span class="quote-preview-snippet">{quoteSnippet(replyTarget.body)}</span>
+              </span>
+              <button type="button" class="quote-preview-clear" aria-label="Cancel reply" onclick={clearReplyTarget}>×</button>
+            </div>
+          {/if}
+          <div class="composer-row">
+            <textarea
+              bind:this={replyInput}
+              bind:value={replyBody}
+              use:autoGrow={replyBody}
+              rows="1"
+              placeholder="Reply in thread"
+              aria-label="Reply body"
+              onfocus={() => (activeComposerContext = "thread")}
+              onkeydown={handleReplyKey}
+            ></textarea>
+            <button type="submit" class="send" aria-label="Reply" disabled={!replyBody.trim()}>
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                <path fill="currentColor" d="M3 3.5 21 12 3 20.5l3.6-7.5L15 12 6.6 11l-3.6-7.5Z"/>
+              </svg>
+            </button>
           </div>
-        {/if}
-        <div class="composer-row">
-          <textarea
-            bind:this={replyInput}
-            bind:value={replyBody}
-            use:autoGrow={replyBody}
-            rows="1"
-            placeholder="Reply in thread"
-            aria-label="Reply body"
-            onfocus={() => (activeComposerContext = "thread")}
-            onkeydown={handleReplyKey}
-          ></textarea>
-          <button type="submit" class="send" aria-label="Reply" disabled={!replyBody.trim()}>
-            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-              <path fill="currentColor" d="M3 3.5 21 12 3 20.5l3.6-7.5L15 12 6.6 11l-3.6-7.5Z"/>
-            </svg>
-          </button>
         </div>
       </form>
     {:else if selectedProfile}

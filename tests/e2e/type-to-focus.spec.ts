@@ -156,4 +156,28 @@ test.describe("type-to-focus composer", () => {
     const afterClearHeight = await composer.evaluate((el) => el.getBoundingClientRect().height);
     expect(Math.abs(afterClearHeight - initialHeight)).toBeLessThan(2);
   });
+
+  test("global Escape clears the reply target even when composer is not focused", async ({
+    page,
+  }) => {
+    const composer = page.getByLabel("Message body");
+    await composer.fill("the original draft");
+    await page.getByRole("button", { name: "Send" }).click();
+
+    const originalRow = page.locator(".message-row", {
+      has: page.locator(".markdown").filter({ hasText: "the original draft" }),
+    });
+    await originalRow.hover();
+    await originalRow.getByRole("button", { name: "Reply" }).click();
+
+    const chip = page.getByLabel("Replying to message");
+    await expect(chip).toBeVisible();
+
+    // Move focus away from the composer.
+    await page.locator("body").click({ position: { x: 5, y: 5 } });
+    await expect(composer).not.toBeFocused();
+
+    await page.keyboard.press("Escape");
+    await expect(chip).toHaveCount(0);
+  });
 });
