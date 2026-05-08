@@ -37,12 +37,17 @@ export type Message = {
   edited_at?: string;
   deleted_at?: string;
   author?: User;
+  attachments?: Upload[];
 };
 
 export type Upload = {
   id: string;
+  workspace_id: string;
+  owner_id: string;
   filename: string;
+  content_type: string;
   byte_size: number;
+  created_at: string;
 };
 
 export type SearchResult = {

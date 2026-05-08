@@ -108,6 +108,23 @@ test("sends messages, searches, uploads, opens a thread, and creates a DM", asyn
   await page.getByRole("button", { name: "Send" }).click();
   await expect(page.locator(".markdown").filter({ hasText: "message with upload" })).toBeVisible();
 
+  await page.getByLabel("Upload file").setInputFiles({
+    name: "pixel.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
+      "base64",
+    ),
+  });
+  await page.getByLabel("Message body").fill("inline image upload");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.getByRole("img", { name: "pixel.png" })).toBeVisible();
+
+  await page.getByRole("button", { name: "GIF picker" }).click();
+  await page.getByLabel("Search GIFs").fill("ship");
+  await page.getByRole("button", { name: /Ship it/ }).click();
+  await expect(page.getByLabel("Message body")).toHaveValue(/!\[Ship it\]/);
+
   await page.getByRole("button", { name: "Open thread" }).first().click();
   await expect(page.getByText("Thread", { exact: true })).toBeVisible();
 

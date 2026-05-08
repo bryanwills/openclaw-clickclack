@@ -5,6 +5,9 @@
 - Refined the chat app shell with denser Slack/Discord-style navigation,
   grouped message timelines, clearer empty states, responsive sidebars, and a
   send button that no longer appears active for attachment-only drafts.
+- Added richer Slack-like chat affordances: animated sidebar/thread panels,
+  inline image attachment cards, Markdown composer controls, and a GIF picker
+  that inserts animated GIF Markdown.
 - Added a public product website at the web root while keeping the chat app at
   `/app` locally and on `app.clickclack.chat` when served from that host.
 - Added an agent-friendly ClickClack client mode to the Go binary with

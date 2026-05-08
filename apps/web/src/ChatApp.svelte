@@ -23,6 +23,8 @@
   let searchQuery = "";
   let searchResults: SearchResult[] = [];
   let pendingUpload: Upload | null = null;
+  let showGifPicker = false;
+  let gifQuery = "";
   let status = "loading";
   let authRequired = false;
   let socket: WebSocket | null = null;
@@ -30,12 +32,50 @@
   let reconnectTimer: number | undefined;
   let messageList: HTMLElement | null = null;
   let showWorkspaceCreate = false;
+  let sidebarCollapsed = false;
   let mobileNavOpen = false;
 
   $: selectedWorkspace = workspaces.find((workspace) => workspace.id === selectedWorkspaceID);
   $: selectedChannel = channels.find((channel) => channel.id === selectedChannelID);
   $: selectedDirect = directConversations.find((conversation) => conversation.id === selectedDirectID);
   $: groupedMessages = groupMessages(messages);
+  $: filteredGifs = gifLibrary.filter((gif) => {
+    const query = gifQuery.trim().toLowerCase();
+    return !query || gif.title.toLowerCase().includes(query) || gif.tags.some((tag) => tag.includes(query));
+  });
+
+  const gifLibrary = [
+    {
+      title: "Ship it",
+      url: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExYjJ1bm1meHE4N2x3bnN0djJkMWtjNGc5bXYzZDFiOHBsbG16M3F0ZSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/l0HlHFRbmaZtBRhXG/giphy.gif",
+      tags: ["ship", "launch", "done"],
+    },
+    {
+      title: "Approved",
+      url: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExazBpbzJ6ODZ3bXQ3OHBvNGJidWZoajc0cHV6YnVub3MzZ3c1a2Z2dSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/111ebonMs90YLu/giphy.gif",
+      tags: ["yes", "approved", "nice"],
+    },
+    {
+      title: "Deploy dance",
+      url: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExY3NkaTVmZW9ydWNnZnl0ZWQ5aHQyeGNrd2k3NG4wZWNqYzNmd3k1ZCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/GeimqsH0TLDt4tScGw/giphy.gif",
+      tags: ["deploy", "dance", "celebrate"],
+    },
+    {
+      title: "Looking",
+      url: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExYWZ3emE0dm5mN2h0bGVsY2w0OXBodGd2cGJlNDRiZXo1YWNtdWRmZyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/26n6WywJyh39n1pBu/giphy.gif",
+      tags: ["search", "looking", "debug"],
+    },
+    {
+      title: "Typing faster",
+      url: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExOWFlbnJnbnIzbHYxcDIzdXZ3NGF3N2FocHNvMmR5enU3bHpycHBlZSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/13HgwGsXF0aiGY/giphy.gif",
+      tags: ["typing", "code", "work"],
+    },
+    {
+      title: "Tiny victory",
+      url: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExdjJ2b2tqNmF4dG16NjE0eXhuc3h5bTlvamgwNTR0Zmd6ZjhtM2JuaSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/3o7abKhOpu0NwenH3O/giphy.gif",
+      tags: ["win", "victory", "celebrate"],
+    },
+  ];
 
   onMount(() => {
     void boot();
@@ -362,6 +402,41 @@
       void sendReply();
     }
   }
+
+  function uploadURL(upload: Upload) {
+    return `/api/uploads/${encodeURIComponent(upload.id)}`;
+  }
+
+  function isImageUpload(upload: Upload) {
+    return upload.content_type.startsWith("image/");
+  }
+
+  function formatBytes(size: number) {
+    if (size < 1024) return `${size} B`;
+    if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  function appendToComposer(snippet: string) {
+    const prefix = messageBody && !messageBody.endsWith("\n") ? "\n" : "";
+    messageBody = `${messageBody}${prefix}${snippet}`;
+  }
+
+  function applyMarkdownWrap(before: string, after = before) {
+    const placeholder = before === "```" ? "\ncode\n" : "text";
+    appendToComposer(`${before}${placeholder}${after}`);
+  }
+
+  function pickGif(url: string, title: string) {
+    appendToComposer(`![${title}](${url})`);
+    showGifPicker = false;
+    gifQuery = "";
+  }
+
+  function threadSummary(message: Message) {
+    if (selectedThread?.id === message.id) return "Open";
+    return "Reply";
+  }
 </script>
 
 <svelte:head>
@@ -392,7 +467,12 @@
     </section>
   </main>
 {:else}
-<div class="shell" class:nav-open={mobileNavOpen}>
+<div
+  class="shell"
+  class:nav-open={mobileNavOpen}
+  class:sidebar-collapsed={sidebarCollapsed}
+  class:thread-open={selectedThread !== null}
+>
   <button
     class="mobile-nav-toggle"
     type="button"
@@ -450,6 +530,24 @@
         <strong>{selectedWorkspace?.name || "Pick a workspace"}</strong>
         <span class="presence" class:online={connected}>{connected ? "Connected" : status}</span>
       </div>
+      <button
+        type="button"
+        class="sidebar-collapse"
+        aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+        title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+        onclick={() => (sidebarCollapsed = !sidebarCollapsed)}
+      >
+        <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+          <path
+            fill="none"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d={sidebarCollapsed ? "m9 6 6 6-6 6" : "m15 6-6 6 6 6"}
+          />
+        </svg>
+      </button>
     </header>
 
     <div class="sidebar-scroll">
@@ -586,6 +684,27 @@
         <span class="dot" aria-hidden="true"></span>
         <span>{connected ? "Live" : status}</span>
       </div>
+      <div class="topbar-actions" aria-label="Channel tools">
+        <button
+          type="button"
+          title={selectedThread ? "Close thread" : "Open a message thread"}
+          aria-label={selectedThread ? "Close thread" : "Open a message thread"}
+          class:active={selectedThread !== null}
+          onclick={() => {
+            if (selectedThread) selectedThread = null;
+            else status = "pick a message to open its thread";
+          }}
+        >
+          <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+            <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 12a8 8 0 0 1-11.6 7.16L3 21l1.84-6.4A8 8 0 1 1 21 12Z"/>
+          </svg>
+        </button>
+        <button type="button" title="Pinned items" aria-label="Pinned items" onclick={() => (status = "no pinned items")}>
+          <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+            <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m14 4 6 6-4 4v5l-2 2-5-5-4 4-1-1 4-4-5-5 2-2h5l4-4Z"/>
+          </svg>
+        </button>
+      </div>
     </header>
 
     {#if searchResults.length > 0}
@@ -665,9 +784,29 @@
                 <span class="row-stamp" aria-hidden="true">{index === 0 ? "" : time(message.created_at)}</span>
                 <div class="message-content">
                   <div class="markdown">{@html markdown(message.body)}</div>
+                  {#if message.attachments?.length}
+                    <div class="attachment-grid" aria-label="Attachments">
+                      {#each message.attachments as attachment (attachment.id)}
+                        {#if isImageUpload(attachment)}
+                          <a class="image-attachment" href={uploadURL(attachment)} target="_blank" rel="noreferrer">
+                            <img src={uploadURL(attachment)} alt={attachment.filename} loading="lazy" />
+                            <span>{attachment.filename}</span>
+                          </a>
+                        {:else}
+                          <a class="file-attachment" href={uploadURL(attachment)} target="_blank" rel="noreferrer">
+                            <span class="file-icon" aria-hidden="true">↧</span>
+                            <span>
+                              <strong>{attachment.filename}</strong>
+                              <small>{formatBytes(attachment.byte_size)}</small>
+                            </span>
+                          </a>
+                        {/if}
+                      {/each}
+                    </div>
+                  {/if}
                 </div>
                 <div class="message-actions" aria-label="Message actions">
-                  <button type="button" aria-label="Open thread" title="Open thread" onclick={() => openThread(message)}>
+                  <button type="button" aria-label="Open thread" title={threadSummary(message)} onclick={() => openThread(message)}>
                     <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
                       <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 12a8 8 0 0 1-11.6 7.16L3 21l1.84-6.4A8 8 0 1 1 21 12Z"/>
                     </svg>
@@ -687,12 +826,59 @@
         void sendMessage();
       }}
     >
+      <div class="composer-toolbar" aria-label="Message tools">
+        <button type="button" title="Bold" aria-label="Bold" onclick={() => applyMarkdownWrap("**")}>
+          <strong>B</strong>
+        </button>
+        <button type="button" title="Italic" aria-label="Italic" onclick={() => applyMarkdownWrap("_")}>
+          <em>I</em>
+        </button>
+        <button type="button" title="Code" aria-label="Code" onclick={() => applyMarkdownWrap("`")}>
+          <span>{`<>`}</span>
+        </button>
+        <button type="button" title="Code block" aria-label="Code block" onclick={() => applyMarkdownWrap("```", "\n```")}>
+          <span>{`{}`}</span>
+        </button>
+        <button type="button" title="Link" aria-label="Link" onclick={() => appendToComposer("[label](https://)")}>
+          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+            <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M10 13a5 5 0 0 0 7.07 0l2.12-2.12a5 5 0 0 0-7.07-7.07L11 4.93M14 11a5 5 0 0 0-7.07 0L4.81 13.12a5 5 0 0 0 7.07 7.07L13 19.07"/>
+          </svg>
+        </button>
+        <button
+          type="button"
+          title="GIF picker"
+          aria-label="GIF picker"
+          class:active={showGifPicker}
+          onclick={() => (showGifPicker = !showGifPicker)}
+        >
+          GIF
+        </button>
+      </div>
+      {#if showGifPicker}
+        <section class="gif-picker" aria-label="GIF picker panel">
+          <div class="gif-picker-head">
+            <strong>GIFs</strong>
+            <input bind:value={gifQuery} placeholder="Search reactions" aria-label="Search GIFs" />
+          </div>
+          <div class="gif-grid">
+            {#each filteredGifs as gif (gif.url)}
+              <button type="button" onclick={() => pickGif(gif.url, gif.title)}>
+                <img src={gif.url} alt={gif.title} loading="lazy" />
+                <span>{gif.title}</span>
+              </button>
+            {/each}
+          </div>
+        </section>
+      {/if}
       {#if pendingUpload}
         <div class="composer-attachment">
           <span class="attachment-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" width="14" height="14"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M21.44 11.05 12.5 20a6 6 0 0 1-8.49-8.49l8.49-8.48a4 4 0 0 1 5.66 5.66l-8.49 8.49a2 2 0 0 1-2.83-2.83L13.41 7.5"/></svg>
           </span>
-          <span class="attachment-name">{pendingUpload.filename}</span>
+          {#if isImageUpload(pendingUpload)}
+            <img class="pending-image" src={uploadURL(pendingUpload)} alt={pendingUpload.filename} />
+          {/if}
+          <span class="attachment-name">{pendingUpload.filename} · {formatBytes(pendingUpload.byte_size)}</span>
           <button type="button" class="attachment-remove" aria-label="Remove attachment" onclick={() => (pendingUpload = null)}>×</button>
         </div>
       {/if}
@@ -749,6 +935,26 @@
               <time>{time(selectedThread.created_at)}</time>
             </header>
             <div class="markdown">{@html markdown(selectedThread.body)}</div>
+            {#if selectedThread.attachments?.length}
+              <div class="attachment-grid compact" aria-label="Attachments">
+                {#each selectedThread.attachments as attachment (attachment.id)}
+                  {#if isImageUpload(attachment)}
+                    <a class="image-attachment" href={uploadURL(attachment)} target="_blank" rel="noreferrer">
+                      <img src={uploadURL(attachment)} alt={attachment.filename} loading="lazy" />
+                      <span>{attachment.filename}</span>
+                    </a>
+                  {:else}
+                    <a class="file-attachment" href={uploadURL(attachment)} target="_blank" rel="noreferrer">
+                      <span class="file-icon" aria-hidden="true">↧</span>
+                      <span>
+                        <strong>{attachment.filename}</strong>
+                        <small>{formatBytes(attachment.byte_size)}</small>
+                      </span>
+                    </a>
+                  {/if}
+                {/each}
+              </div>
+            {/if}
           </div>
         </article>
         <div class="thread-divider"><span>{replies.length} {replies.length === 1 ? "reply" : "replies"}</span></div>
@@ -764,6 +970,26 @@
                   <time>{time(reply.created_at)}</time>
                 </header>
                 <div class="markdown">{@html markdown(reply.body)}</div>
+                {#if reply.attachments?.length}
+                  <div class="attachment-grid compact" aria-label="Attachments">
+                    {#each reply.attachments as attachment (attachment.id)}
+                      {#if isImageUpload(attachment)}
+                        <a class="image-attachment" href={uploadURL(attachment)} target="_blank" rel="noreferrer">
+                          <img src={uploadURL(attachment)} alt={attachment.filename} loading="lazy" />
+                          <span>{attachment.filename}</span>
+                        </a>
+                      {:else}
+                        <a class="file-attachment" href={uploadURL(attachment)} target="_blank" rel="noreferrer">
+                          <span class="file-icon" aria-hidden="true">↧</span>
+                          <span>
+                            <strong>{attachment.filename}</strong>
+                            <small>{formatBytes(attachment.byte_size)}</small>
+                          </span>
+                        </a>
+                      {/if}
+                    {/each}
+                  </div>
+                {/if}
               </div>
             </article>
           {/each}
