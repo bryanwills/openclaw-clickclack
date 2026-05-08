@@ -39,6 +39,10 @@ export type Message = {
   deleted_at?: string;
   author?: User;
   attachments?: Upload[];
+  quoted_message_id?: string;
+  quoted_body_snapshot?: string;
+  quoted_author_id?: string;
+  quoted_author?: User;
 };
 
 export type Upload = {

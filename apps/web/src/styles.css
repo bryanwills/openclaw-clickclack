@@ -1,6 +1,14 @@
 :root {
   color-scheme: light dark;
-  font-family: "Inter", "SF Pro Text", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family:
+    "Inter",
+    "SF Pro Text",
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
   font-feature-settings: "ss01", "cv11";
   --rail: #e9e1d7;
   --bg: #f7f3ed;
@@ -71,8 +79,7 @@ body {
 body {
   background:
     radial-gradient(1000px 600px at 0% 0%, rgba(111, 126, 255, 0.08), transparent 60%),
-    radial-gradient(900px 700px at 100% 100%, rgba(255, 130, 200, 0.05), transparent 60%),
-    var(--bg);
+    radial-gradient(900px 700px at 100% 100%, rgba(255, 130, 200, 0.05), transparent 60%), var(--bg);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -121,8 +128,7 @@ textarea {
   padding: 32px;
   background:
     radial-gradient(700px 500px at 30% 20%, rgba(111, 126, 255, 0.18), transparent 60%),
-    radial-gradient(700px 500px at 80% 90%, rgba(255, 110, 196, 0.12), transparent 60%),
-    var(--bg);
+    radial-gradient(700px 500px at 80% 90%, rgba(255, 110, 196, 0.12), transparent 60%), var(--bg);
 }
 
 .auth-panel {
@@ -131,7 +137,8 @@ textarea {
   width: min(100%, 440px);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-xl);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0)) var(--panel);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0))
+    var(--panel);
   box-shadow: var(--shadow);
   padding: 36px;
 }
@@ -198,7 +205,10 @@ textarea {
   font-weight: 600;
   text-decoration: none;
   border: 1px solid #2b2f36;
-  transition: transform 80ms ease, background 120ms ease, border-color 120ms ease;
+  transition:
+    transform 80ms ease,
+    background 120ms ease,
+    border-color 120ms ease;
 }
 
 .github-login:hover {
@@ -264,7 +274,10 @@ textarea {
   font-size: 14px;
   letter-spacing: -0.02em;
   position: relative;
-  transition: border-radius 140ms ease, background 120ms ease, transform 120ms ease;
+  transition:
+    border-radius 140ms ease,
+    background 120ms ease,
+    transform 120ms ease;
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
 }
 
@@ -328,7 +341,9 @@ textarea {
   border-radius: 0 4px 4px 0;
   background: var(--text-strong);
   opacity: 0;
-  transition: opacity 140ms ease, transform 140ms ease;
+  transition:
+    opacity 140ms ease,
+    transform 140ms ease;
 }
 
 .guild-wrap:hover::before {
@@ -378,7 +393,9 @@ textarea {
   border-right: 1px solid var(--line);
   overflow: hidden;
   min-width: 0;
-  transition: opacity 160ms ease, transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition:
+    opacity 160ms ease,
+    transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .sidebar-collapsed .sidebar {
@@ -405,7 +422,10 @@ textarea {
   border-radius: 8px;
   background: var(--panel-2);
   color: var(--muted);
-  transition: color 120ms ease, background 120ms ease, transform 120ms ease;
+  transition:
+    color 120ms ease,
+    background 120ms ease,
+    transform 120ms ease;
 }
 
 .sidebar-collapse:hover {
@@ -531,7 +551,9 @@ textarea {
   text-align: left;
   padding: 6px 10px;
   min-height: 30px;
-  transition: background 100ms ease, color 100ms ease;
+  transition:
+    background 100ms ease,
+    color 100ms ease;
 }
 
 .nav-item:hover {
@@ -578,7 +600,11 @@ textarea {
   font-size: 11px;
   font-weight: 700;
   color: white;
-  background: linear-gradient(135deg, hsl(var(--hue, 220deg) 70% 55%), hsl(calc(var(--hue, 220deg) + 40deg) 70% 45%));
+  background: linear-gradient(
+    135deg,
+    hsl(var(--hue, 220deg) 70% 55%),
+    hsl(calc(var(--hue, 220deg) + 40deg) 70% 45%)
+  );
   flex-shrink: 0;
   overflow: hidden;
 }
@@ -778,7 +804,9 @@ button.ghost {
   background: var(--panel);
   border: 1px solid var(--line);
   color: var(--muted);
-  transition: border-color 120ms ease, background 120ms ease;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease;
 }
 
 .search:focus-within {
@@ -849,7 +877,11 @@ button.ghost {
   border-radius: 9px;
   background: var(--panel);
   color: var(--muted);
-  transition: background 120ms ease, color 120ms ease, border-color 120ms ease, transform 80ms ease;
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease,
+    transform 80ms ease;
 }
 
 .topbar-actions button:hover,
@@ -864,8 +896,13 @@ button.ghost {
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 
 /* ---------- SEARCH RESULTS ---------- */
@@ -1054,7 +1091,11 @@ button.ghost {
   color: white;
   font-weight: 700;
   font-size: 14px;
-  background: linear-gradient(135deg, hsl(var(--hue, 220deg) 70% 55%), hsl(calc(var(--hue, 220deg) + 40deg) 70% 45%));
+  background: linear-gradient(
+    135deg,
+    hsl(var(--hue, 220deg) 70% 55%),
+    hsl(calc(var(--hue, 220deg) + 40deg) 70% 45%)
+  );
   box-shadow: 0 6px 20px -10px rgba(0, 0, 0, 0.6);
   margin-top: 2px;
   overflow: hidden;
@@ -1066,7 +1107,10 @@ button.ghost {
   border: 0;
   padding: 0;
   cursor: pointer;
-  transition: transform 100ms ease, box-shadow 120ms ease, filter 120ms ease;
+  transition:
+    transform 100ms ease,
+    box-shadow 120ms ease,
+    filter 120ms ease;
 }
 
 .avatar-button:hover {
@@ -1198,7 +1242,9 @@ button.ghost {
   border-radius: 8px;
   padding: 2px;
   box-shadow: var(--shadow);
-  transition: opacity 100ms ease, transform 100ms ease;
+  transition:
+    opacity 100ms ease,
+    transform 100ms ease;
 }
 
 .message-row:hover .message-actions,
@@ -1336,7 +1382,10 @@ button.ghost {
   box-shadow: 0 12px 30px -24px rgba(0, 0, 0, 0.8);
   text-align: left;
   cursor: zoom-in;
-  transition: border-color 120ms ease, transform 120ms ease, box-shadow 120ms ease;
+  transition:
+    border-color 120ms ease,
+    transform 120ms ease,
+    box-shadow 120ms ease;
 }
 
 .image-attachment:hover {
@@ -1468,7 +1517,10 @@ button.ghost {
   color: var(--muted);
   font-size: 11px;
   font-weight: 800;
-  transition: background 100ms ease, color 100ms ease, transform 80ms ease;
+  transition:
+    background 100ms ease,
+    color 100ms ease,
+    transform 80ms ease;
 }
 
 .composer-toolbar button:hover,
@@ -1533,12 +1585,16 @@ button.ghost {
   color: white;
   padding: 0;
   box-shadow: inset 0 0 0 1px var(--line);
-  transition: transform 120ms ease, box-shadow 120ms ease;
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease;
 }
 
 .gif-grid button:hover {
   transform: translateY(-2px);
-  box-shadow: inset 0 0 0 2px var(--accent), 0 14px 30px -22px rgba(0, 0, 0, 0.8);
+  box-shadow:
+    inset 0 0 0 2px var(--accent),
+    0 14px 30px -22px rgba(0, 0, 0, 0.8);
 }
 
 .gif-grid img {
@@ -1584,7 +1640,9 @@ button.ghost {
   background: var(--panel);
   border: 1px solid var(--line-strong);
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
-  transition: border-color 120ms ease, box-shadow 120ms ease;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
 }
 
 .composer:focus-within .composer-toolbar,
@@ -1604,7 +1662,9 @@ button.ghost {
   color: var(--muted);
   border-radius: 10px;
   cursor: pointer;
-  transition: background 120ms ease, color 120ms ease;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
 }
 
 .composer-icon:hover {
@@ -1649,7 +1709,10 @@ button.ghost {
   border-radius: 10px;
   background: var(--accent);
   color: white;
-  transition: background 120ms ease, transform 80ms ease, opacity 120ms ease;
+  transition:
+    background 120ms ease,
+    transform 80ms ease,
+    opacity 120ms ease;
 }
 
 .send:hover:not(:disabled) {
@@ -1749,7 +1812,9 @@ button.ghost {
   opacity: 0;
   transform: translateX(28px);
   pointer-events: none;
-  transition: opacity 180ms ease, transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition:
+    opacity 180ms ease,
+    transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .thread.open {
@@ -1912,7 +1977,11 @@ button.ghost {
   padding: 28px 20px;
   background:
     linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.24)),
-    linear-gradient(135deg, hsl(var(--hue, 220deg) 76% 58%), hsl(calc(var(--hue, 220deg) + 54deg) 74% 38%));
+    linear-gradient(
+      135deg,
+      hsl(var(--hue, 220deg) 76% 58%),
+      hsl(calc(var(--hue, 220deg) + 54deg) 74% 38%)
+    );
   border-bottom: 1px solid var(--line);
 }
 
@@ -2441,4 +2510,219 @@ button.ghost {
   .topbar-divider {
     display: none;
   }
+}
+
+/* Inline quote-reply */
+.message-row.highlight,
+.thread-root.highlight,
+.reply.highlight {
+  animation: quote-flash 1.4s ease-out;
+}
+
+@keyframes quote-flash {
+  0% {
+    background: rgba(99, 102, 241, 0.22);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+.quote-block {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 0.5rem;
+  margin: 0 0 0.35rem;
+  padding: 0.25rem 0.5rem 0.25rem 0;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  max-width: 100%;
+  font: inherit;
+}
+
+.quote-block:hover:not(:disabled) {
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.quote-block:disabled {
+  cursor: default;
+  opacity: 0.75;
+}
+
+.quote-block .quote-bar {
+  width: 3px;
+  align-self: stretch;
+  background: var(--accent, #6366f1);
+  border-radius: 2px;
+  flex: 0 0 3px;
+}
+
+.quote-block .quote-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.quote-block .quote-author {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--accent, #6366f1);
+}
+
+.quote-block .quote-snippet {
+  font-size: 0.85rem;
+  color: var(--text-muted, #6b7280);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 56ch;
+}
+
+.quote-block .quote-snippet.muted {
+  font-style: italic;
+  opacity: 0.75;
+}
+
+.quote-preview {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  margin-bottom: 0.4rem;
+  background: rgba(99, 102, 241, 0.08);
+  border-left: 3px solid var(--accent, #6366f1);
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.quote-preview .quote-bar {
+  display: none;
+}
+
+.quote-preview-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.quote-preview-label {
+  font-size: 0.75rem;
+  color: var(--text-muted, #6b7280);
+}
+
+.quote-preview-snippet {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text, inherit);
+}
+
+.quote-preview-clear {
+  background: transparent;
+  border: 0;
+  color: var(--text-muted, #6b7280);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.25rem;
+}
+
+.quote-preview-clear:hover {
+  color: var(--text, inherit);
+}
+
+.reply-quote-btn {
+  position: relative;
+  margin-left: auto;
+  background: transparent;
+  border: 0;
+  color: var(--text-muted, #6b7280);
+  cursor: pointer;
+  font-size: 0.95rem;
+  padding: 0 0.3rem;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.reply:hover .reply-quote-btn,
+.thread-root:hover .reply-quote-btn,
+.reply-quote-btn:focus-visible {
+  opacity: 1;
+}
+
+.reply-quote-btn:hover {
+  color: var(--accent, #6366f1);
+}
+
+.tooltip {
+  position: relative;
+}
+
+.tooltip::before,
+.reply-quote-btn::before {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 12px);
+  z-index: 20;
+  transform: translate(-50%, 4px) scale(0.96);
+  padding: 0.42rem 0.62rem;
+  border-radius: 9px;
+  background: #3a3a44;
+  color: #f4f4f7;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
+}
+
+.tooltip::after,
+.reply-quote-btn::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 5px);
+  z-index: 20;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  background: #3a3a44;
+  transform: translate(-50%, 4px) rotate(45deg) scale(0.9);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
+}
+
+.tooltip:hover::before,
+.tooltip:focus-visible::before,
+.reply-quote-btn:hover::before,
+.reply-quote-btn:focus-visible::before,
+.tooltip:hover::after,
+.tooltip:focus-visible::after,
+.reply-quote-btn:hover::after,
+.reply-quote-btn:focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, 0) scale(1);
+}
+
+.tooltip:hover::after,
+.tooltip:focus-visible::after,
+.reply-quote-btn:hover::after,
+.reply-quote-btn:focus-visible::after {
+  transform: translate(-50%, 0) rotate(45deg) scale(1);
 }

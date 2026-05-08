@@ -42,6 +42,8 @@
   let showWorkspaceCreate = false;
   let sidebarCollapsed = false;
   let mobileNavOpen = false;
+  let replyTarget: Message | null = null;
+  let replyContext: "channel" | "dm" | "thread" | null = null;
 
   $: selectedWorkspace = workspaces.find((workspace) => workspace.id === selectedWorkspaceID);
   $: selectedChannel = channels.find((channel) => channel.id === selectedChannelID);
@@ -49,6 +51,9 @@
   $: sidePanelOpen = selectedThread !== null || selectedProfile !== null;
   $: groupedMessages = groupMessages(messages);
   $: recentPeople = collectRecentPeople(messages, directConversations, user?.id || "");
+  $: if (replyContext === "channel" && replyTarget && !messages.some((m) => m.id === replyTarget?.id)) clearReplyTarget();
+  $: if (replyContext === "dm" && replyTarget && !messages.some((m) => m.id === replyTarget?.id)) clearReplyTarget();
+  $: if (replyContext === "thread" && replyTarget && selectedThread && replyTarget.id !== selectedThread.id && !replies.some((r) => r.id === replyTarget?.id)) clearReplyTarget();
   $: filteredGifs = gifLibrary.filter((gif) => {
     const query = gifQuery.trim().toLowerCase();
     return !query || gif.title.toLowerCase().includes(query) || gif.tags.some((tag) => tag.includes(query));
@@ -230,13 +235,18 @@
       status = "pick or create a channel";
       return;
     }
+    const activeContext: "channel" | "dm" = selectedDirectID ? "dm" : "channel";
+    const quote = replyTarget && replyContext === activeContext ? replyTarget : null;
     messageBody = "";
     const path = selectedDirectID ? `/api/dms/${selectedDirectID}/messages` : `/api/channels/${selectedChannelID}/messages`;
+    const payload: Record<string, unknown> = { body };
+    if (quote) payload.quoted_message_id = quote.id;
     const data = await api<{ message: Message }>(path, {
       method: "POST",
-      body: JSON.stringify({ body })
+      body: JSON.stringify(payload)
     });
     let message = data.message;
+    if (quote) clearReplyTarget();
     if (pendingUpload) {
       const upload = pendingUpload;
       await api(`/api/messages/${data.message.id}/attachments`, {
@@ -266,15 +276,50 @@
   async function sendReply() {
     const body = replyBody.trim();
     if (!body || !selectedThread) return;
+    const quote = replyTarget && replyContext === "thread" ? replyTarget : null;
     replyBody = "";
+    const payload: Record<string, unknown> = { body };
+    if (quote) payload.quoted_message_id = quote.id;
     const data = await api<{ message: Message; thread_state: ThreadState }>(`/api/messages/${selectedThread.id}/thread/replies`, {
       method: "POST",
-      body: JSON.stringify({ body })
+      body: JSON.stringify(payload)
     });
+    if (quote) clearReplyTarget();
     if (!replies.some((reply) => reply.id === data.message.id)) {
       replies = [...replies, data.message];
     }
     selectedThreadState = data.thread_state;
+  }
+
+  function setReplyTarget(message: Message, context: "channel" | "dm" | "thread") {
+    replyTarget = message;
+    replyContext = context;
+  }
+
+  function clearReplyTarget() {
+    replyTarget = null;
+    replyContext = null;
+  }
+
+  function quoteSnippet(text: string | undefined, max = 120): string {
+    if (!text) return "";
+    const collapsed = text.replace(/\s+/g, " ").trim();
+    return collapsed.length > max ? collapsed.slice(0, max - 1) + "…" : collapsed;
+  }
+
+  function quotedAuthorName(message: Message): string {
+    return message.quoted_author?.display_name || "Unknown";
+  }
+
+  async function jumpToQuotedMessage(message: Message) {
+    const targetID = message.quoted_message_id;
+    if (!targetID) return;
+    await tick();
+    const node = document.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(targetID)}"]`);
+    if (!node) return;
+    node.scrollIntoView({ behavior: "smooth", block: "center" });
+    node.classList.add("highlight");
+    window.setTimeout(() => node.classList.remove("highlight"), 1500);
   }
 
   async function searchMessages() {
@@ -513,6 +558,11 @@
   }
 
   function handleComposerKey(event: KeyboardEvent) {
+    if (event.key === "Escape" && replyTarget && replyContext !== "thread") {
+      event.preventDefault();
+      clearReplyTarget();
+      return;
+    }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       void sendMessage();
@@ -520,6 +570,11 @@
   }
 
   function handleReplyKey(event: KeyboardEvent) {
+    if (event.key === "Escape" && replyTarget && replyContext === "thread") {
+      event.preventDefault();
+      clearReplyTarget();
+      return;
+    }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       void sendReply();
@@ -574,10 +629,11 @@
 
   function threadSummary(message: Message) {
     if (selectedThread?.id === message.id) return "Open";
-    return "Reply";
+    return "Thread";
   }
 
   function closeSidePanel() {
+    if (replyContext === "thread") clearReplyTarget();
     selectedThread = null;
     selectedProfile = null;
     replies = [];
@@ -1021,9 +1077,29 @@
               <time>{time(group.timestamp)}</time>
             </header>
             {#each group.messages as message, index (message.id)}
-              <div class="message-row" class:selected={selectedThread?.id === message.id}>
+              <div class="message-row" class:selected={selectedThread?.id === message.id} data-message-id={message.id}>
                 <span class="row-stamp" aria-hidden="true">{index === 0 ? "" : time(message.created_at)}</span>
                 <div class="message-content">
+                  {#if message.quoted_message_id || message.quoted_body_snapshot}
+                    <button
+                      type="button"
+                      class="quote-block"
+                      class:dangling={!message.quoted_message_id}
+                      onclick={() => jumpToQuotedMessage(message)}
+                      disabled={!message.quoted_message_id}
+                      aria-label={message.quoted_message_id ? `Jump to quoted message from ${quotedAuthorName(message)}` : "Original message was deleted"}
+                    >
+                      <span class="quote-bar" aria-hidden="true"></span>
+                      <span class="quote-content">
+                        <span class="quote-author">{quotedAuthorName(message)}</span>
+                        {#if message.quoted_message_id}
+                          <span class="quote-snippet">{quoteSnippet(message.quoted_body_snapshot)}</span>
+                        {:else}
+                          <span class="quote-snippet muted">[original deleted] {quoteSnippet(message.quoted_body_snapshot)}</span>
+                        {/if}
+                      </span>
+                    </button>
+                  {/if}
                   <div class="markdown">{@html markdown(message.body)}</div>
                   {#if message.attachments?.length}
                     <div class="attachment-grid" aria-label="Attachments">
@@ -1058,11 +1134,28 @@
                     </div>
                   {/if}
                 </div>
-                <div class="message-actions" aria-label="Message actions">
-                  <button type="button" aria-label="Open thread" title={threadSummary(message)} onclick={() => openThread(message)}>
-                    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-                      <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 12a8 8 0 0 1-11.6 7.16L3 21l1.84-6.4A8 8 0 1 1 21 12Z"/>
-                    </svg>
+	                <div class="message-actions" aria-label="Message actions">
+	                  <button
+	                    type="button"
+	                    aria-label="Reply"
+	                    class="tooltip"
+	                    data-tooltip="Reply"
+	                    onclick={() => setReplyTarget(message, selectedDirectID ? "dm" : "channel")}
+	                  >
+	                    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+	                      <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M9 17 4 12l5-5M4 12h11a5 5 0 0 1 5 5v3"/>
+	                    </svg>
+	                  </button>
+	                  <button
+	                    type="button"
+	                    aria-label="Open thread"
+	                    class="tooltip"
+	                    data-tooltip={threadSummary(message)}
+	                    onclick={() => openThread(message)}
+	                  >
+	                    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+	                      <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 12a8 8 0 0 1-11.6 7.16L3 21l1.84-6.4A8 8 0 1 1 21 12Z"/>
+	                    </svg>
                   </button>
                 </div>
               </div>
@@ -1135,6 +1228,16 @@
           <button type="button" class="attachment-remove" aria-label="Remove attachment" onclick={() => (pendingUpload = null)}>×</button>
         </div>
       {/if}
+      {#if replyTarget && replyContext === (selectedDirectID ? "dm" : "channel")}
+        <div class="quote-preview" aria-label="Replying to message">
+          <span class="quote-bar" aria-hidden="true"></span>
+          <span class="quote-preview-body">
+            <span class="quote-preview-label">Replying to <strong>{replyTarget.author?.display_name || "Local User"}</strong></span>
+            <span class="quote-preview-snippet">{quoteSnippet(replyTarget.body)}</span>
+          </span>
+          <button type="button" class="quote-preview-clear" aria-label="Cancel reply" onclick={clearReplyTarget}>×</button>
+        </div>
+      {/if}
       <div class="composer-row">
         <label class="composer-icon" title="Upload file">
           <input type="file" aria-label="Upload file" onchange={uploadFile} />
@@ -1177,7 +1280,7 @@
         >×</button>
       </header>
       <div class="thread-scroll" role="region" aria-label="Thread messages" onpointerup={handleInlineImagePointerUp}>
-        <article class="thread-root">
+        <article class="thread-root" data-message-id={selectedThread.id}>
           <div class="avatar" style="--hue: {avatarHue(selectedThread.author?.id || selectedThread.author_id || 'x')}deg">
             {#if selectedThread.author?.avatar_url}
               <img src={selectedThread.author.avatar_url} alt="" loading="lazy" />
@@ -1190,6 +1293,13 @@
               <strong>{selectedThread.author?.display_name || "Local User"}</strong>
               {#if selectedThread.author?.handle}<span>{handleLabel(selectedThread.author.handle)}</span>{/if}
               <time>{time(selectedThread.created_at)}</time>
+              <button
+                type="button"
+	                class="reply-quote-btn"
+	                aria-label="Reply"
+	                data-tooltip="Reply"
+	                onclick={() => selectedThread && setReplyTarget(selectedThread, "thread")}
+	              >↩</button>
             </header>
             <div class="markdown">{@html markdown(selectedThread.body)}</div>
             {#if selectedThread.attachments?.length}
@@ -1229,7 +1339,7 @@
         <div class="thread-divider"><span>{replies.length} {replies.length === 1 ? "reply" : "replies"}</span></div>
         <div class="reply-list">
           {#each replies as reply (reply.id)}
-            <article class="reply">
+            <article class="reply" data-message-id={reply.id}>
               <div class="avatar small" style="--hue: {avatarHue(reply.author?.id || reply.author_id || 'x')}deg">
                 {#if reply.author?.avatar_url}
                   <img src={reply.author.avatar_url} alt="" loading="lazy" />
@@ -1242,7 +1352,34 @@
                   <strong>{reply.author?.display_name || "Local User"}</strong>
                   {#if reply.author?.handle}<span>{handleLabel(reply.author.handle)}</span>{/if}
                   <time>{time(reply.created_at)}</time>
+                  <button
+                    type="button"
+	                    class="reply-quote-btn"
+	                    aria-label="Reply"
+	                    data-tooltip="Reply"
+	                    onclick={() => setReplyTarget(reply, "thread")}
+	                  >↩</button>
                 </header>
+                {#if reply.quoted_message_id || reply.quoted_body_snapshot}
+                  <button
+                    type="button"
+                    class="quote-block"
+                    class:dangling={!reply.quoted_message_id}
+                    onclick={() => jumpToQuotedMessage(reply)}
+                    disabled={!reply.quoted_message_id}
+                    aria-label={reply.quoted_message_id ? `Jump to quoted message from ${quotedAuthorName(reply)}` : "Original message was deleted"}
+                  >
+                    <span class="quote-bar" aria-hidden="true"></span>
+                    <span class="quote-content">
+                      <span class="quote-author">{quotedAuthorName(reply)}</span>
+                      {#if reply.quoted_message_id}
+                        <span class="quote-snippet">{quoteSnippet(reply.quoted_body_snapshot)}</span>
+                      {:else}
+                        <span class="quote-snippet muted">[original deleted] {quoteSnippet(reply.quoted_body_snapshot)}</span>
+                      {/if}
+                    </span>
+                  </button>
+                {/if}
                 <div class="markdown">{@html markdown(reply.body)}</div>
                 {#if reply.attachments?.length}
                   <div class="attachment-grid compact" aria-label="Attachments">
@@ -1288,6 +1425,16 @@
           void sendReply();
         }}
       >
+        {#if replyTarget && replyContext === "thread"}
+          <div class="quote-preview" aria-label="Replying to message">
+            <span class="quote-bar" aria-hidden="true"></span>
+            <span class="quote-preview-body">
+              <span class="quote-preview-label">Replying to <strong>{replyTarget.author?.display_name || "Local User"}</strong></span>
+              <span class="quote-preview-snippet">{quoteSnippet(replyTarget.body)}</span>
+            </span>
+            <button type="button" class="quote-preview-clear" aria-label="Cancel reply" onclick={clearReplyTarget}>×</button>
+          </div>
+        {/if}
         <div class="composer-row">
           <textarea
             bind:value={replyBody}
