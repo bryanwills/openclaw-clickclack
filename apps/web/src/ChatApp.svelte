@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount, tick } from "svelte";
   import { APIError, api } from "./lib/api";
   import { markdown, time } from "./lib/format";
   import type { Channel, DirectConversation, Message, RealtimeEvent, SearchResult, ThreadState, Upload, User, Workspace } from "./lib/types";
@@ -26,18 +26,26 @@
   let status = "loading";
   let authRequired = false;
   let socket: WebSocket | null = null;
+  let connected = false;
   let reconnectTimer: number | undefined;
+  let messageList: HTMLElement | null = null;
+  let showWorkspaceCreate = false;
+  let mobileNavOpen = false;
 
   $: selectedWorkspace = workspaces.find((workspace) => workspace.id === selectedWorkspaceID);
   $: selectedChannel = channels.find((channel) => channel.id === selectedChannelID);
   $: selectedDirect = directConversations.find((conversation) => conversation.id === selectedDirectID);
+  $: groupedMessages = groupMessages(messages);
 
   onMount(() => {
     void boot();
   });
 
   onDestroy(() => {
-    socket?.close();
+    const current = socket;
+    socket = null;
+    connected = false;
+    current?.close();
     if (reconnectTimer) window.clearTimeout(reconnectTimer);
   });
 
@@ -74,6 +82,7 @@
       body: JSON.stringify({ name: workspaceName })
     });
     workspaceName = "";
+    showWorkspaceCreate = false;
     workspaces = [...workspaces, data.workspace];
     selectedWorkspaceID = data.workspace.id;
     await loadChannels();
@@ -100,6 +109,7 @@
     channelName = "";
     channels = [...channels, data.channel];
     selectedChannelID = data.channel.id;
+    selectedDirectID = "";
     await loadMessages();
   }
 
@@ -107,6 +117,7 @@
     if (selectedDirectID) {
       const data = await api<{ messages: Message[] }>(`/api/dms/${selectedDirectID}/messages`);
       messages = data.messages;
+      await scrollMessagesToBottom();
       return;
     }
     if (!selectedChannelID) {
@@ -115,6 +126,12 @@
     }
     const data = await api<{ messages: Message[] }>(`/api/channels/${selectedChannelID}/messages`);
     messages = data.messages;
+    await scrollMessagesToBottom();
+  }
+
+  async function scrollMessagesToBottom() {
+    await tick();
+    if (messageList) messageList.scrollTop = messageList.scrollHeight;
   }
 
   async function sendMessage() {
@@ -140,6 +157,7 @@
     if (!messages.some((message) => message.id === data.message.id)) {
       messages = [...messages, data.message];
     }
+    await scrollMessagesToBottom();
   }
 
   async function openThread(message: Message) {
@@ -208,20 +226,30 @@
   }
 
   function connectRealtime() {
-    socket?.close();
+    if (reconnectTimer) window.clearTimeout(reconnectTimer);
+    const previous = socket;
+    socket = null;
+    connected = false;
+    previous?.close();
     if (!selectedWorkspaceID) return;
     const lastCursor = localStorage.getItem(`clickclack:${selectedWorkspaceID}:cursor`) || "";
     const url = new URL("/api/realtime/ws", window.location.href);
     url.protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     url.searchParams.set("workspace_id", selectedWorkspaceID);
     if (lastCursor) url.searchParams.set("after_cursor", lastCursor);
-    socket = new WebSocket(url);
-    socket.addEventListener("message", (message) => {
+    const current = new WebSocket(url);
+    socket = current;
+    current.addEventListener("open", () => {
+      if (socket === current) connected = true;
+    });
+    current.addEventListener("message", (message) => {
       const event = JSON.parse(String(message.data)) as RealtimeEvent;
       if (event.cursor) localStorage.setItem(`clickclack:${selectedWorkspaceID}:cursor`, event.cursor);
       void handleEvent(event);
     });
-    socket.addEventListener("close", () => {
+    current.addEventListener("close", () => {
+      if (socket !== current) return;
+      connected = false;
       reconnectTimer = window.setTimeout(connectRealtime, 1200);
     });
   }
@@ -243,6 +271,97 @@
     }
   }
 
+  function workspaceInitial(name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) return "?";
+    const parts = trimmed.split(/\s+/);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return trimmed.slice(0, 2).toUpperCase();
+  }
+
+  function avatarInitial(name?: string | null) {
+    if (!name) return "?";
+    const trimmed = name.trim();
+    return trimmed ? trimmed[0].toUpperCase() : "?";
+  }
+
+  function avatarHue(seed: string) {
+    let hash = 0;
+    for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+    return hash % 360;
+  }
+
+  function dayLabel(value: string) {
+    const date = new Date(value);
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+    const sameDay = (a: Date, b: Date) =>
+      a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+    if (sameDay(date, today)) return "Today";
+    if (sameDay(date, yesterday)) return "Yesterday";
+    return new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" }).format(date);
+  }
+
+  type Group = {
+    key: string;
+    dayLabel: string | null;
+    messages: Message[];
+    authorName: string;
+    authorID: string;
+    timestamp: string;
+  };
+
+  function groupMessages(list: Message[]): Group[] {
+    const groups: Group[] = [];
+    let lastDay = "";
+    let lastAuthor = "";
+    let lastTime = 0;
+    for (const message of list) {
+      const created = new Date(message.created_at);
+      const dayKey = created.toDateString();
+      const authorID = message.author?.id || message.author_id || "local";
+      const dayChanged = dayKey !== lastDay;
+      const newAuthor = authorID !== lastAuthor;
+      const tooFarApart = created.getTime() - lastTime > 5 * 60 * 1000;
+      if (dayChanged || newAuthor || tooFarApart || groups.length === 0) {
+        groups.push({
+          key: message.id,
+          dayLabel: dayChanged ? dayLabel(message.created_at) : null,
+          messages: [message],
+          authorName: message.author?.display_name || "Local User",
+          authorID,
+          timestamp: message.created_at,
+        });
+      } else {
+        groups[groups.length - 1].messages.push(message);
+      }
+      lastDay = dayKey;
+      lastAuthor = authorID;
+      lastTime = created.getTime();
+    }
+    return groups;
+  }
+
+  function dmTitle(conversation: DirectConversation) {
+    const others = conversation.members.filter((member) => member.id !== user?.id);
+    const list = others.length > 0 ? others : conversation.members;
+    return list.map((member) => member.display_name).join(", ");
+  }
+
+  function handleComposerKey(event: KeyboardEvent) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      void sendMessage();
+    }
+  }
+
+  function handleReplyKey(event: KeyboardEvent) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      void sendReply();
+    }
+  }
 </script>
 
 <svelte:head>
@@ -252,119 +371,191 @@
 {#if authRequired}
   <main class="auth-shell">
     <section class="auth-panel" aria-label="Sign in">
-      <div class="brand">
+      <div class="auth-brand">
         <div class="mark">cc</div>
-        <div>
+        <div class="brand-text">
           <strong>ClickClack</strong>
           <span>OpenClaw workspace chat</span>
         </div>
       </div>
       <div class="auth-copy">
-        <h1>Sign in to ClickClack</h1>
-        <p>GitHub access is limited to active members of the OpenClaw organization.</p>
+        <h1>Welcome back.</h1>
+        <p>Workspace chat for the OpenClaw crew. Sign in with the GitHub account that's a member of the org.</p>
       </div>
-      <a class="github-login" href="/api/auth/github/start">Continue with GitHub</a>
+      <a class="github-login" href="/api/auth/github/start">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+          <path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.1.79-.25.79-.56v-2c-3.2.69-3.87-1.37-3.87-1.37-.52-1.32-1.27-1.67-1.27-1.67-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.02 1.75 2.68 1.25 3.34.96.1-.74.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.18-3.1-.12-.29-.51-1.46.11-3.05 0 0 .96-.31 3.15 1.18a10.94 10.94 0 0 1 5.74 0c2.19-1.49 3.15-1.18 3.15-1.18.62 1.59.23 2.76.12 3.05.74.81 1.18 1.84 1.18 3.1 0 4.42-2.69 5.39-5.25 5.68.41.36.78 1.06.78 2.13v3.16c0 .31.21.67.8.56 4.56-1.52 7.85-5.83 7.85-10.91C23.5 5.65 18.35.5 12 .5z"/>
+        </svg>
+        Continue with GitHub
+      </a>
+      <p class="auth-foot">Limited to active members of the OpenClaw org.</p>
     </section>
   </main>
 {:else}
-<div class="shell">
-  <aside class="sidebar" aria-label="Workspace and channel navigation">
-    <div class="brand">
-      <div class="mark">cc</div>
-      <div>
-        <strong>ClickClack</strong>
-        <span>{user?.display_name || "local"}</span>
-      </div>
-    </div>
+<div class="shell" class:nav-open={mobileNavOpen}>
+  <button
+    class="mobile-nav-toggle"
+    type="button"
+    aria-label="Toggle navigation"
+    onclick={() => (mobileNavOpen = !mobileNavOpen)}
+  >
+    {#if mobileNavOpen}&times;{:else}<span class="bars"><i></i><i></i><i></i></span>{/if}
+  </button>
 
-    <section>
-      <div class="section-title">Workspaces</div>
-      <div class="nav-list">
-        {#each workspaces as workspace}
+  <nav class="guild-rail" aria-label="Workspaces">
+    <a class="guild home" title="ClickClack home" href="/">
+      <span>cc</span>
+    </a>
+    <div class="guild-divider" aria-hidden="true"></div>
+    <div class="guild-list">
+      {#each workspaces as workspace (workspace.id)}
+        <div class="guild-wrap" class:active={workspace.id === selectedWorkspaceID}>
           <button
-            class:active={workspace.id === selectedWorkspaceID}
+            class="guild"
+            title={workspace.name}
             onclick={async () => {
               selectedWorkspaceID = workspace.id;
               await loadChannels();
+              await loadDirectConversations();
               connectRealtime();
             }}
           >
-            {workspace.name}
+            <span>{workspaceInitial(workspace.name)}</span>
           </button>
-        {/each}
-      </div>
+        </div>
+      {/each}
+      <button
+        class="guild add"
+        title="Create workspace"
+        aria-label="Create workspace"
+        onclick={() => (showWorkspaceCreate = !showWorkspaceCreate)}
+      >+</button>
+    </div>
+    {#if showWorkspaceCreate}
       <form
-        class="inline-create"
+        class="guild-create"
         onsubmit={(event) => {
           event.preventDefault();
           void createWorkspace();
         }}
       >
-        <input bind:value={workspaceName} placeholder="New workspace" aria-label="New workspace name" />
+        <input bind:value={workspaceName} placeholder="Workspace name" aria-label="Workspace name" />
       </form>
-    </section>
+    {/if}
+  </nav>
 
-    <section>
-      <div class="section-title">Channels</div>
-      <div class="nav-list channels">
-        {#each channels as channel}
-          <button
-            class:active={channel.id === selectedChannelID}
-            onclick={async () => {
-              selectedChannelID = channel.id;
-              selectedThread = null;
-              await loadMessages();
-            }}
-          >
-            <span>#</span>{channel.name}
-          </button>
-        {/each}
+  <aside class="sidebar" aria-label="Channels and DMs">
+    <header class="workspace-header">
+      <div class="workspace-name">
+        <strong>{selectedWorkspace?.name || "Pick a workspace"}</strong>
+        <span class="presence" class:online={connected}>{connected ? "Connected" : status}</span>
       </div>
-      <form
-        class="inline-create"
-        onsubmit={(event) => {
-          event.preventDefault();
-          void createChannel();
-        }}
-      >
-        <input bind:value={channelName} placeholder="New channel" aria-label="New channel name" />
-      </form>
-    </section>
+    </header>
 
-    <section>
-      <div class="section-title">DMs</div>
-      <div class="nav-list channels">
-        {#each directConversations as conversation}
-          <button
-            class:active={conversation.id === selectedDirectID}
-            onclick={async () => {
-              selectedDirectID = conversation.id;
-              selectedChannelID = "";
-              selectedThread = null;
-              await loadMessages();
-            }}
-          >
-            <span>@</span>{conversation.members.map((member) => member.display_name).join(", ")}
-          </button>
-        {/each}
-      </div>
-      <form
-        class="inline-create"
-        onsubmit={(event) => {
-          event.preventDefault();
-          void createDirectConversation();
-        }}
-      >
-        <input bind:value={directMemberID} placeholder="Member user ID" aria-label="DM member user ID" />
-      </form>
-    </section>
+    <div class="sidebar-scroll">
+      <section class="nav-section">
+        <div class="section-title">
+          <span class="caret" aria-hidden="true">▾</span>
+          <span class="label">Channels</span>
+        </div>
+        <div class="nav-list">
+          {#each channels as channel (channel.id)}
+            <button
+              class="nav-item channel"
+              class:active={channel.id === selectedChannelID && !selectedDirectID}
+              onclick={async () => {
+                selectedChannelID = channel.id;
+                selectedDirectID = "";
+                selectedThread = null;
+                mobileNavOpen = false;
+                await loadMessages();
+              }}
+            >
+              <span class="hash">#</span> <span class="nav-label">{channel.name}</span>
+            </button>
+          {/each}
+          {#if channels.length === 0}
+            <p class="nav-empty">No channels yet</p>
+          {/if}
+        </div>
+        <form
+          class="inline-create"
+          onsubmit={(event) => {
+            event.preventDefault();
+            void createChannel();
+          }}
+        >
+          <input bind:value={channelName} placeholder="add-channel" aria-label="New channel name" />
+          <button type="submit" class="ghost" aria-label="Create channel">＋</button>
+        </form>
+      </section>
+
+      <section class="nav-section">
+        <div class="section-title">
+          <span class="caret" aria-hidden="true">▾</span>
+          <span class="label">Direct messages</span>
+        </div>
+        <div class="nav-list">
+          {#each directConversations as conversation (conversation.id)}
+            <button
+              class="nav-item dm"
+              class:active={conversation.id === selectedDirectID}
+              onclick={async () => {
+                selectedDirectID = conversation.id;
+                selectedChannelID = "";
+                selectedThread = null;
+                mobileNavOpen = false;
+                await loadMessages();
+              }}
+            >
+              <span class="dm-avatar" style="--hue: {avatarHue(conversation.id)}deg">
+                {avatarInitial(conversation.members[0]?.display_name)}
+              </span>
+              <span class="nav-label">{dmTitle(conversation)}</span>
+              <span class="presence-dot" aria-hidden="true"></span>
+            </button>
+          {/each}
+          {#if directConversations.length === 0}
+            <p class="nav-empty">No direct messages yet</p>
+          {/if}
+        </div>
+        <form
+          class="inline-create"
+          onsubmit={(event) => {
+            event.preventDefault();
+            void createDirectConversation();
+          }}
+        >
+          <input bind:value={directMemberID} placeholder="user id" aria-label="DM member user ID" />
+          <button type="submit" class="ghost" aria-label="Start DM">＋</button>
+        </form>
+      </section>
+    </div>
+
+    {#if user}
+      <footer class="user-card">
+        <span class="dm-avatar" style="--hue: {avatarHue(user.id)}deg">{avatarInitial(user.display_name)}</span>
+        <div class="user-meta">
+          <strong>{user.display_name}</strong>
+          <span>{connected ? "Active" : "Reconnecting…"}</span>
+        </div>
+        <span class="presence-dot active" aria-hidden="true"></span>
+      </footer>
+    {/if}
   </aside>
 
   <main class="timeline">
     <header class="topbar">
-      <div>
-        <p>{selectedWorkspace?.name || "Workspace"}</p>
-        <h1>{selectedDirect ? "@" + selectedDirect.members.map((member) => member.display_name).join(", ") : "#" + (selectedChannel?.name || "general")}</h1>
+      <div class="topbar-title">
+        {#if selectedDirect}
+          <h1 class="with-glyph dm">{`@${dmTitle(selectedDirect)}`}</h1>
+        {:else if selectedChannel}
+          <h1 class="with-glyph channel">{`#${selectedChannel.name}`}</h1>
+        {:else}
+          <h1 class="with-glyph">ClickClack</h1>
+        {/if}
+        <span class="topbar-divider" aria-hidden="true"></span>
+        <p class="topbar-meta">{selectedWorkspace?.name || "no workspace"}</p>
       </div>
       <form
         class="search"
@@ -373,18 +564,44 @@
           void searchMessages();
         }}
       >
-        <input bind:value={searchQuery} placeholder="Search" aria-label="Search messages" />
-        <button type="submit">Search</button>
+        <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+          <circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/>
+          <path d="m20 20-3.5-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <input bind:value={searchQuery} placeholder="Search messages" aria-label="Search messages" />
+        {#if searchQuery}
+          <button
+            type="button"
+            class="search-clear"
+            aria-label="Reset"
+            onclick={() => {
+              searchQuery = "";
+              searchResults = [];
+            }}
+          >×</button>
+        {/if}
+        <button type="submit" class="search-submit">Search</button>
       </form>
-      <div class="connection" data-state={socket?.readyState === WebSocket.OPEN ? "live" : "idle"}>
-        {socket?.readyState === WebSocket.OPEN ? "live" : status}
+      <div class="connection" class:live={connected}>
+        <span class="dot" aria-hidden="true"></span>
+        <span>{connected ? "Live" : status}</span>
       </div>
     </header>
 
     {#if searchResults.length > 0}
       <div class="search-results" aria-label="Search results">
+        <div class="search-results-head">
+          <strong>{searchResults.length} {searchResults.length === 1 ? "result" : "results"}</strong>
+          <button
+            type="button"
+            onclick={() => {
+              searchResults = [];
+            }}
+          >Close</button>
+        </div>
         {#each searchResults as result (result.message.id)}
           <button
+            class="search-result"
             onclick={async () => {
               searchResults = [];
               if (result.message.channel_id) {
@@ -399,30 +616,65 @@
               }
             }}
           >
-            <strong>{result.message.author?.display_name || "Local User"}</strong>
-            <span>{result.message.body}</span>
+            <span class="dm-avatar" style="--hue: {avatarHue(result.message.author?.id || result.message.author_id || 'x')}deg">
+              {avatarInitial(result.message.author?.display_name)}
+            </span>
+            <div class="search-result-body">
+              <div>
+                <strong>{result.message.author?.display_name || "Local User"}</strong>
+                <time>{time(result.message.created_at)}</time>
+              </div>
+              <span>{result.message.body}</span>
+            </div>
           </button>
         {/each}
       </div>
     {/if}
 
-    <div class="messages" aria-live="polite">
+    <div class="messages" aria-live="polite" bind:this={messageList}>
       {#if messages.length === 0}
         <div class="empty">
-          <strong>{selectedChannelID || selectedDirectID ? "Quiet tide." : "No channel selected."}</strong>
-          <span>{selectedChannelID || selectedDirectID ? "Start with Markdown. Threads open from any root message." : "Create a workspace and channel before sending."}</span>
+          <div class="empty-icon">
+            {#if selectedDirect}@{:else}#{/if}
+          </div>
+          <strong>
+            {#if selectedDirect}
+              This is the start of your conversation with {dmTitle(selectedDirect)}.
+            {:else if selectedChannel}
+              Welcome to #{selectedChannel.name}!
+            {:else}
+              Pick a channel to get started.
+            {/if}
+          </strong>
+          <span>Send a message in Markdown — code fences, lists, links all work. Threads open from any message.</span>
         </div>
       {/if}
-      {#each messages as message (message.id)}
-        <article class="message" class:selected={selectedThread?.id === message.id}>
-          <div class="avatar">{message.author?.display_name?.slice(0, 1) || "c"}</div>
-          <div class="message-body">
+      {#each groupedMessages as group (group.key)}
+        {#if group.dayLabel}
+          <div class="day-divider"><span>{group.dayLabel}</span></div>
+        {/if}
+        <article class="message-group">
+          <div class="avatar" style="--hue: {avatarHue(group.authorID)}deg">{avatarInitial(group.authorName)}</div>
+          <div class="group-body">
             <header>
-              <strong>{message.author?.display_name || "Local User"}</strong>
-              <time>{time(message.created_at)}</time>
+              <strong>{group.authorName}</strong>
+              <time>{time(group.timestamp)}</time>
             </header>
-            <div class="markdown">{@html markdown(message.body)}</div>
-            <button class="thread-button" onclick={() => openThread(message)}>Open thread</button>
+            {#each group.messages as message, index (message.id)}
+              <div class="message-row" class:selected={selectedThread?.id === message.id}>
+                <span class="row-stamp" aria-hidden="true">{index === 0 ? "" : time(message.created_at)}</span>
+                <div class="message-content">
+                  <div class="markdown">{@html markdown(message.body)}</div>
+                </div>
+                <div class="message-actions" aria-label="Message actions">
+                  <button type="button" aria-label="Open thread" title="Open thread" onclick={() => openThread(message)}>
+                    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+                      <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 12a8 8 0 0 1-11.6 7.16L3 21l1.84-6.4A8 8 0 1 1 21 12Z"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            {/each}
           </div>
         </article>
       {/each}
@@ -435,71 +687,119 @@
         void sendMessage();
       }}
     >
-      <textarea
-        bind:value={messageBody}
-        rows="3"
-        placeholder={selectedChannelID || selectedDirectID ? "Message with Markdown" : "Create or select a channel first"}
-        aria-label="Message body"
-      ></textarea>
-      <div class="composer-actions">
-        <label class="upload-button">
+      {#if pendingUpload}
+        <div class="composer-attachment">
+          <span class="attachment-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="14" height="14"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M21.44 11.05 12.5 20a6 6 0 0 1-8.49-8.49l8.49-8.48a4 4 0 0 1 5.66 5.66l-8.49 8.49a2 2 0 0 1-2.83-2.83L13.41 7.5"/></svg>
+          </span>
+          <span class="attachment-name">{pendingUpload.filename}</span>
+          <button type="button" class="attachment-remove" aria-label="Remove attachment" onclick={() => (pendingUpload = null)}>×</button>
+        </div>
+      {/if}
+      <div class="composer-row">
+        <label class="composer-icon" title="Upload file">
           <input type="file" aria-label="Upload file" onchange={uploadFile} />
-          Upload
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M21.44 11.05 12.5 20a6 6 0 0 1-8.49-8.49l8.49-8.48a4 4 0 0 1 5.66 5.66l-8.49 8.49a2 2 0 0 1-2.83-2.83L13.41 7.5"/>
+          </svg>
         </label>
-        {#if pendingUpload}
-          <span class="pending-upload">{pendingUpload.filename}</span>
-        {/if}
-        <button type="button" onclick={() => void sendMessage()}>Send</button>
+        <textarea
+          bind:value={messageBody}
+          rows="1"
+          placeholder={selectedDirect ? `Message ${dmTitle(selectedDirect)}` : selectedChannel ? `Message #${selectedChannel.name}` : "Pick a channel to start"}
+          aria-label="Message body"
+          onkeydown={handleComposerKey}
+        ></textarea>
+        <button type="submit" class="send" aria-label="Send" disabled={!messageBody.trim()}>
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+            <path fill="currentColor" d="M3 3.5 21 12 3 20.5l3.6-7.5L15 12 6.6 11l-3.6-7.5Z"/>
+          </svg>
+        </button>
+      </div>
+      <div class="composer-hint">
+        <span><kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for newline · Markdown supported</span>
       </div>
     </form>
   </main>
 
-  <aside class="thread" class:open={selectedThread} aria-label="Thread pane">
+  <aside class="thread" class:open={selectedThread !== null} aria-label="Thread pane">
     {#if selectedThread}
       <header>
         <div>
           <p>Thread</p>
-          <strong>{selectedThreadState?.reply_count || replies.length} replies</strong>
+          <strong>{selectedThreadState?.reply_count ?? replies.length} {(selectedThreadState?.reply_count ?? replies.length) === 1 ? "reply" : "replies"}</strong>
         </div>
         <button
+          class="close"
           aria-label="Close thread"
           onclick={() => {
             selectedThread = null;
             replies = [];
           }}
-        >
-          x
-        </button>
+        >×</button>
       </header>
-      <article class="thread-root">
-        <strong>{selectedThread.author?.display_name || "Local User"}</strong>
-        <div class="markdown">{@html markdown(selectedThread.body)}</div>
-      </article>
-      <div class="reply-list">
-        {#each replies as reply (reply.id)}
-          <article class="reply">
+      <div class="thread-scroll">
+        <article class="thread-root">
+          <div class="avatar" style="--hue: {avatarHue(selectedThread.author?.id || selectedThread.author_id || 'x')}deg">
+            {avatarInitial(selectedThread.author?.display_name)}
+          </div>
+          <div class="group-body">
             <header>
-              <strong>{reply.author?.display_name || "Local User"}</strong>
-              <time>{time(reply.created_at)}</time>
+              <strong>{selectedThread.author?.display_name || "Local User"}</strong>
+              <time>{time(selectedThread.created_at)}</time>
             </header>
-            <div class="markdown">{@html markdown(reply.body)}</div>
-          </article>
-        {/each}
+            <div class="markdown">{@html markdown(selectedThread.body)}</div>
+          </div>
+        </article>
+        <div class="thread-divider"><span>{replies.length} {replies.length === 1 ? "reply" : "replies"}</span></div>
+        <div class="reply-list">
+          {#each replies as reply (reply.id)}
+            <article class="reply">
+              <div class="avatar small" style="--hue: {avatarHue(reply.author?.id || reply.author_id || 'x')}deg">
+                {avatarInitial(reply.author?.display_name)}
+              </div>
+              <div class="group-body">
+                <header>
+                  <strong>{reply.author?.display_name || "Local User"}</strong>
+                  <time>{time(reply.created_at)}</time>
+                </header>
+                <div class="markdown">{@html markdown(reply.body)}</div>
+              </div>
+            </article>
+          {/each}
+        </div>
       </div>
       <form
-        class="reply-composer"
+        class="composer reply-composer"
         onsubmit={(event) => {
           event.preventDefault();
           void sendReply();
         }}
       >
-        <textarea bind:value={replyBody} rows="3" placeholder="Reply in thread" aria-label="Reply body"></textarea>
-        <button type="button" onclick={() => void sendReply()}>Reply</button>
+        <div class="composer-row">
+          <textarea
+            bind:value={replyBody}
+            rows="1"
+            placeholder="Reply in thread"
+            aria-label="Reply body"
+            onkeydown={handleReplyKey}
+          ></textarea>
+          <button type="submit" class="send" aria-label="Reply" disabled={!replyBody.trim()}>
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+              <path fill="currentColor" d="M3 3.5 21 12 3 20.5l3.6-7.5L15 12 6.6 11l-3.6-7.5Z"/>
+            </svg>
+          </button>
+        </div>
       </form>
     {:else}
       <div class="thread-empty">
+        <div class="thread-icon">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+            <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 12a8 8 0 0 1-11.6 7.16L3 21l1.84-6.4A8 8 0 1 1 21 12Z"/>
+          </svg>
+        </div>
         <strong>No thread open</strong>
-        <span>Pick a message to keep the side conversation tidy.</span>
+        <span>Hover any message and tap the bubble to keep side conversations tidy.</span>
       </div>
     {/if}
   </aside>
