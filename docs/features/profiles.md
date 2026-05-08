@@ -34,5 +34,9 @@ The current user's profile control sits at the bottom of the channel sidebar.
 Click or right-click it to open account settings and edit display name, handle,
 and avatar URL.
 
+Clicking a message avatar or author name opens a Slack-style profile pane in
+the right rail. The pane shows the user's avatar, display name, handle,
+presence, user ID, and a Message action for starting or jumping to a DM.
+
 Message lists, search results, threads, DMs, and the profile control all hydrate
 avatars from the user attached to each message or conversation member.

@@ -53,10 +53,10 @@ Bodies are stored as Markdown text. The `body_format` column is hard-coded to
 `markdown` in V1 and exists so a future format (rich text, plain) can be added
 without a migration. The frontend renders a sanitized subset.
 
-The web composer includes lightweight Markdown controls for bold, italic,
-inline code, code blocks, links, and GIF insertion. The GIF picker inserts
-standard Markdown image syntax, so no provider-specific durable schema is
-required for V1.
+The web composer is a Slack-like message well with a format bar for bold,
+italic, inline code, code blocks, links, attachments, and GIF insertion. The GIF
+picker inserts standard Markdown image syntax, so no provider-specific durable
+schema is required for V1.
 
 ## Attachments
 
@@ -65,9 +65,11 @@ table. Hydration happens in `hydrateAttachments` and surfaces as the
 `attachments` field on `Message`. See [uploads.md](uploads.md) for the
 two-step upload-then-attach flow.
 
-The web client renders image attachments inline and links non-image attachments
-as file cards. Markdown image URLs, including animated GIF URLs, render inline
-through the same sanitized Markdown path.
+The web client renders image and video attachments inline and links other
+attachments as file cards. Clicking an inline image attachment, or an image
+inside rendered Markdown, opens an in-app image viewer with an Open original
+link. Markdown image URLs, including animated GIF URLs, render inline through
+the same sanitized Markdown path.
 
 ## Author hydration
 

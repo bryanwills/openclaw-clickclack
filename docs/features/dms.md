@@ -21,6 +21,11 @@ POST /api/dms/{conversation_id}/messages                 # { body }
 Conversations include their members hydrated from `users`. The `member_ids`
 list on create is deduplicated and the caller is added automatically.
 
+The web sidebar lists existing DMs and also derives a People section from DM
+members and hydrated message authors. Users appear there automatically as
+conversation context is loaded; clicking a person opens their DM when one
+exists, otherwise it opens the profile pane with a Message action.
+
 `POST` to `/dms/{id}/messages` increments a per-conversation sequence on
 `messages.channel_seq` and emits a durable event into the workspace event
 stream so DM lists and unread counts stay live.

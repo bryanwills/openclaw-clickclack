@@ -15,6 +15,8 @@
   let selectedDirectID = "";
   let selectedThread: Message | null = null;
   let selectedThreadState: ThreadState | null = null;
+  let selectedProfile: User | null = null;
+  let selectedImage: { url: string; title: string } | null = null;
   let messageBody = "";
   let replyBody = "";
   let workspaceName = "";
@@ -44,7 +46,9 @@
   $: selectedWorkspace = workspaces.find((workspace) => workspace.id === selectedWorkspaceID);
   $: selectedChannel = channels.find((channel) => channel.id === selectedChannelID);
   $: selectedDirect = directConversations.find((conversation) => conversation.id === selectedDirectID);
+  $: sidePanelOpen = selectedThread !== null || selectedProfile !== null;
   $: groupedMessages = groupMessages(messages);
+  $: recentPeople = collectRecentPeople(messages, directConversations, user?.id || "");
   $: filteredGifs = gifLibrary.filter((gif) => {
     const query = gifQuery.trim().toLowerCase();
     return !query || gif.title.toLowerCase().includes(query) || gif.tags.some((tag) => tag.includes(query));
@@ -180,6 +184,7 @@
     channels = data.channels;
     selectedChannelID = channels.find((channel) => channel.id === selectedChannelID)?.id || channels[0]?.id || "";
     selectedThread = null;
+    selectedProfile = null;
     replies = [];
     await loadMessages();
   }
@@ -245,6 +250,7 @@
   }
 
   async function openThread(message: Message) {
+    selectedProfile = null;
     selectedThread = message;
     const data = await api<{ root: Message; replies: Message[]; thread_state: ThreadState }>(`/api/messages/${message.id}/thread`);
     selectedThread = data.root;
@@ -306,6 +312,32 @@
     selectedDirectID = data.conversation.id;
     selectedChannelID = "";
     selectedThread = null;
+    selectedProfile = null;
+    await loadMessages();
+  }
+
+  async function startDirectWithUser(memberID: string) {
+    if (!selectedWorkspaceID || !memberID) return;
+    const existing = directConversations.find((conversation) =>
+      conversation.members.some((member) => member.id === memberID),
+    );
+    if (existing) {
+      selectedDirectID = existing.id;
+      selectedChannelID = "";
+      selectedThread = null;
+      selectedProfile = null;
+      await loadMessages();
+      return;
+    }
+    const data = await api<{ conversation: DirectConversation }>("/api/dms", {
+      method: "POST",
+      body: JSON.stringify({ workspace_id: selectedWorkspaceID, member_ids: [memberID] })
+    });
+    directConversations = [...directConversations, data.conversation];
+    selectedDirectID = data.conversation.id;
+    selectedChannelID = "";
+    selectedThread = null;
+    selectedProfile = null;
     await loadMessages();
   }
 
@@ -375,6 +407,36 @@
 
   function dmAvatarUser(conversation: DirectConversation) {
     return conversation.members.find((member) => member.id !== user?.id) || conversation.members[0];
+  }
+
+  function collectRecentPeople(
+    messageList: Message[],
+    conversations: DirectConversation[],
+    currentUserID: string,
+  ) {
+    const people = new Map<string, User>();
+    for (const conversation of conversations) {
+      for (const member of conversation.members) {
+        if (member.id && member.id !== currentUserID) people.set(member.id, member);
+      }
+    }
+    for (const message of [...messageList].reverse()) {
+      const author = message.author;
+      if (author?.id && author.id !== currentUserID) people.set(author.id, author);
+    }
+    return [...people.values()].slice(0, 12);
+  }
+
+  function directConversationForUser(memberID: string) {
+    return directConversations.find((conversation) =>
+      conversation.members.some((member) => member.id === memberID),
+    );
+  }
+
+  function openUserProfile(profile?: User | null) {
+    if (!profile) return;
+    selectedThread = null;
+    selectedProfile = profile;
   }
 
   function avatarHue(seed: string) {
@@ -463,6 +525,18 @@
     return `/api/uploads/${encodeURIComponent(upload.id)}`;
   }
 
+  function openImageViewer(url: string, title: string) {
+    selectedImage = { url, title };
+  }
+
+  function handleInlineImagePointerUp(event: PointerEvent) {
+    const target = event.target;
+    if (!(target instanceof HTMLImageElement)) return;
+    if (!target.closest(".markdown")) return;
+    event.preventDefault();
+    openImageViewer(target.currentSrc || target.src, target.alt || "Image");
+  }
+
   function isImageUpload(upload: Upload) {
     return upload.content_type.startsWith("image/");
   }
@@ -497,11 +571,28 @@
     if (selectedThread?.id === message.id) return "Open";
     return "Reply";
   }
+
+  function closeSidePanel() {
+    selectedThread = null;
+    selectedProfile = null;
+    replies = [];
+  }
+
+  function closeModal() {
+    selectedImage = null;
+    showProfileSettings = false;
+  }
 </script>
 
 <svelte:head>
   <meta name="color-scheme" content="light dark" />
 </svelte:head>
+
+<svelte:window
+  onkeydown={(event) => {
+    if (event.key === "Escape") closeModal();
+  }}
+/>
 
 {#if authRequired}
   <main class="auth-shell">
@@ -531,7 +622,7 @@
   class="shell"
   class:nav-open={mobileNavOpen}
   class:sidebar-collapsed={sidebarCollapsed}
-  class:thread-open={selectedThread !== null}
+  class:thread-open={sidePanelOpen}
 >
   <button
     class="mobile-nav-toggle"
@@ -625,6 +716,7 @@
                 selectedChannelID = channel.id;
                 selectedDirectID = "";
                 selectedThread = null;
+                selectedProfile = null;
                 mobileNavOpen = false;
                 await loadMessages();
               }}
@@ -662,6 +754,7 @@
                 selectedDirectID = conversation.id;
                 selectedChannelID = "";
                 selectedThread = null;
+                selectedProfile = null;
                 mobileNavOpen = false;
                 await loadMessages();
               }}
@@ -691,6 +784,47 @@
           <input bind:value={directMemberID} placeholder="user id" aria-label="DM member user ID" />
           <button type="submit" class="ghost" aria-label="Start DM">＋</button>
         </form>
+      </section>
+
+      <section class="nav-section">
+        <div class="section-title">
+          <span class="caret" aria-hidden="true">▾</span>
+          <span class="label">People</span>
+        </div>
+        <div class="nav-list">
+          {#each recentPeople as person (person.id)}
+            {@const conversation = directConversationForUser(person.id)}
+            <button
+              class="nav-item dm"
+              class:active={conversation?.id === selectedDirectID || selectedProfile?.id === person.id}
+              onclick={async () => {
+                if (conversation) {
+                  selectedDirectID = conversation.id;
+                  selectedChannelID = "";
+                  selectedThread = null;
+                  selectedProfile = null;
+                  mobileNavOpen = false;
+                  await loadMessages();
+                } else {
+                  openUserProfile(person);
+                }
+              }}
+            >
+              <span class="dm-avatar" style="--hue: {avatarHue(person.id)}deg">
+                {#if person.avatar_url}
+                  <img src={person.avatar_url} alt="" loading="lazy" />
+                {:else}
+                  {avatarInitial(person.display_name)}
+                {/if}
+              </span>
+              <span class="nav-label">{person.display_name}</span>
+              <span class="presence-dot active" aria-hidden="true"></span>
+            </button>
+          {/each}
+          {#if recentPeople.length === 0}
+            <p class="nav-empty">People appear here as you chat</p>
+          {/if}
+        </div>
       </section>
     </div>
 
@@ -764,9 +898,9 @@
           type="button"
           title={selectedThread ? "Close thread" : "Open a message thread"}
           aria-label={selectedThread ? "Close thread" : "Open a message thread"}
-          class:active={selectedThread !== null}
+          class:active={sidePanelOpen}
           onclick={() => {
-            if (selectedThread) selectedThread = null;
+            if (sidePanelOpen) closeSidePanel();
             else status = "pick a message to open its thread";
           }}
         >
@@ -829,7 +963,13 @@
       </div>
     {/if}
 
-    <div class="messages" aria-live="polite" bind:this={messageList}>
+    <div
+      class="messages"
+      role="log"
+      aria-live="polite"
+      bind:this={messageList}
+      onpointerup={handleInlineImagePointerUp}
+    >
       {#if messages.length === 0}
         <div class="empty">
           <div class="empty-icon">
@@ -852,16 +992,26 @@
           <div class="day-divider"><span>{group.dayLabel}</span></div>
         {/if}
         <article class="message-group">
-          <div class="avatar" style="--hue: {avatarHue(group.authorID)}deg">
+          <button
+            type="button"
+            class="avatar avatar-button"
+            style="--hue: {avatarHue(group.authorID)}deg"
+            aria-label={`View profile for ${group.authorName}`}
+            onclick={() => openUserProfile(group.messages[0]?.author)}
+          >
             {#if group.authorAvatarURL}
               <img src={group.authorAvatarURL} alt="" loading="lazy" />
             {:else}
               {avatarInitial(group.authorName)}
             {/if}
-          </div>
+          </button>
           <div class="group-body">
             <header>
-              <strong>{group.authorName}</strong>
+              <button
+                type="button"
+                class="author-name"
+                onclick={() => openUserProfile(group.messages[0]?.author)}
+              >{group.authorName}</button>
               {#if group.authorHandle}<span>{handleLabel(group.authorHandle)}</span>{/if}
               <time>{time(group.timestamp)}</time>
             </header>
@@ -874,10 +1024,15 @@
                     <div class="attachment-grid" aria-label="Attachments">
                       {#each message.attachments as attachment (attachment.id)}
                         {#if isImageUpload(attachment)}
-                          <a class="image-attachment" href={uploadURL(attachment)} target="_blank" rel="noreferrer">
+                          <button
+                            type="button"
+                            class="image-attachment"
+                            aria-label={`Open image ${attachment.filename}`}
+                            onclick={() => openImageViewer(uploadURL(attachment), attachment.filename)}
+                          >
                             <img src={uploadURL(attachment)} alt={attachment.filename} loading="lazy" />
                             <span>{attachment.filename}</span>
-                          </a>
+                          </button>
                         {:else if isVideoUpload(attachment)}
                           <div class="video-attachment">
                             <video controls preload="metadata" aria-label={attachment.filename}>
@@ -1001,7 +1156,7 @@
     </form>
   </main>
 
-  <aside class="thread" class:open={selectedThread !== null} aria-label="Thread pane">
+  <aside class="thread" class:open={sidePanelOpen} aria-label={selectedProfile ? "Profile pane" : "Thread pane"}>
     {#if selectedThread}
       <header>
         <div>
@@ -1012,12 +1167,11 @@
           class="close"
           aria-label="Close thread"
           onclick={() => {
-            selectedThread = null;
-            replies = [];
+            closeSidePanel();
           }}
         >×</button>
       </header>
-      <div class="thread-scroll">
+      <div class="thread-scroll" role="region" aria-label="Thread messages" onpointerup={handleInlineImagePointerUp}>
         <article class="thread-root">
           <div class="avatar" style="--hue: {avatarHue(selectedThread.author?.id || selectedThread.author_id || 'x')}deg">
             {#if selectedThread.author?.avatar_url}
@@ -1037,10 +1191,15 @@
               <div class="attachment-grid compact" aria-label="Attachments">
                 {#each selectedThread.attachments as attachment (attachment.id)}
                   {#if isImageUpload(attachment)}
-                    <a class="image-attachment" href={uploadURL(attachment)} target="_blank" rel="noreferrer">
+                    <button
+                      type="button"
+                      class="image-attachment"
+                      aria-label={`Open image ${attachment.filename}`}
+                      onclick={() => openImageViewer(uploadURL(attachment), attachment.filename)}
+                    >
                       <img src={uploadURL(attachment)} alt={attachment.filename} loading="lazy" />
                       <span>{attachment.filename}</span>
-                    </a>
+                    </button>
                   {:else if isVideoUpload(attachment)}
                     <div class="video-attachment">
                       <video controls preload="metadata" aria-label={attachment.filename}>
@@ -1084,10 +1243,15 @@
                   <div class="attachment-grid compact" aria-label="Attachments">
                     {#each reply.attachments as attachment (attachment.id)}
                       {#if isImageUpload(attachment)}
-                        <a class="image-attachment" href={uploadURL(attachment)} target="_blank" rel="noreferrer">
+                        <button
+                          type="button"
+                          class="image-attachment"
+                          aria-label={`Open image ${attachment.filename}`}
+                          onclick={() => openImageViewer(uploadURL(attachment), attachment.filename)}
+                        >
                           <img src={uploadURL(attachment)} alt={attachment.filename} loading="lazy" />
                           <span>{attachment.filename}</span>
-                        </a>
+                        </button>
                       {:else if isVideoUpload(attachment)}
                         <div class="video-attachment">
                           <video controls preload="metadata" aria-label={attachment.filename}>
@@ -1134,6 +1298,78 @@
           </button>
         </div>
       </form>
+    {:else if selectedProfile}
+      <header>
+        <div>
+          <p>Profile</p>
+          <strong>{selectedProfile.display_name}</strong>
+        </div>
+        <button class="close" aria-label="Close profile" onclick={closeSidePanel}>×</button>
+      </header>
+      <div class="profile-pane">
+        <div class="profile-hero" style="--hue: {avatarHue(selectedProfile.id)}deg">
+          <span class="profile-avatar">
+            {#if selectedProfile.avatar_url}
+              <img src={selectedProfile.avatar_url} alt="" loading="lazy" />
+            {:else}
+              {avatarInitial(selectedProfile.display_name)}
+            {/if}
+          </span>
+        </div>
+        <section class="profile-pane-body">
+          <div class="profile-pane-title">
+            <div>
+              <h2>{selectedProfile.display_name}</h2>
+              {#if selectedProfile.handle}<span>{handleLabel(selectedProfile.handle)}</span>{/if}
+            </div>
+            {#if user?.id === selectedProfile.id}
+              <button type="button" class="text-action" onclick={openProfileSettings}>Edit</button>
+            {/if}
+          </div>
+          <div class="profile-presence">
+            <span class="presence-dot active" aria-hidden="true"></span>
+            <span>Active</span>
+          </div>
+          <div class="profile-actions-row">
+            {#if user?.id !== selectedProfile.id}
+              <button type="button" class="primary-action" onclick={() => startDirectWithUser(selectedProfile?.id || "")}>
+                Message
+              </button>
+            {/if}
+            <button type="button" class="ghost-action" onclick={() => (status = "status messages are coming soon")}>
+              Set a status
+            </button>
+          </div>
+          <section class="profile-info">
+            <header>
+              <strong>Contact information</strong>
+              {#if user?.id === selectedProfile.id}
+                <button type="button" class="text-action" onclick={openProfileSettings}>Edit</button>
+              {/if}
+            </header>
+            <div class="profile-info-row">
+              <span class="info-icon" aria-hidden="true">@</span>
+              <div>
+                <small>Handle</small>
+                <span>{selectedProfile.handle ? handleLabel(selectedProfile.handle) : "No handle set"}</span>
+              </div>
+            </div>
+            <div class="profile-info-row">
+              <span class="info-icon" aria-hidden="true">ID</span>
+              <div>
+                <small>User ID</small>
+                <span>{selectedProfile.id}</span>
+              </div>
+            </div>
+          </section>
+          <section class="profile-info">
+            <header>
+              <strong>About</strong>
+            </header>
+            <p class="profile-note">Member of {selectedWorkspace?.name || "this workspace"}. Click Message to keep the conversation in your sidebar.</p>
+          </section>
+        </section>
+      </div>
     {:else}
       <div class="thread-empty">
         <div class="thread-icon">
@@ -1149,14 +1385,14 @@
 </div>
 {#if showProfileSettings && user}
   <div class="modal-scrim" role="presentation">
-    <button class="modal-backdrop" type="button" aria-label="Close account settings" onclick={() => (showProfileSettings = false)}></button>
+    <button class="modal-backdrop" type="button" aria-label="Close account settings" onclick={closeModal}></button>
     <section class="profile-modal" aria-label="Account settings">
       <header>
         <div>
           <p>Account</p>
           <h2>Profile settings</h2>
         </div>
-        <button type="button" aria-label="Close account settings" onclick={() => (showProfileSettings = false)}>×</button>
+        <button type="button" aria-label="Close account settings" onclick={closeModal}>×</button>
       </header>
       <form
         class="profile-form"
@@ -1192,10 +1428,27 @@
         </label>
         {#if profileStatus}<p class="profile-status" class:error={profileStatusError}>{profileStatus}</p>{/if}
         <div class="profile-actions">
-          <button type="button" class="ghost-action" onclick={() => (showProfileSettings = false)}>Cancel</button>
+          <button type="button" class="ghost-action" onclick={closeModal}>Cancel</button>
           <button type="submit" class="primary-action">Save profile</button>
         </div>
       </form>
+    </section>
+  </div>
+{/if}
+{#if selectedImage}
+  <div class="modal-scrim image-viewer-scrim" role="presentation">
+    <button class="modal-backdrop" type="button" aria-label="Close image viewer" onclick={closeModal}></button>
+    <section class="image-viewer" aria-label="Image viewer">
+      <header>
+        <strong>{selectedImage.title}</strong>
+        <div>
+          <a href={selectedImage.url} target="_blank" rel="noreferrer">Open original</a>
+          <button type="button" aria-label="Close image viewer" onclick={closeModal}>×</button>
+        </div>
+      </header>
+      <div class="image-viewer-stage">
+        <img src={selectedImage.url} alt={selectedImage.title} />
+      </div>
     </section>
   </div>
 {/if}

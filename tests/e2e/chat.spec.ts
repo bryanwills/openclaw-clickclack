@@ -103,6 +103,12 @@ test("sends messages, searches, uploads, opens a thread, and creates a DM", asyn
   ).toBeVisible({
     timeout: 5_000,
   });
+  await page.getByRole("button", { name: "View profile for Peter Steinberger" }).first().click();
+  await expect(
+    page.getByLabel("Profile pane").getByRole("heading", { name: "Peter Steinberger" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Profile pane").getByText("@steipete").first()).toBeVisible();
+  await page.getByRole("button", { name: "Close profile" }).click();
 
   await page.getByLabel("Search messages").fill("playwright");
   await page.getByRole("button", { name: "Search" }).click();
@@ -130,6 +136,14 @@ test("sends messages, searches, uploads, opens a thread, and creates a DM", asyn
   await page.getByLabel("Message body").fill("inline image upload");
   await page.getByRole("button", { name: "Send" }).click();
   await expect(page.locator(".image-attachment").filter({ hasText: "pixel.png" })).toBeVisible();
+  await page.getByRole("button", { name: "Open image pixel.png" }).click();
+  await expect(
+    page.getByLabel("Image viewer").getByRole("img", { name: "pixel.png" }),
+  ).toBeVisible();
+  await expect(
+    page.getByLabel("Image viewer").getByRole("link", { name: "Open original" }),
+  ).toBeVisible();
+  await page.getByLabel("Image viewer").getByRole("button", { name: "Close image viewer" }).click();
 
   await page.getByLabel("Upload file").setInputFiles({
     name: "clip.mp4",
@@ -159,6 +173,9 @@ test("sends messages, searches, uploads, opens a thread, and creates a DM", asyn
   await page.getByLabel("DM member user ID").fill(secondUserId);
   await page.getByLabel("DM member user ID").press("Enter");
   await expect(page.getByRole("heading", { name: /Second User/ })).toBeVisible();
+  await expect(
+    page.locator(".nav-section", { hasText: "People" }).getByText("Second User"),
+  ).toBeVisible();
   await page.getByLabel("Message body").fill("private playwright");
   await page.getByRole("button", { name: "Send" }).click();
   await expect(page.locator(".markdown").filter({ hasText: "private playwright" })).toBeVisible();

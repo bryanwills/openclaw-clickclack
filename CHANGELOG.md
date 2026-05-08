@@ -8,6 +8,9 @@
 - Added richer Slack-like chat affordances: animated sidebar/thread panels,
   inline image attachment cards, Markdown composer controls, and a GIF picker
   that inserts animated GIF Markdown.
+- Added Slack-style user profile side panes, automatic People shortcuts in the
+  sidebar, inline video playback, tighter message spacing, and an image viewer
+  modal for inline images.
 - Added a public product website at the web root while keeping the chat app at
   `/app` locally and on `app.clickclack.chat` when served from that host.
 - Added an agent-friendly ClickClack client mode to the Go binary with
