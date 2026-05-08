@@ -1643,7 +1643,7 @@ button.ghost {
 /* ---------- COMPOSER ---------- */
 
 .composer {
-  padding: 10px 18px 18px;
+  padding: 18px 18px 10px;
   background: var(--bg);
   display: grid;
   gap: 0;
@@ -1815,11 +1815,15 @@ button.ghost {
 }
 
 .composer-row {
+  --composer-control-size: 36px;
+  --composer-line-height: 22px;
+  --composer-text-padding-block: 7px;
+
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: end;
-  gap: 6px;
-  padding: 6px 8px 6px 10px;
+  align-items: start;
+  gap: 4px;
+  padding: 8px 8px 4px 10px;
   background: transparent;
   border: 0;
   border-radius: 0;
@@ -1835,8 +1839,10 @@ button.ghost {
 }
 
 .composer-icon {
-  width: 36px;
-  height: 36px;
+  align-self: start;
+  width: var(--composer-control-size);
+  height: var(--composer-control-size);
+  margin-top: calc(var(--composer-text-padding-block) + (var(--composer-line-height) - var(--composer-control-size)) / 2);
   display: grid;
   place-items: center;
   color: var(--muted);
@@ -1864,14 +1870,14 @@ button.ghost {
 .reply-composer textarea {
   width: 100%;
   height: auto;
-  min-height: 36px;
+  min-height: 44px;
   max-height: 50vh;
-  padding: 8px 4px;
+  padding: var(--composer-text-padding-block) 4px;
   resize: none;
   color: var(--text);
-  line-height: 1.45;
+  line-height: var(--composer-line-height);
   font-size: 14.5px;
-  align-self: end;
+  align-self: start;
   overflow-y: auto;
   box-sizing: border-box;
 }
@@ -1882,8 +1888,10 @@ button.ghost {
 }
 
 .send {
-  width: 36px;
-  height: 36px;
+  align-self: start;
+  width: var(--composer-control-size);
+  height: var(--composer-control-size);
+  margin-top: calc(var(--composer-text-padding-block) + (var(--composer-line-height) - var(--composer-control-size)) / 2);
   display: grid;
   place-items: center;
   border: 0;

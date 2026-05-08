@@ -1393,9 +1393,6 @@
           </button>
         </div>
       </div>
-      <div class="composer-hint">
-        <span><kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for newline · Markdown supported</span>
-      </div>
     </form>
   </main>
 
