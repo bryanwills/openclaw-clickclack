@@ -246,7 +246,9 @@
       pendingUpload = null;
       message = { ...message, attachments: [...(message.attachments || []), upload] };
     }
-    if (!messages.some((existing) => existing.id === message.id)) {
+    if (messages.some((existing) => existing.id === message.id)) {
+      messages = messages.map((existing) => (existing.id === message.id ? message : existing));
+    } else {
       messages = [...messages, message];
     }
     await scrollMessagesToBottom();
