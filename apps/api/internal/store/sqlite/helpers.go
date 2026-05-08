@@ -5,6 +5,8 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -19,7 +21,7 @@ type scanner interface {
 
 func scanUser(row scanner) (store.User, error) {
 	var u store.User
-	err := row.Scan(&u.ID, &u.DisplayName, &u.AvatarURL, &u.CreatedAt)
+	err := row.Scan(&u.ID, &u.DisplayName, &u.Handle, &u.AvatarURL, &u.CreatedAt)
 	return u, err
 }
 
@@ -46,7 +48,7 @@ func getMessageTx(ctx context.Context, tx *sql.Tx, id string) (store.Message, er
 func messageSelect() string {
 	return `SELECT m.id, m.workspace_id, COALESCE(m.channel_id, ''), COALESCE(m.direct_conversation_id, ''), m.author_id, m.parent_message_id, m.thread_root_id, m.channel_seq, m.thread_seq,
 		       m.body, m.body_format, m.created_at, m.edited_at, m.deleted_at,
-		       u.id, u.display_name, u.avatar_url, u.created_at
+		       u.id, u.display_name, u.handle, u.avatar_url, u.created_at
 		FROM messages m
 		JOIN users u ON u.id = m.author_id`
 }
@@ -56,7 +58,7 @@ func scanMessage(row scanner) (store.Message, error) {
 	var parent, edited, deleted sql.NullString
 	var channelSeq, threadSeq sql.NullInt64
 	var author store.User
-	err := row.Scan(&m.ID, &m.WorkspaceID, &m.ChannelID, &m.DirectConversationID, &m.AuthorID, &parent, &m.ThreadRootID, &channelSeq, &threadSeq, &m.Body, &m.BodyFormat, &m.CreatedAt, &edited, &deleted, &author.ID, &author.DisplayName, &author.AvatarURL, &author.CreatedAt)
+	err := row.Scan(&m.ID, &m.WorkspaceID, &m.ChannelID, &m.DirectConversationID, &m.AuthorID, &parent, &m.ThreadRootID, &channelSeq, &threadSeq, &m.Body, &m.BodyFormat, &m.CreatedAt, &edited, &deleted, &author.ID, &author.DisplayName, &author.Handle, &author.AvatarURL, &author.CreatedAt)
 	if err != nil {
 		return store.Message{}, err
 	}
@@ -77,6 +79,35 @@ func scanMessage(row scanner) (store.Message, error) {
 	}
 	m.Author = &author
 	return m, nil
+}
+
+var handlePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{1,31}$`)
+
+func normalizeHandle(value string) (string, error) {
+	handle := strings.ToLower(strings.TrimSpace(value))
+	handle = strings.TrimPrefix(handle, "@")
+	if handle == "" {
+		return "", nil
+	}
+	if !handlePattern.MatchString(handle) {
+		return "", errors.New("handle must be 2-32 chars using letters, numbers, underscores, or dashes")
+	}
+	return handle, nil
+}
+
+func normalizeAvatarURL(value string) (string, error) {
+	avatarURL := strings.TrimSpace(value)
+	if avatarURL == "" {
+		return "", nil
+	}
+	if len(avatarURL) > 500 {
+		return "", errors.New("avatar_url is too long")
+	}
+	parsed, err := url.Parse(avatarURL)
+	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" {
+		return "", errors.New("avatar_url must be an http or https URL")
+	}
+	return avatarURL, nil
 }
 
 func scanMessages(rows *sql.Rows) ([]store.Message, error) {

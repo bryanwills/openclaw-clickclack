@@ -26,6 +26,7 @@ The server resolves callers in this order (see
 | Group         | Endpoints | Doc |
 |---------------|-----------|-----|
 | Auth          | `/api/auth/magic/{request,consume}`, `/api/auth/github/{start,callback}` | [auth](../features/auth.md) |
+| Profile       | `/api/me` | [profiles](../features/profiles.md) |
 | Workspaces    | `/api/workspaces`, `/api/workspaces/{id}` | [workspaces](../features/workspaces.md) |
 | Channels      | `/api/workspaces/{id}/channels`, `/api/channels/{id}` | [workspaces](../features/workspaces.md) |
 | Messages      | `/api/channels/{id}/messages`, `/api/messages/{id}` | [messages](../features/messages.md) |

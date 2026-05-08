@@ -31,6 +31,27 @@ func TestStoreMiscBranches(t *testing.T) {
 	if unnamed.DisplayName != "Local User" {
 		t.Fatalf("unexpected default user: %#v", unnamed)
 	}
+	updatedOwner, err := st.UpdateUserProfile(ctx, store.UpdateUserProfileInput{
+		UserID:      owner.ID,
+		DisplayName: "Peter Steinberger",
+		Handle:      "@steipete",
+		AvatarURL:   "https://example.com/avatar.png",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updatedOwner.Handle != "steipete" || updatedOwner.AvatarURL == "" {
+		t.Fatalf("unexpected profile update: %#v", updatedOwner)
+	}
+	if _, err := st.UpdateUserProfile(ctx, store.UpdateUserProfileInput{UserID: unnamed.ID, DisplayName: "Other", Handle: "STEIPETE"}); err == nil {
+		t.Fatal("expected duplicate handle error")
+	}
+	if _, err := st.UpdateUserProfile(ctx, store.UpdateUserProfileInput{UserID: owner.ID, DisplayName: " ", Handle: "bad"}); err == nil {
+		t.Fatal("expected empty display name error")
+	}
+	if _, err := st.UpdateUserProfile(ctx, store.UpdateUserProfileInput{UserID: owner.ID, DisplayName: "Peter", AvatarURL: "ftp://example.com/a.png"}); err == nil {
+		t.Fatal("expected bad avatar URL error")
+	}
 	identityUser, err := st.UpsertIdentityUser(ctx, store.UpsertIdentityUserInput{
 		Provider:        "github",
 		ProviderSubject: "42",

@@ -3,6 +3,7 @@ export type { components, paths } from "./generated/openapi";
 export type User = {
   id: string;
   display_name: string;
+  handle: string;
   avatar_url: string;
   created_at: string;
 };
@@ -118,6 +119,18 @@ export class ClickClackClient {
 
   async me(): Promise<User> {
     const data = await this.request<{ user: User }>("/api/me");
+    return data.user;
+  }
+
+  async updateMe(input: {
+    display_name: string;
+    handle?: string;
+    avatar_url?: string;
+  }): Promise<User> {
+    const data = await this.request<{ user: User }>("/api/me", {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    });
     return data.user;
   }
 

@@ -53,6 +53,16 @@ func TestChatAPIVerticalSlice(t *testing.T) {
 	if me.User.ID != owner.ID {
 		t.Fatalf("expected owner %s, got %s", owner.ID, me.User.ID)
 	}
+	profile := patchJSON[struct {
+		User store.User `json:"user"`
+	}](t, server.URL+"/api/me", map[string]string{
+		"display_name": "Peter Steinberger",
+		"handle":       "@steipete",
+		"avatar_url":   "https://example.com/avatar.png",
+	})
+	if profile.User.DisplayName != "Peter Steinberger" || profile.User.Handle != "steipete" || profile.User.AvatarURL == "" {
+		t.Fatalf("unexpected profile response: %#v", profile.User)
+	}
 
 	workspaces := getJSON[struct {
 		Workspaces []store.Workspace `json:"workspaces"`

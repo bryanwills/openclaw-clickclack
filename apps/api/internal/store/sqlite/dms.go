@@ -97,7 +97,7 @@ func (s *Store) ListDirectMessages(ctx context.Context, conversationID, userID s
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT m.id, m.workspace_id, COALESCE(m.channel_id, ''), COALESCE(m.direct_conversation_id, ''), m.author_id, m.parent_message_id, m.thread_root_id, m.channel_seq, m.thread_seq,
 		       m.body, m.body_format, m.created_at, m.edited_at, m.deleted_at,
-		       u.id, u.display_name, u.avatar_url, u.created_at
+		       u.id, u.display_name, u.handle, u.avatar_url, u.created_at
 		FROM messages m
 		JOIN users u ON u.id = m.author_id
 		WHERE m.direct_conversation_id = ? AND m.channel_seq > ?
@@ -168,7 +168,7 @@ func requireDirectMembershipTx(ctx context.Context, tx *sql.Tx, conversationID, 
 
 func (s *Store) directConversationMembers(ctx context.Context, conversationID string) ([]store.User, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT u.id, u.display_name, u.avatar_url, u.created_at
+		SELECT u.id, u.display_name, u.handle, u.avatar_url, u.created_at
 		FROM users u
 		JOIN direct_conversation_members dcm ON dcm.user_id = u.id
 		WHERE dcm.conversation_id = ?

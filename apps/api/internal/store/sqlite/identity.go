@@ -16,7 +16,7 @@ func (s *Store) UpsertIdentityUser(ctx context.Context, input store.UpsertIdenti
 		return store.User{}, errors.New("identity provider and subject are required")
 	}
 	user, err := scanUser(s.db.QueryRowContext(ctx, `
-		SELECT u.id, u.display_name, u.avatar_url, u.created_at
+		SELECT u.id, u.display_name, u.handle, u.avatar_url, u.created_at
 		FROM identities i
 		JOIN users u ON u.id = i.user_id
 		WHERE i.provider = ? AND i.provider_subject = ?`, provider, subject))
@@ -34,6 +34,7 @@ func (s *Store) UpsertIdentityUser(ctx context.Context, input store.UpsertIdenti
 	user = store.User{
 		ID:          newID("usr"),
 		DisplayName: strings.TrimSpace(input.DisplayName),
+		Handle:      "",
 		AvatarURL:   strings.TrimSpace(input.AvatarURL),
 		CreatedAt:   now(),
 	}

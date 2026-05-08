@@ -81,7 +81,7 @@ export interface paths {
     delete?: never;
     options?: never;
     head?: never;
-    patch?: never;
+    patch: operations["updateMe"];
     trace?: never;
   };
   "/api/workspaces": {
@@ -436,6 +436,21 @@ export interface components {
     ConsumeMagicLinkRequest: {
       token: string;
     };
+    UpdateMeRequest: {
+      display_name: string;
+      /** @description Unique user handle. Accepts an optional leading @ and stores the normalized value without it. */
+      handle?: string;
+      /** Format: uri */
+      avatar_url?: string;
+    };
+    User: {
+      id: string;
+      display_name: string;
+      handle: string;
+      avatar_url: string;
+      /** Format: date-time */
+      created_at: string;
+    };
     CreateChannelRequest: {
       name: string;
       /** @default public */
@@ -608,12 +623,42 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description Current local user */
+      /** @description Current user */
       200: {
         headers: {
           [name: string]: unknown;
         };
-        content?: never;
+        content: {
+          "application/json": {
+            user: components["schemas"]["User"];
+          };
+        };
+      };
+    };
+  };
+  updateMe: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateMeRequest"];
+      };
+    };
+    responses: {
+      /** @description Updated user profile */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            user: components["schemas"]["User"];
+          };
+        };
       };
     };
   };

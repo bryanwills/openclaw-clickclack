@@ -126,6 +126,7 @@ func (s *Store) CreateUser(ctx context.Context, input store.CreateUserInput) (st
 	user := store.User{
 		ID:          newID("usr"),
 		DisplayName: strings.TrimSpace(input.DisplayName),
+		Handle:      "",
 		AvatarURL:   "",
 		CreatedAt:   now(),
 	}
@@ -145,11 +146,40 @@ func (s *Store) CreateUser(ctx context.Context, input store.CreateUserInput) (st
 }
 
 func (s *Store) FirstUser(ctx context.Context) (store.User, error) {
-	return scanUser(s.db.QueryRowContext(ctx, `SELECT id, display_name, avatar_url, created_at FROM users ORDER BY created_at LIMIT 1`))
+	return scanUser(s.db.QueryRowContext(ctx, `SELECT id, display_name, handle, avatar_url, created_at FROM users ORDER BY created_at LIMIT 1`))
 }
 
 func (s *Store) GetUser(ctx context.Context, id string) (store.User, error) {
-	return scanUser(s.db.QueryRowContext(ctx, `SELECT id, display_name, avatar_url, created_at FROM users WHERE id = ?`, id))
+	return scanUser(s.db.QueryRowContext(ctx, `SELECT id, display_name, handle, avatar_url, created_at FROM users WHERE id = ?`, id))
+}
+
+func (s *Store) UpdateUserProfile(ctx context.Context, input store.UpdateUserProfileInput) (store.User, error) {
+	displayName := strings.TrimSpace(input.DisplayName)
+	if displayName == "" {
+		return store.User{}, errors.New("display_name is required")
+	}
+	if len(displayName) > 80 {
+		return store.User{}, errors.New("display_name is too long")
+	}
+	handle, err := normalizeHandle(input.Handle)
+	if err != nil {
+		return store.User{}, err
+	}
+	avatarURL, err := normalizeAvatarURL(input.AvatarURL)
+	if err != nil {
+		return store.User{}, err
+	}
+	_, err = s.db.ExecContext(ctx, `
+		UPDATE users
+		SET display_name = ?, handle = ?, avatar_url = ?
+		WHERE id = ?`, displayName, handle, avatarURL, input.UserID)
+	if err != nil {
+		if strings.Contains(err.Error(), "idx_users_handle") || strings.Contains(err.Error(), "users.handle") {
+			return store.User{}, errors.New("handle is already taken")
+		}
+		return store.User{}, err
+	}
+	return s.GetUser(ctx, input.UserID)
 }
 
 func (s *Store) ListWorkspaces(ctx context.Context, userID string) ([]store.Workspace, error) {
@@ -264,7 +294,7 @@ func (s *Store) ListMessages(ctx context.Context, channelID, userID string, afte
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT m.id, m.workspace_id, COALESCE(m.channel_id, ''), COALESCE(m.direct_conversation_id, ''), m.author_id, m.parent_message_id, m.thread_root_id, m.channel_seq, m.thread_seq,
 		       m.body, m.body_format, m.created_at, m.edited_at, m.deleted_at,
-		       u.id, u.display_name, u.avatar_url, u.created_at
+		       u.id, u.display_name, u.handle, u.avatar_url, u.created_at
 		FROM messages m
 		JOIN users u ON u.id = m.author_id
 		WHERE m.channel_id = ? AND m.parent_message_id IS NULL AND m.channel_seq > ?
@@ -345,7 +375,7 @@ func (s *Store) GetThread(ctx context.Context, rootMessageID, userID string, lim
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT m.id, m.workspace_id, COALESCE(m.channel_id, ''), COALESCE(m.direct_conversation_id, ''), m.author_id, m.parent_message_id, m.thread_root_id, m.channel_seq, m.thread_seq,
 		       m.body, m.body_format, m.created_at, m.edited_at, m.deleted_at,
-		       u.id, u.display_name, u.avatar_url, u.created_at
+		       u.id, u.display_name, u.handle, u.avatar_url, u.created_at
 		FROM messages m
 		JOIN users u ON u.id = m.author_id
 		WHERE m.thread_root_id = ? AND m.parent_message_id = ?

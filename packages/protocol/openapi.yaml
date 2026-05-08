@@ -63,7 +63,34 @@ paths:
       operationId: getMe
       responses:
         "200":
-          description: Current local user
+          description: Current user
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user:
+                    $ref: "#/components/schemas/User"
+    patch:
+      operationId: updateMe
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMeRequest"
+      responses:
+        "200":
+          description: Updated user profile
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user:
+                    $ref: "#/components/schemas/User"
   /api/workspaces:
     get:
       operationId: listWorkspaces
@@ -463,6 +490,35 @@ components:
       properties:
         token:
           type: string
+    UpdateMeRequest:
+      type: object
+      required: [display_name]
+      properties:
+        display_name:
+          type: string
+          maxLength: 80
+        handle:
+          type: string
+          description: Unique user handle. Accepts an optional leading @ and stores the normalized value without it.
+          pattern: "^[a-zA-Z0-9@][a-zA-Z0-9_-]{1,32}$"
+        avatar_url:
+          type: string
+          format: uri
+    User:
+      type: object
+      required: [id, display_name, handle, avatar_url, created_at]
+      properties:
+        id:
+          type: string
+        display_name:
+          type: string
+        handle:
+          type: string
+        avatar_url:
+          type: string
+        created_at:
+          type: string
+          format: date-time
     CreateChannelRequest:
       type: object
       required: [name]

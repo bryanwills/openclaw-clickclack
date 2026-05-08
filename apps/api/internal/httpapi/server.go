@@ -56,6 +56,7 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/auth/github/start", s.githubStart)
 		r.Get("/auth/github/callback", s.githubCallback)
 		r.Get("/me", s.me)
+		r.Patch("/me", s.updateMe)
 		r.Get("/workspaces", s.listWorkspaces)
 		r.Post("/workspaces", s.createWorkspace)
 		r.Get("/workspaces/{workspace_id}", s.getWorkspace)
@@ -98,6 +99,30 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"user": user})
+}
+
+func (s *Server) updateMe(w http.ResponseWriter, r *http.Request) {
+	user, err := s.currentUser(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	var body struct {
+		DisplayName string `json:"display_name"`
+		Handle      string `json:"handle"`
+		AvatarURL   string `json:"avatar_url"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	updated, err := s.store.UpdateUserProfile(r.Context(), store.UpdateUserProfileInput{
+		UserID:      user.ID,
+		DisplayName: body.DisplayName,
+		Handle:      body.Handle,
+		AvatarURL:   body.AvatarURL,
+	})
+	writeResult(w, map[string]any{"user": updated}, err)
 }
 
 func (s *Server) listWorkspaces(w http.ResponseWriter, r *http.Request) {

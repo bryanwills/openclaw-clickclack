@@ -65,7 +65,7 @@ func (s *Store) ConsumeMagicLink(ctx context.Context, token string) (store.User,
 
 func (s *Store) GetSessionUser(ctx context.Context, token string) (store.User, error) {
 	return scanUser(s.db.QueryRowContext(ctx, `
-		SELECT u.id, u.display_name, u.avatar_url, u.created_at
+		SELECT u.id, u.display_name, u.handle, u.avatar_url, u.created_at
 		FROM sessions s
 		JOIN users u ON u.id = s.user_id
 		WHERE s.token = ? AND s.revoked_at IS NULL AND s.expires_at > ?`, token, now()))
@@ -86,7 +86,7 @@ func (s *Store) CreateSession(ctx context.Context, userID string) (store.Session
 
 func getOrCreateMagicUser(ctx context.Context, tx *sql.Tx, email, displayName string) (store.User, error) {
 	user, err := scanUser(tx.QueryRowContext(ctx, `
-		SELECT u.id, u.display_name, u.avatar_url, u.created_at
+		SELECT u.id, u.display_name, u.handle, u.avatar_url, u.created_at
 		FROM identities i
 		JOIN users u ON u.id = i.user_id
 		WHERE i.email = ?
@@ -97,7 +97,7 @@ func getOrCreateMagicUser(ctx context.Context, tx *sql.Tx, email, displayName st
 	if !errors.Is(err, sql.ErrNoRows) {
 		return store.User{}, err
 	}
-	user = store.User{ID: newID("usr"), DisplayName: strings.TrimSpace(displayName), CreatedAt: now()}
+	user = store.User{ID: newID("usr"), DisplayName: strings.TrimSpace(displayName), Handle: "", AvatarURL: "", CreatedAt: now()}
 	if user.DisplayName == "" {
 		user.DisplayName = email
 	}

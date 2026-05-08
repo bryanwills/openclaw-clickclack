@@ -30,6 +30,7 @@ const client = new ClickClackClient({
 });
 
 const me = await client.me();
+await client.updateMe({ display_name: "Peter Steinberger", handle: "@steipete" });
 const workspaces = await client.workspaces.list();
 const channels = await client.channels.list(workspaces[0].id);
 const message = await client.channels.sendMessage(channels[0].id, {
@@ -61,7 +62,7 @@ See [features/auth.md](features/auth.md).
 
 | Group         | Methods |
 |---------------|---------|
-| `me()`        | get the current user |
+| `me()`, `updateMe()` | get or edit the current user's profile |
 | `workspaces`  | `list`, `create` |
 | `channels`    | `list`, `create`, `update`, `messages`, `sendMessage` |
 | `messages`    | `update`, `delete` |

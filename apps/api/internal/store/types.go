@@ -5,6 +5,7 @@ import "context"
 type User struct {
 	ID          string `json:"id"`
 	DisplayName string `json:"display_name"`
+	Handle      string `json:"handle"`
 	AvatarURL   string `json:"avatar_url"`
 	CreatedAt   string `json:"created_at"`
 }
@@ -75,6 +76,13 @@ type UpsertIdentityUserInput struct {
 	Email           string
 	DisplayName     string
 	AvatarURL       string
+}
+
+type UpdateUserProfileInput struct {
+	UserID      string
+	DisplayName string
+	Handle      string
+	AvatarURL   string
 }
 
 type CreateWorkspaceInput struct {
@@ -209,6 +217,7 @@ type Store interface {
 	EnsureBootstrap(ctx context.Context, name, email string) (User, error)
 	CreateUser(ctx context.Context, input CreateUserInput) (User, error)
 	UpsertIdentityUser(ctx context.Context, input UpsertIdentityUserInput) (User, error)
+	UpdateUserProfile(ctx context.Context, input UpdateUserProfileInput) (User, error)
 	AddWorkspaceMember(ctx context.Context, workspaceID, userID, role string) error
 	EnsureDefaultWorkspaceMember(ctx context.Context, userID string) (Workspace, error)
 	FirstUser(ctx context.Context) (User, error)

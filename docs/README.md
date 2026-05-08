@@ -57,6 +57,7 @@ it for anything that isn't a local clone.
 | SQLite FTS5 full-text search | [Search](features/search.md) |
 | Local file uploads + message attachments | [Uploads](features/uploads.md) |
 | Workspace-scoped direct messages | [Direct messages](features/dms.md) |
+| Profile settings, handles, avatars | [Profiles](features/profiles.md) |
 | Magic-link auth, GitHub OAuth, dev fallback | [Auth](features/auth.md) |
 | Mattermost-shaped webhooks and slash commands | [Integrations](features/integrations.md) |
 | TypeScript SDK + bot example | [SDK](sdk.md) |
