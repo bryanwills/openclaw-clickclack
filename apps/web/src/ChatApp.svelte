@@ -190,6 +190,7 @@
     activeComposerContext = "message";
     replies = [];
     await loadMessages();
+    if (selectedChannelID && !selectedDirectID) void markChannelRead(selectedChannelID);
   }
 
   async function createChannel() {
@@ -213,6 +214,7 @@
     activeComposerContext = "message";
     mobileNavOpen = false;
     await loadMessages();
+    void markChannelRead(channelID);
   }
 
   async function loadMessages() {
@@ -243,6 +245,78 @@
     return selectedDirectID || selectedChannelID || "";
   }
 
+  function maxChannelSeq(channelID: string): number {
+    let max = 0;
+    for (const m of messages) {
+      if (m.channel_id !== channelID) continue;
+      if (m.parent_message_id) continue;
+      if (typeof m.channel_seq === "number" && m.channel_seq > max) max = m.channel_seq;
+    }
+    return max;
+  }
+
+  function maxDirectSeq(conversationID: string): number {
+    let max = 0;
+    for (const m of messages) {
+      if (m.direct_conversation_id !== conversationID) continue;
+      if (typeof m.channel_seq === "number" && m.channel_seq > max) max = m.channel_seq;
+    }
+    return max;
+  }
+
+  async function markChannelRead(channelID: string) {
+    const channel = channels.find((c) => c.id === channelID);
+    if (!channel) return;
+    const seq = Math.max(channel.last_seq || 0, maxChannelSeq(channelID));
+    if (seq <= 0 || seq <= (channel.last_read_seq || 0)) {
+      // Still optimistically zero local unread count.
+      if ((channel.unread_count || 0) > 0) {
+        channels = channels.map((c) => (c.id === channelID ? { ...c, unread_count: 0 } : c));
+      }
+      return;
+    }
+    channels = channels.map((c) =>
+      c.id === channelID ? { ...c, unread_count: 0, last_read_seq: seq } : c,
+    );
+    try {
+      await api(`/api/channels/${channelID}/read`, { method: "POST", body: JSON.stringify({ seq }) });
+    } catch {
+      // Ignore — channel may be archived/inaccessible.
+    }
+  }
+
+  async function markDirectRead(conversationID: string) {
+    const dm = directConversations.find((c) => c.id === conversationID);
+    if (!dm) return;
+    const seq = Math.max(dm.last_seq || 0, maxDirectSeq(conversationID));
+    if (seq <= 0 || seq <= (dm.last_read_seq || 0)) {
+      if ((dm.unread_count || 0) > 0) {
+        directConversations = directConversations.map((c) =>
+          c.id === conversationID ? { ...c, unread_count: 0 } : c,
+        );
+      }
+      return;
+    }
+    directConversations = directConversations.map((c) =>
+      c.id === conversationID ? { ...c, unread_count: 0, last_read_seq: seq } : c,
+    );
+    try {
+      await api(`/api/dms/${conversationID}/read`, { method: "POST", body: JSON.stringify({ seq }) });
+    } catch {
+      // Ignore.
+    }
+  }
+
+  function markActiveViewRead() {
+    if (selectedDirectID) {
+      void markDirectRead(selectedDirectID);
+      return;
+    }
+    if (selectedChannelID) {
+      void markChannelRead(selectedChannelID);
+    }
+  }
+
   function captureScrollMemory() {
     if (!viewKey || !messageList) return;
     const captured = messageList.captureState();
@@ -264,10 +338,17 @@
     const merged = msgs.map((m) => {
       const local = localByID.get(m.id) || (m.nonce ? localByNonce.get(m.nonce) : undefined);
       if (!local) return m;
+      if (m.nonce && pendingDrafts.has(m.nonce)) {
+        return {
+          ...m,
+          nonce: local.nonce,
+          status: local.status,
+          attachments: local.attachments?.length ? local.attachments : m.attachments,
+        };
+      }
       return {
         ...m,
         nonce: local.nonce,
-        status: local.status,
         attachments: local.attachments?.length ? local.attachments : m.attachments,
       };
     });
@@ -414,6 +495,8 @@
       const tmpIndex = messages.findIndex((m) => m.id === localID);
       if (tmpIndex >= 0) {
         messages = messages.map((m) => (m.id === localID ? message : m));
+      } else if (messages.some((m) => m.id === message.id)) {
+        messages = messages.map((m) => (m.id === message.id ? message : m));
       } else if (
         belongsToView(message, currentConversationKey()) &&
         !messages.some((m) => m.id === message.id)
@@ -582,6 +665,7 @@
     activeComposerContext = "message";
     mobileNavOpen = false;
     await loadMessages();
+    void markDirectRead(conversationID);
   }
 
   async function startDirectWithUser(memberID: string) {
@@ -596,6 +680,7 @@
       selectedProfile = null;
       activeComposerContext = "message";
       await loadMessages();
+      void markDirectRead(existing.id);
       return;
     }
     const data = await api<{ conversation: DirectConversation }>("/api/dms", {
@@ -609,6 +694,7 @@
     selectedProfile = null;
     activeComposerContext = "message";
     await loadMessages();
+    void markDirectRead(data.conversation.id);
   }
 
   function connectRealtimeSocket() {
@@ -626,9 +712,16 @@
       handleTypingEvent(event);
       return;
     }
+    if (event.type === "channel.read" || event.type === "dm.read") {
+      handleReadEvent(event);
+      return;
+    }
     if ((event.type === "channel.created" || event.type === "channel.updated") && event.workspace_id === selectedWorkspaceID) {
       await loadChannels();
       return;
+    }
+    if (event.type === "message.created") {
+      handleUnreadBump(event);
     }
     if (
       (event.channel_id === selectedChannelID || event.payload.direct_conversation_id === selectedDirectID) &&
@@ -641,10 +734,80 @@
         return;
       }
       await loadMessages();
+      // If the new message is in the active view and we're at the bottom,
+      // advance the read pointer — don't strand the user with a stale unread.
+      if (event.type === "message.created" && messageList?.isAtBottom() !== false) {
+        if (selectedChannelID && event.channel_id === selectedChannelID) {
+          void markChannelRead(selectedChannelID);
+        } else if (selectedDirectID && event.payload.direct_conversation_id === selectedDirectID) {
+          void markDirectRead(selectedDirectID);
+        }
+      }
     }
     const rootID = event.payload.root_message_id || event.payload.message_id;
     if (selectedThread && rootID === selectedThread.id) {
       await openThread(selectedThread);
+    }
+  }
+
+  function handleReadEvent(event: RealtimeEvent) {
+    const payload = event.payload as Record<string, unknown>;
+    const userID = typeof payload.user_id === "string" ? payload.user_id : "";
+    if (!userID || userID !== user?.id) return;
+    const seqRaw = event.seq ?? payload.last_read_seq ?? payload.seq;
+    const seq = typeof seqRaw === "number" ? seqRaw : Number(seqRaw) || 0;
+    if (event.type === "channel.read") {
+      const channelID = typeof payload.channel_id === "string" ? payload.channel_id : event.channel_id || "";
+      if (!channelID) return;
+      channels = channels.map((c) => {
+        if (c.id !== channelID) return c;
+        const next = Math.max(c.last_read_seq || 0, seq);
+        return { ...c, last_read_seq: next, unread_count: Math.max(0, (c.last_seq || 0) - next) };
+      });
+    } else {
+      const dmID = typeof payload.direct_conversation_id === "string" ? payload.direct_conversation_id : "";
+      if (!dmID) return;
+      directConversations = directConversations.map((c) => {
+        if (c.id !== dmID) return c;
+        const next = Math.max(c.last_read_seq || 0, seq);
+        return { ...c, last_read_seq: next, unread_count: Math.max(0, (c.last_seq || 0) - next) };
+      });
+    }
+  }
+
+  function handleUnreadBump(event: RealtimeEvent) {
+    const payload = event.payload as Record<string, unknown>;
+    // Don't bump for own messages.
+    const authorID = typeof payload.author_id === "string" ? payload.author_id : "";
+    if (authorID && authorID === user?.id) return;
+    // Threaded replies don't affect channel unread (channel_seq isn't assigned).
+    if (payload.parent_message_id) return;
+    const seqRaw = event.seq ?? payload.channel_seq ?? payload.seq;
+    const seq = typeof seqRaw === "number" ? seqRaw : Number(seqRaw) || 0;
+    const channelID = event.channel_id || (typeof payload.channel_id === "string" ? payload.channel_id : "");
+    const dmID = typeof payload.direct_conversation_id === "string" ? payload.direct_conversation_id : "";
+    if (channelID) {
+      channels = channels.map((c) => {
+        if (c.id !== channelID) return c;
+        const lastSeq = seq > 0 ? Math.max(c.last_seq || 0, seq) : (c.last_seq || 0) + 1;
+        const isActive = channelID === selectedChannelID && !selectedDirectID;
+        const unread =
+          isActive && messageList?.isAtBottom() !== false
+            ? c.unread_count || 0
+            : Math.max(0, lastSeq - (c.last_read_seq || 0));
+        return { ...c, last_seq: lastSeq, unread_count: unread };
+      });
+    } else if (dmID) {
+      directConversations = directConversations.map((c) => {
+        if (c.id !== dmID) return c;
+        const lastSeq = seq > 0 ? Math.max(c.last_seq || 0, seq) : (c.last_seq || 0) + 1;
+        const isActive = dmID === selectedDirectID;
+        const unread =
+          isActive && messageList?.isAtBottom() !== false
+            ? c.unread_count || 0
+            : Math.max(0, lastSeq - (c.last_read_seq || 0));
+        return { ...c, last_seq: lastSeq, unread_count: unread };
+      });
     }
   }
 
@@ -909,6 +1072,7 @@
       restoreState={viewRestoreState}
       {viewKey}
       loading={messagesLoading}
+      unreadCount={(selectedChannel?.unread_count || selectedDirect?.unread_count || 0)}
       selectedThreadID={selectedThread?.id}
       currentUserID={user?.id}
       onListRef={(handle) => (messageList = handle)}
@@ -919,6 +1083,7 @@
       onOpenThread={openThread}
       onJumpToQuote={(message) => void jumpToQuotedMessage(message)}
       onOpenImage={openImageViewer}
+      onReachedBottom={markActiveViewRead}
       onRetry={retryFailedMessage}
       onDiscard={discardFailedMessage}
     />

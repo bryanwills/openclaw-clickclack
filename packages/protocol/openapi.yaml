@@ -178,8 +178,24 @@ paths:
             schema:
               $ref: "#/components/schemas/CreateMessageRequest"
       responses:
+        "200":
+          description: Existing message returned for an idempotent nonce replay
         "201":
           description: Created message
+  /api/channels/{channel_id}/read:
+    post:
+      operationId: markChannelRead
+      parameters:
+        - $ref: "#/components/parameters/channel_id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MarkReadRequest"
+      responses:
+        "200":
+          description: Updated channel read receipt
   /api/messages/{message_id}:
     patch:
       operationId: updateMessage
@@ -419,8 +435,24 @@ paths:
             schema:
               $ref: "#/components/schemas/CreateMessageRequest"
       responses:
+        "200":
+          description: Existing direct message returned for an idempotent nonce replay
         "201":
           description: Created direct message
+  /api/dms/{conversation_id}/read:
+    post:
+      operationId: markDirectRead
+      parameters:
+        - $ref: "#/components/parameters/conversation_id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MarkReadRequest"
+      responses:
+        "200":
+          description: Updated direct-conversation read receipt
   /api/hooks/mattermost/{channel_id}:
     post:
       operationId: mattermostIncomingWebhook
@@ -563,6 +595,36 @@ components:
             the same channel, DM conversation, or thread as the new message;
             cross-context quoting is rejected with 400. The server captures a
             soft snapshot of the quoted body at send time.
+        nonce:
+          type: string
+          maxLength: 128
+          description: |
+            Optional client idempotency key for retry-safe message creation.
+            Reusing the same nonce with the same body and quote returns the
+            existing message with HTTP 200 instead of creating a duplicate.
+    MarkReadRequest:
+      type: object
+      required: [seq]
+      properties:
+        seq:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Last visible channel or DM sequence to mark as read.
+    ReadReceipt:
+      type: object
+      required: [scope_id, user_id, last_read_seq, last_read_at]
+      properties:
+        scope_id:
+          type: string
+        user_id:
+          type: string
+        last_read_seq:
+          type: integer
+          format: int64
+        last_read_at:
+          type: string
+          format: date-time
     AddReactionRequest:
       type: object
       required: [emoji]
@@ -592,6 +654,8 @@ components:
         workspace_id:
           type: string
         channel_id:
+          type: string
+        direct_conversation_id:
           type: string
         type:
           type: string

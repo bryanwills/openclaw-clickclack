@@ -128,6 +128,48 @@ func TestCreateMessageWithQuotePersistsSnapshot(t *testing.T) {
 	}
 }
 
+func TestCreateMessageNonceReplayWithQuote(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newQuotesFixture(t)
+
+	first, event, err := f.store.CreateMessage(ctx, store.CreateMessageInput{
+		ChannelID:       f.channelA.ID,
+		AuthorID:        f.owner.ID,
+		Body:            "quoted retry",
+		QuotedMessageID: ptr(f.rootA.ID),
+		Nonce:           "quoted-nonce-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event.ID == "" {
+		t.Fatal("expected first quoted nonce send to emit an event")
+	}
+	replayed, replayEvent, err := f.store.CreateMessage(ctx, store.CreateMessageInput{
+		ChannelID:       f.channelA.ID,
+		AuthorID:        f.owner.ID,
+		Body:            "quoted retry",
+		QuotedMessageID: ptr(f.rootA.ID),
+		Nonce:           "quoted-nonce-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replayed.ID != first.ID || replayEvent.ID != "" {
+		t.Fatalf("expected quoted nonce replay without event, got %#v / %#v", replayed, replayEvent)
+	}
+	_, _, err = f.store.CreateMessage(ctx, store.CreateMessageInput{
+		ChannelID: f.channelA.ID,
+		AuthorID:  f.owner.ID,
+		Body:      "quoted retry",
+		Nonce:     "quoted-nonce-1",
+	})
+	if !errors.Is(err, store.ErrClientNonceConflict) {
+		t.Fatalf("expected quote mismatch nonce conflict, got %v", err)
+	}
+}
+
 func TestCreateMessageRejectsCrossChannelQuote(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

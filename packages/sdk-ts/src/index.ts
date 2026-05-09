@@ -22,6 +22,9 @@ export type Channel = {
   kind: string;
   created_at: string;
   archived_at?: string;
+  last_seq?: number;
+  last_read_seq?: number;
+  unread_count?: number;
 };
 
 export type Message = {
@@ -43,6 +46,7 @@ export type Message = {
   quoted_body_snapshot?: string;
   quoted_author_id?: string;
   quoted_author?: User;
+  nonce?: string;
 };
 
 export type Upload = {
@@ -60,6 +64,16 @@ export type DirectConversation = {
   workspace_id: string;
   created_at: string;
   members: User[];
+  last_seq?: number;
+  last_read_seq?: number;
+  unread_count?: number;
+};
+
+export type ReadReceipt = {
+  scope_id: string;
+  user_id: string;
+  last_read_seq: number;
+  last_read_at: string;
 };
 
 export type RealtimeEvent = {
@@ -190,13 +204,20 @@ export class ClickClackClient {
     },
     sendMessage: async (
       channelId: string,
-      input: { body: string; quoted_message_id?: string },
+      input: { body: string; quoted_message_id?: string; nonce?: string },
     ): Promise<Message> => {
       const data = await this.request<{ message: Message }>(`/api/channels/${channelId}/messages`, {
         method: "POST",
         body: JSON.stringify(input),
       });
       return data.message;
+    },
+    markRead: async (channelId: string, seq: number): Promise<ReadReceipt> => {
+      const data = await this.request<{ receipt: ReadReceipt }>(`/api/channels/${channelId}/read`, {
+        method: "POST",
+        body: JSON.stringify({ seq }),
+      });
+      return data.receipt;
     },
   };
 
@@ -286,7 +307,7 @@ export class ClickClackClient {
     },
     sendMessage: async (
       conversationId: string,
-      input: { body: string; quoted_message_id?: string },
+      input: { body: string; quoted_message_id?: string; nonce?: string },
     ): Promise<Message> => {
       const data = await this.request<{ message: Message }>(`/api/dms/${conversationId}/messages`, {
         method: "POST",
@@ -294,12 +315,20 @@ export class ClickClackClient {
       });
       return data.message;
     },
+    markRead: async (conversationId: string, seq: number): Promise<ReadReceipt> => {
+      const data = await this.request<{ receipt: ReadReceipt }>(`/api/dms/${conversationId}/read`, {
+        method: "POST",
+        body: JSON.stringify({ seq }),
+      });
+      return data.receipt;
+    },
   };
 
   events = {
     publishEphemeral: async (input: {
       workspaceId: string;
       channelId?: string;
+      directConversationId?: string;
       type: "typing.started" | "typing.stopped" | "presence.changed";
       payload?: Record<string, unknown>;
     }): Promise<RealtimeEvent> => {
@@ -308,6 +337,7 @@ export class ClickClackClient {
         body: JSON.stringify({
           workspace_id: input.workspaceId,
           channel_id: input.channelId,
+          direct_conversation_id: input.directConversationId,
           type: input.type,
           payload: input.payload,
         }),

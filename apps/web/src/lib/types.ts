@@ -20,6 +20,9 @@ export type Channel = {
   kind: string;
   created_at: string;
   archived_at?: string;
+  last_seq?: number;
+  last_read_seq?: number;
+  unread_count?: number;
 };
 
 export type Message = {
@@ -73,6 +76,9 @@ export type DirectConversation = {
   workspace_id: string;
   created_at: string;
   members: User[];
+  last_seq?: number;
+  last_read_seq?: number;
+  unread_count?: number;
 };
 
 export type ThreadState = {
@@ -89,6 +95,9 @@ export type EventPayload = {
   direct_conversation_id?: string;
   nonce?: string;
   user_id?: string;
+  author_id?: string;
+  last_read_seq?: number;
+  seq?: number;
 };
 
 export type RealtimeEvent = {

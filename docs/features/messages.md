@@ -19,6 +19,7 @@ the same row via `quoted_message_id` and friends, documented in
 ```http
 GET    /api/channels/{channel_id}/messages?after_seq=&limit=
 POST   /api/channels/{channel_id}/messages
+POST   /api/channels/{channel_id}/read
 PATCH  /api/messages/{message_id}
 DELETE /api/messages/{message_id}
 ```
@@ -26,14 +27,21 @@ DELETE /api/messages/{message_id}
 - `GET` returns root messages only (`parent_message_id IS NULL`) for the
   channel, ordered by `channel_seq` ascending. `after_seq` is exclusive;
   `limit` is clamped to `1..200` (default 100).
-- `POST` accepts `{body}`. Empty bodies are rejected.
+- `POST /messages` accepts `{body, quoted_message_id?, nonce?}`. Empty bodies
+  are rejected. `nonce` is an optional client idempotency key; replaying the
+  same nonce with the same body and quote returns the existing message with
+  HTTP 200 instead of creating a duplicate.
+- `POST /read` accepts `{seq}` and updates the caller's monotonic read pointer
+  for the channel. The server caps `seq` to the channel's current last root
+  message sequence.
 - `PATCH` accepts `{body}` and only the original author can edit. Sets
   `edited_at`.
 - `DELETE` is a soft delete — sets `deleted_at`, keeps the row and the
   `channel_seq` slot so cursors stay valid.
 
-All four emit durable events: `message.created`, `message.updated`,
-`message.deleted`.
+Message create, edit, delete, and read updates emit durable events:
+`message.created`, `message.updated`, `message.deleted`, `channel.read`.
+Read events are private to the user who advanced the pointer.
 
 ## Sequence numbers
 

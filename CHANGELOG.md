@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Added retry-safe optimistic sends, per-user unread/read receipts for
+  channels and DMs, private read events, and member-scoped DM typing
+  indicators. The chat UI now shows unread badges and jump-to-bottom unread
+  counts, reconciles pending sends across realtime/reload races, and exposes
+  the new read APIs through OpenAPI, the TypeScript SDK, and docs. Realtime
+  event cursors are now monotonic so same-millisecond events replay in order.
+  Thanks @shakkernerd.
+- Improved media previews and long message timelines: uploads now carry
+  image/video dimensions through SQLite, API responses, OpenAPI, and web
+  types; the chat timeline is virtualized with scroll restoration, bottom
+  pinning, and reliable quote jumps. Thanks @shakkernerd.
 - Added type-to-focus on the chat composer: pressing a printable key while
   focus is outside any text field (and no modal/menu is open) now jumps the
   caret to the active composer — the thread reply textarea when a thread pane

@@ -238,16 +238,25 @@ func (s *Store) ListChannels(ctx context.Context, workspaceID, userID string) ([
 	if err := s.requireMembership(ctx, workspaceID, userID); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT id, workspace_id, name, kind, created_at, archived_at FROM channels WHERE workspace_id = ? ORDER BY name`, workspaceID)
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT c.id, c.workspace_id, c.name, c.kind, c.created_at, c.archived_at,
+		       COALESCE((SELECT MAX(channel_seq) FROM messages WHERE channel_id = c.id AND parent_message_id IS NULL), 0) AS last_seq,
+		       COALESCE((SELECT last_read_seq FROM channel_reads WHERE channel_id = c.id AND user_id = ?), 0) AS last_read_seq
+		FROM channels c
+		WHERE c.workspace_id = ?
+		ORDER BY c.name`, userID, workspaceID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := []store.Channel{}
 	for rows.Next() {
-		ch, err := scanChannel(rows)
-		if err != nil {
+		var ch store.Channel
+		if err := rows.Scan(&ch.ID, &ch.WorkspaceID, &ch.Name, &ch.Kind, &ch.CreatedAt, &ch.ArchivedAt, &ch.LastSeq, &ch.LastReadSeq); err != nil {
 			return nil, err
+		}
+		if ch.LastSeq > ch.LastReadSeq {
+			ch.UnreadCount = ch.LastSeq - ch.LastReadSeq
 		}
 		out = append(out, ch)
 	}
@@ -365,7 +374,7 @@ func (s *Store) CreateMessage(ctx context.Context, input store.CreateMessageInpu
 	if _, err := tx.ExecContext(ctx, `INSERT INTO thread_state (root_message_id) VALUES (?)`, id); err != nil {
 		return store.Message{}, store.Event{}, err
 	}
-	event, err := insertEvent(ctx, tx, workspaceID, input.ChannelID, "message.created", &seq, eventPayload(map[string]string{"message_id": id}, nonce))
+	event, err := insertEvent(ctx, tx, workspaceID, input.ChannelID, "message.created", &seq, eventPayload(map[string]string{"message_id": id, "author_id": input.AuthorID}, nonce))
 	if err != nil {
 		return store.Message{}, store.Event{}, err
 	}

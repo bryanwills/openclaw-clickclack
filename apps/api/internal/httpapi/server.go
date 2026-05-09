@@ -65,6 +65,7 @@ func (s *Server) Handler() http.Handler {
 		r.Patch("/channels/{channel_id}", s.updateChannel)
 		r.Get("/channels/{channel_id}/messages", s.listMessages)
 		r.Post("/channels/{channel_id}/messages", s.createMessage)
+		r.Post("/channels/{channel_id}/read", s.markChannelRead)
 		r.Patch("/messages/{message_id}", s.updateMessage)
 		r.Delete("/messages/{message_id}", s.deleteMessage)
 		r.Get("/messages/{message_id}/thread", s.getThread)
@@ -82,6 +83,7 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/dms", s.createDirectConversation)
 		r.Get("/dms/{conversation_id}/messages", s.listDirectMessages)
 		r.Post("/dms/{conversation_id}/messages", s.createDirectMessage)
+		r.Post("/dms/{conversation_id}/read", s.markDirectRead)
 		r.Post("/hooks/mattermost/{channel_id}", s.mattermostWebhook)
 		r.Post("/hooks/slash/{channel_id}", s.slashCommand)
 	})
@@ -297,6 +299,9 @@ func (s *Server) listEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	events, err := s.store.ListEventsAfter(r.Context(), r.URL.Query().Get("workspace_id"), user.ID, r.URL.Query().Get("after_cursor"), queryInt(r, "limit", 200))
+	if err == nil {
+		events = filterEventsForUser(events, user.ID)
+	}
 	writeResult(w, map[string]any{"events": events}, err)
 }
 
@@ -327,6 +332,9 @@ func (s *Server) websocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, event := range backlog {
+		if !shouldDeliverEvent(event, user.ID) {
+			continue
+		}
 		if err := writeWS(ctx, conn, event); err != nil {
 			return
 		}
@@ -338,11 +346,53 @@ func (s *Server) websocket(w http.ResponseWriter, r *http.Request) {
 		case <-ctx.Done():
 			return
 		case event := <-events:
+			if !shouldDeliverEvent(event, user.ID) {
+				continue
+			}
 			if err := writeWS(ctx, conn, event); err != nil {
 				return
 			}
 		}
 	}
+}
+
+// shouldDeliverEvent gates per-user-private events so they only reach allowed
+// sessions and never leak to other workspace members.
+func shouldDeliverEvent(event store.Event, userID string) bool {
+	if len(event.RecipientUserIDs) > 0 {
+		for _, allowed := range event.RecipientUserIDs {
+			if allowed == userID {
+				return true
+			}
+		}
+		return false
+	}
+	switch event.Type {
+	case "channel.read", "dm.read":
+		payload, ok := event.Payload.(map[string]string)
+		if !ok {
+			// Backlog payloads come back via ListEventsAfter as map[string]any.
+			if anyPayload, ok := event.Payload.(map[string]any); ok {
+				if v, _ := anyPayload["user_id"].(string); v != "" {
+					return v == userID
+				}
+				return false
+			}
+			return false
+		}
+		return payload["user_id"] == userID
+	}
+	return true
+}
+
+func filterEventsForUser(events []store.Event, userID string) []store.Event {
+	filtered := events[:0]
+	for _, event := range events {
+		if shouldDeliverEvent(event, userID) {
+			filtered = append(filtered, event)
+		}
+	}
+	return filtered
 }
 
 func (s *Server) currentUser(r *http.Request) (store.User, error) {

@@ -31,9 +31,12 @@
   <div class="nav-list">
     {#each conversations as conversation (conversation.id)}
       {@const dmUser = dmAvatarUser(conversation, currentUserID)}
+      {@const unread = conversation.unread_count || 0}
+      {@const isActive = conversation.id === selectedDirectID}
       <button
         class="nav-item dm"
-        class:active={conversation.id === selectedDirectID}
+        class:active={isActive}
+        class:has-unread={unread > 0 && !isActive}
         onclick={() => onSelectDirect(conversation.id)}
       >
         <span class="dm-avatar" style="--hue: {avatarHue(dmUser?.id || conversation.id)}deg">
@@ -44,7 +47,11 @@
           {/if}
         </span>
         <span class="nav-label">{dmTitle(conversation, currentUserID)}</span>
-        <span class="presence-dot" aria-hidden="true"></span>
+        {#if unread > 0 && !isActive}
+          <span class="unread-badge" aria-label={`${unread} unread`}>{unread > 99 ? "99+" : unread}</span>
+        {:else}
+          <span class="presence-dot" aria-hidden="true"></span>
+        {/if}
       </button>
     {/each}
     {#if conversations.length === 0}

@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -18,6 +19,11 @@ import (
 type scanner interface {
 	Scan(dest ...any) error
 }
+
+var (
+	idMu      sync.Mutex
+	idEntropy = ulid.Monotonic(rand.Reader, 0)
+)
 
 func scanUser(row scanner) (store.User, error) {
 	var u store.User
@@ -280,7 +286,10 @@ func nullableString(value string) any {
 }
 
 func newID(prefix string) string {
-	return prefix + "_" + strings.ToLower(ulid.MustNew(ulid.Timestamp(time.Now()), rand.Reader).String())
+	idMu.Lock()
+	id := ulid.MustNew(ulid.Timestamp(time.Now()), idEntropy)
+	idMu.Unlock()
+	return prefix + "_" + strings.ToLower(id.String())
 }
 
 func now() string {

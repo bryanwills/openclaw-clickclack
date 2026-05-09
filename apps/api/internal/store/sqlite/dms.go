@@ -15,19 +15,24 @@ func (s *Store) ListDirectConversations(ctx context.Context, workspaceID, userID
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT dc.id, dc.workspace_id, dc.created_at
+		SELECT dc.id, dc.workspace_id, dc.created_at,
+		       COALESCE((SELECT MAX(channel_seq) FROM messages WHERE direct_conversation_id = dc.id), 0) AS last_seq,
+		       COALESCE((SELECT last_read_seq FROM direct_reads WHERE conversation_id = dc.id AND user_id = ?), 0) AS last_read_seq
 		FROM direct_conversations dc
 		JOIN direct_conversation_members dcm ON dcm.conversation_id = dc.id
 		WHERE dc.workspace_id = ? AND dcm.user_id = ?
-		ORDER BY dc.created_at`, workspaceID, userID)
+		ORDER BY dc.created_at`, userID, workspaceID, userID)
 	if err != nil {
 		return nil, err
 	}
 	out := []store.DirectConversation{}
 	for rows.Next() {
 		var dm store.DirectConversation
-		if err := rows.Scan(&dm.ID, &dm.WorkspaceID, &dm.CreatedAt); err != nil {
+		if err := rows.Scan(&dm.ID, &dm.WorkspaceID, &dm.CreatedAt, &dm.LastSeq, &dm.LastReadSeq); err != nil {
 			return nil, err
+		}
+		if dm.LastSeq > dm.LastReadSeq {
+			dm.UnreadCount = dm.LastSeq - dm.LastReadSeq
 		}
 		out = append(out, dm)
 	}
@@ -46,6 +51,29 @@ func (s *Store) ListDirectConversations(ctx context.Context, workspaceID, userID
 		out[i].Members = members
 	}
 	return out, nil
+}
+
+func (s *Store) GetDirectConversation(ctx context.Context, conversationID, userID string) (store.DirectConversation, error) {
+	var dm store.DirectConversation
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT dc.id, dc.workspace_id, dc.created_at,
+		       COALESCE((SELECT MAX(channel_seq) FROM messages WHERE direct_conversation_id = dc.id), 0) AS last_seq,
+		       COALESCE((SELECT last_read_seq FROM direct_reads WHERE conversation_id = dc.id AND user_id = ?), 0) AS last_read_seq
+		FROM direct_conversations dc
+		JOIN direct_conversation_members dcm ON dcm.conversation_id = dc.id
+		WHERE dc.id = ? AND dcm.user_id = ?`, userID, conversationID, userID).
+		Scan(&dm.ID, &dm.WorkspaceID, &dm.CreatedAt, &dm.LastSeq, &dm.LastReadSeq); err != nil {
+		return store.DirectConversation{}, err
+	}
+	if dm.LastSeq > dm.LastReadSeq {
+		dm.UnreadCount = dm.LastSeq - dm.LastReadSeq
+	}
+	members, err := s.directConversationMembers(ctx, dm.ID)
+	if err != nil {
+		return store.DirectConversation{}, err
+	}
+	dm.Members = members
+	return dm, nil
 }
 
 func (s *Store) CreateDirectConversation(ctx context.Context, input store.CreateDirectConversationInput) (store.DirectConversation, error) {
@@ -168,7 +196,7 @@ func (s *Store) CreateDirectMessage(ctx context.Context, input store.CreateDirec
 	if _, err := tx.ExecContext(ctx, `INSERT INTO thread_state (root_message_id) VALUES (?)`, id); err != nil {
 		return store.Message{}, store.Event{}, err
 	}
-	event, err := insertEvent(ctx, tx, workspaceID, "", "message.created", &seq, eventPayload(map[string]string{"message_id": id, "direct_conversation_id": input.ConversationID}, nonce))
+	event, err := insertEvent(ctx, tx, workspaceID, "", "message.created", &seq, eventPayload(map[string]string{"message_id": id, "direct_conversation_id": input.ConversationID, "author_id": input.AuthorID}, nonce))
 	if err != nil {
 		return store.Message{}, store.Event{}, err
 	}

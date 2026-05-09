@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/openclaw/clickclack/apps/api/internal/store"
@@ -51,6 +52,15 @@ func TestStoreMiscBranches(t *testing.T) {
 	}
 	if _, err := st.UpdateUserProfile(ctx, store.UpdateUserProfileInput{UserID: owner.ID, DisplayName: "Peter", AvatarURL: "ftp://example.com/a.png"}); err == nil {
 		t.Fatal("expected bad avatar URL error")
+	}
+	if _, err := st.UpdateUserProfile(ctx, store.UpdateUserProfileInput{UserID: owner.ID, DisplayName: strings.Repeat("x", 81)}); err == nil {
+		t.Fatal("expected long display name error")
+	}
+	if _, err := st.UpdateUserProfile(ctx, store.UpdateUserProfileInput{UserID: owner.ID, DisplayName: "Peter", AvatarURL: "https://" + strings.Repeat("a", 500)}); err == nil {
+		t.Fatal("expected long avatar URL error")
+	}
+	if _, err := st.UpdateUserProfile(ctx, store.UpdateUserProfileInput{UserID: "usr_missing", DisplayName: "Missing"}); err == nil {
+		t.Fatal("expected missing profile user error")
 	}
 	identityUser, err := st.UpsertIdentityUser(ctx, store.UpsertIdentityUserInput{
 		Provider:        "github",

@@ -49,6 +49,7 @@ async function send(scope: Scope, type: "typing.started" | "typing.stopped"): Pr
       body: JSON.stringify({
         workspace_id: scope.workspaceID,
         channel_id: scope.channelID || "",
+        direct_conversation_id: scope.directConversationID || "",
         type,
         payload: payload(scope),
       }),

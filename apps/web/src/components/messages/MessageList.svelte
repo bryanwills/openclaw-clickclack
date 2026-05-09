@@ -9,6 +9,7 @@
     scrollToBottom: () => void;
     scrollToMessage: (id: string) => boolean;
     captureState: () => MessageListState | null;
+    isAtBottom: () => boolean;
   };
 </script>
 
@@ -42,6 +43,7 @@
     onOpenThread: (message: Message) => void;
     onJumpToQuote: (message: Message) => void;
     onOpenImage: (url: string, title: string) => void;
+    onReachedBottom?: () => void;
     onRetry?: (message: Message) => void;
     onDiscard?: (message: Message) => void;
   };
@@ -64,6 +66,7 @@
     onOpenThread,
     onJumpToQuote,
     onOpenImage,
+    onReachedBottom,
     onRetry,
     onDiscard,
   }: Props = $props();
@@ -101,6 +104,9 @@
   function scrollToBottom() {
     if (!vlist || items.length === 0) return;
     vlist.scrollToIndex(items.length - 1, { align: "end" });
+    requestAnimationFrame(() => {
+      if (checkAtBottom()) onReachedBottom?.();
+    });
   }
 
   function findMessageIndex(messageID: string): number {
@@ -139,7 +145,7 @@
   }
 
   $effect(() => {
-    onListRef({ scrollToBottom, scrollToMessage, captureState });
+    onListRef({ scrollToBottom, scrollToMessage, captureState, isAtBottom: () => atBottom });
     return () => onListRef(null);
   });
 
@@ -220,7 +226,9 @@
 
   function handleScroll(_offset: number) {
     if (pendingRestore) return;
+    const wasAtBottom = atBottom;
     atBottom = checkAtBottom();
+    if (atBottom && !wasAtBottom) onReachedBottom?.();
   }
 </script>
 

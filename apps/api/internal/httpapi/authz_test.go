@@ -76,6 +76,35 @@ func TestHTTPUnauthorizedRoutes(t *testing.T) {
 	}
 }
 
+func TestShouldDeliverPrivateEvents(t *testing.T) {
+	t.Parallel()
+
+	if !shouldDeliverEvent(store.Event{Type: "message.created"}, "usr_owner") {
+		t.Fatal("expected public event to be delivered")
+	}
+	if !shouldDeliverEvent(store.Event{Type: "typing.started", RecipientUserIDs: []string{"usr_owner", "usr_other"}}, "usr_other") {
+		t.Fatal("expected targeted event to be delivered to recipient")
+	}
+	if shouldDeliverEvent(store.Event{Type: "typing.started", RecipientUserIDs: []string{"usr_owner"}}, "usr_other") {
+		t.Fatal("expected targeted event to be hidden from non-recipient")
+	}
+	if !shouldDeliverEvent(store.Event{Type: "dm.read", Payload: map[string]string{"user_id": "usr_owner"}}, "usr_owner") {
+		t.Fatal("expected read receipt to be delivered to owner")
+	}
+	if shouldDeliverEvent(store.Event{Type: "dm.read", Payload: map[string]string{"user_id": "usr_owner"}}, "usr_other") {
+		t.Fatal("expected read receipt to be hidden from other user")
+	}
+	if !shouldDeliverEvent(store.Event{Type: "channel.read", Payload: map[string]any{"user_id": "usr_owner"}}, "usr_owner") {
+		t.Fatal("expected backlog read receipt to be delivered to owner")
+	}
+	if shouldDeliverEvent(store.Event{Type: "channel.read", Payload: map[string]any{}}, "usr_owner") {
+		t.Fatal("expected malformed backlog read receipt to be hidden")
+	}
+	if shouldDeliverEvent(store.Event{Type: "channel.read", Payload: "bad"}, "usr_owner") {
+		t.Fatal("expected malformed read receipt to be hidden")
+	}
+}
+
 func TestHTTPUploadNotConfiguredAndCookieAuth(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

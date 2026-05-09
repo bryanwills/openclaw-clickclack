@@ -35,7 +35,9 @@ const workspaces = await client.workspaces.list();
 const channels = await client.channels.list(workspaces[0].id);
 const message = await client.channels.sendMessage(channels[0].id, {
   body: "click clack",
+  nonce: crypto.randomUUID(),
 });
+await client.channels.markRead(channels[0].id, message.channel_seq ?? 0);
 ```
 
 ## Auth
@@ -64,12 +66,12 @@ See [features/auth.md](features/auth.md).
 |---------------|---------|
 | `me()`, `updateMe()` | get or edit the current user's profile |
 | `workspaces`  | `list`, `create` |
-| `channels`    | `list`, `create`, `update`, `messages`, `sendMessage` |
+| `channels`    | `list`, `create`, `update`, `messages`, `sendMessage`, `markRead` |
 | `messages`    | `update`, `delete` |
 | `threads`     | `get`, `reply` |
 | `search(workspaceId, q)` | full-text search |
 | `uploads`     | `create(workspaceId, file)`, `attach(messageId, uploadId)` |
-| `dms`         | `list`, `create`, `messages`, `sendMessage` |
+| `dms`         | `list`, `create`, `messages`, `sendMessage`, `markRead` |
 | `events`      | `publishEphemeral`, `subscribe` |
 
 ## Realtime subscription
@@ -92,7 +94,7 @@ const socket = client.events.subscribe({
 
 ## Generated types
 
-`packages/sdk-ts/src/generated/openapi.ts` is generated from
+`packages/sdk-ts/src/generated/openapi.d.ts` is generated from
 `packages/protocol/openapi.yaml`. Re-export at the top of `index.ts`:
 
 ```ts

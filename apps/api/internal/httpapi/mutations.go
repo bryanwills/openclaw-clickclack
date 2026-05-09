@@ -71,10 +71,11 @@ func (s *Server) publishEphemeral(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		WorkspaceID string         `json:"workspace_id"`
-		ChannelID   string         `json:"channel_id"`
-		Type        string         `json:"type"`
-		Payload     map[string]any `json:"payload"`
+		WorkspaceID          string         `json:"workspace_id"`
+		ChannelID            string         `json:"channel_id"`
+		DirectConversationID string         `json:"direct_conversation_id"`
+		Type                 string         `json:"type"`
+		Payload              map[string]any `json:"payload"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -91,14 +92,41 @@ func (s *Server) publishEphemeral(w http.ResponseWriter, r *http.Request) {
 	if body.Payload == nil {
 		body.Payload = map[string]any{}
 	}
+	directConversationID := body.DirectConversationID
+	if directConversationID == "" {
+		if payloadID, _ := body.Payload["direct_conversation_id"].(string); payloadID != "" {
+			directConversationID = payloadID
+		}
+	}
+	var recipientUserIDs []string
+	if directConversationID != "" {
+		if body.ChannelID != "" {
+			writeError(w, http.StatusBadRequest, errors.New("channel_id and direct_conversation_id are mutually exclusive"))
+			return
+		}
+		dm, err := s.store.GetDirectConversation(r.Context(), directConversationID, user.ID)
+		if err != nil || dm.WorkspaceID != body.WorkspaceID {
+			if err == nil {
+				err = errors.New("direct conversation is not in this workspace")
+			}
+			writeError(w, http.StatusForbidden, err)
+			return
+		}
+		recipientUserIDs = make([]string, 0, len(dm.Members))
+		for _, member := range dm.Members {
+			recipientUserIDs = append(recipientUserIDs, member.ID)
+		}
+		body.Payload["direct_conversation_id"] = directConversationID
+	}
 	body.Payload["user_id"] = user.ID
 	event := store.Event{
-		ID:          "eph_" + time.Now().UTC().Format("20060102150405.000000000"),
-		Type:        body.Type,
-		WorkspaceID: body.WorkspaceID,
-		ChannelID:   body.ChannelID,
-		CreatedAt:   time.Now().UTC().Format(time.RFC3339Nano),
-		Payload:     body.Payload,
+		ID:               "eph_" + time.Now().UTC().Format("20060102150405.000000000"),
+		Type:             body.Type,
+		WorkspaceID:      body.WorkspaceID,
+		ChannelID:        body.ChannelID,
+		CreatedAt:        time.Now().UTC().Format(time.RFC3339Nano),
+		Payload:          body.Payload,
+		RecipientUserIDs: recipientUserIDs,
 	}
 	s.hub.Publish(event)
 	writeJSON(w, http.StatusAccepted, map[string]any{"event": event})

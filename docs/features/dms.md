@@ -15,7 +15,8 @@ table — every DM message sets `direct_conversation_id` and leaves
 GET  /api/dms?workspace_id=                              # caller's conversations in a workspace
 POST /api/dms                                            # { workspace_id, member_ids }
 GET  /api/dms/{conversation_id}/messages?after_seq=&limit=
-POST /api/dms/{conversation_id}/messages                 # { body }
+POST /api/dms/{conversation_id}/messages                 # { body, quoted_message_id?, nonce? }
+POST /api/dms/{conversation_id}/read                     # { seq }
 ```
 
 Conversations include their members hydrated from `users`. The `member_ids`
@@ -28,7 +29,12 @@ exists, otherwise it opens the profile pane with a Message action.
 
 `POST` to `/dms/{id}/messages` increments a per-conversation sequence on
 `messages.channel_seq` and emits a durable event into the workspace event
-stream so DM lists and unread counts stay live.
+stream so DM lists and unread counts stay live. `nonce` has the same
+retry-safe idempotency behavior as channel message creation.
+
+`POST /dms/{id}/read` updates the caller's monotonic read pointer for that
+conversation and emits a private `dm.read` event only to the caller's own
+sessions.
 
 ## Membership
 

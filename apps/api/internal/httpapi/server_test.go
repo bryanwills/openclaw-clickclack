@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -111,6 +112,8 @@ func TestChatAPIVerticalSlice(t *testing.T) {
 	}
 	if event := readEventType(t, conn, "message.created"); event.Type != "message.created" {
 		t.Fatalf("unexpected websocket event %s", event.Type)
+	} else if payload, ok := event.Payload.(map[string]any); !ok || payload["author_id"] != owner.ID || event.Seq == nil || *event.Seq != 1 {
+		t.Fatalf("unexpected message.created event payload: %#v", event)
 	}
 	nonceCreated, nonceStatus := postJSONWithStatus[struct {
 		Message store.Message `json:"message"`
@@ -167,6 +170,10 @@ func TestChatAPIVerticalSlice(t *testing.T) {
 	if body != "hello upload" {
 		t.Fatalf("unexpected upload body %q", body)
 	}
+	rawUpload := uploadFileWithoutPartContentType(t, server.URL+"/api/uploads", workspace.ID)
+	if rawUpload.ContentType != "application/octet-stream" || rawUpload.Width != 33 || rawUpload.Height != 0 || rawUpload.DurationMS != 0 {
+		t.Fatalf("unexpected raw upload metadata: %#v", rawUpload)
+	}
 
 	reaction := postJSON[struct {
 		Event store.Event `json:"event"`
@@ -220,6 +227,115 @@ func TestChatAPIVerticalSlice(t *testing.T) {
 	}](t, server.URL+"/api/realtime/events?workspace_id="+url.QueryEscape(workspace.ID)+"&after_cursor="+url.QueryEscape(created.Event.Cursor))
 	if len(events.Events) == 0 {
 		t.Fatal("expected recoverable events after cursor")
+	}
+}
+
+func TestReadEventsArePrivateAcrossWebSocketAndHTTPReplay(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dataDir := t.TempDir()
+	st, err := sqlitestore.Open("sqlite://" + filepath.Join(dataDir, "clickclack.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := st.EnsureBootstrap(ctx, "Owner", "owner@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: "Second", Email: "second@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaces, err := st.ListWorkspaces(ctx, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace := workspaces[0]
+	if err := st.AddWorkspaceMember(ctx, workspace.ID, second.ID, "member"); err != nil {
+		t.Fatal(err)
+	}
+	channels, err := st.ListChannels(ctx, workspace.ID, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	channel := channels[0]
+
+	hub := realtime.NewHub()
+	server := httptest.NewServer(New(st, hub, Options{UploadDir: filepath.Join(dataDir, "uploads")}).Handler())
+	t.Cleanup(server.Close)
+
+	created := postJSON[struct {
+		Message store.Message `json:"message"`
+		Event   store.Event   `json:"event"`
+	}](t, server.URL+"/api/channels/"+channel.ID+"/messages", map[string]string{"body": "mark me read"})
+	if created.Message.ChannelSeq == nil {
+		t.Fatalf("expected channel seq: %#v", created.Message)
+	}
+
+	ownerRead := postJSONAsUser[struct {
+		Receipt store.ReadReceipt `json:"receipt"`
+	}](t, owner.ID, server.URL+"/api/channels/"+channel.ID+"/read", map[string]int64{"seq": *created.Message.ChannelSeq})
+	if ownerRead.Receipt.LastReadSeq != *created.Message.ChannelSeq {
+		t.Fatalf("unexpected read receipt: %#v", ownerRead.Receipt)
+	}
+	ownerReadAgain := postJSONAsUser[struct {
+		Receipt store.ReadReceipt `json:"receipt"`
+	}](t, owner.ID, server.URL+"/api/channels/"+channel.ID+"/read", map[string]int64{"seq": *created.Message.ChannelSeq})
+	if ownerReadAgain.Receipt.LastReadSeq != *created.Message.ChannelSeq {
+		t.Fatalf("unexpected idempotent read receipt: %#v", ownerReadAgain.Receipt)
+	}
+	expectStatus(t, http.MethodPost, server.URL+"/api/channels/"+channel.ID+"/read", strings.NewReader("{"), http.StatusBadRequest)
+
+	ownerEvents := getJSONAsUser[struct {
+		Events []store.Event `json:"events"`
+	}](t, owner.ID, server.URL+"/api/realtime/events?workspace_id="+url.QueryEscape(workspace.ID)+"&after_cursor="+url.QueryEscape(created.Event.Cursor))
+	if len(ownerEvents.Events) != 1 || ownerEvents.Events[0].Type != "channel.read" {
+		t.Fatalf("owner should receive own read event, got %#v", ownerEvents.Events)
+	}
+
+	secondEvents := getJSONAsUser[struct {
+		Events []store.Event `json:"events"`
+	}](t, second.ID, server.URL+"/api/realtime/events?workspace_id="+url.QueryEscape(workspace.ID)+"&after_cursor="+url.QueryEscape(created.Event.Cursor))
+	for _, event := range secondEvents.Events {
+		if event.Type == "channel.read" {
+			t.Fatalf("second user received private read event: %#v", secondEvents.Events)
+		}
+	}
+
+	dm := postJSONAsUser[struct {
+		Conversation store.DirectConversation `json:"conversation"`
+	}](t, owner.ID, server.URL+"/api/dms", map[string]any{"workspace_id": workspace.ID, "member_ids": []string{second.ID}})
+	dmMessage := postJSONAsUser[struct {
+		Message store.Message `json:"message"`
+		Event   store.Event   `json:"event"`
+	}](t, owner.ID, server.URL+"/api/dms/"+dm.Conversation.ID+"/messages", map[string]string{"body": "dm read"})
+	if dmMessage.Message.ChannelSeq == nil {
+		t.Fatalf("expected dm seq: %#v", dmMessage.Message)
+	}
+	ownerDMRead := postJSONAsUser[struct {
+		Receipt store.ReadReceipt `json:"receipt"`
+	}](t, owner.ID, server.URL+"/api/dms/"+dm.Conversation.ID+"/read", map[string]int64{"seq": *dmMessage.Message.ChannelSeq})
+	if ownerDMRead.Receipt.LastReadSeq != *dmMessage.Message.ChannelSeq {
+		t.Fatalf("unexpected dm read receipt: %#v", ownerDMRead.Receipt)
+	}
+	ownerDMReadAgain := postJSONAsUser[struct {
+		Receipt store.ReadReceipt `json:"receipt"`
+	}](t, owner.ID, server.URL+"/api/dms/"+dm.Conversation.ID+"/read", map[string]int64{"seq": *dmMessage.Message.ChannelSeq})
+	if ownerDMReadAgain.Receipt.LastReadSeq != *dmMessage.Message.ChannelSeq {
+		t.Fatalf("unexpected idempotent dm read receipt: %#v", ownerDMReadAgain.Receipt)
+	}
+	expectStatus(t, http.MethodPost, server.URL+"/api/dms/"+dm.Conversation.ID+"/read", strings.NewReader("{"), http.StatusBadRequest)
+	secondDMEvents := getJSONAsUser[struct {
+		Events []store.Event `json:"events"`
+	}](t, second.ID, server.URL+"/api/realtime/events?workspace_id="+url.QueryEscape(workspace.ID)+"&after_cursor="+url.QueryEscape(dmMessage.Event.Cursor))
+	for _, event := range secondDMEvents.Events {
+		if event.Type == "dm.read" {
+			t.Fatalf("second user received private dm read event: %#v", secondDMEvents.Events)
+		}
 	}
 }
 
@@ -321,6 +437,29 @@ func getJSON[T any](t *testing.T, endpoint string) T {
 	return out
 }
 
+func getJSONAsUser[T any](t *testing.T, userID, endpoint string) T {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("X-ClickClack-User", userID)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("GET %s: %s %s", endpoint, resp.Status, string(body))
+	}
+	var out T
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
 func postJSON[T any](t *testing.T, endpoint string, body any) T {
 	t.Helper()
 	out, _ := postJSONWithStatus[T](t, endpoint, body)
@@ -347,6 +486,34 @@ func postJSONWithStatus[T any](t *testing.T, endpoint string, body any) (T, int)
 		t.Fatal(err)
 	}
 	return out, resp.StatusCode
+}
+
+func postJSONAsUser[T any](t *testing.T, userID, endpoint string, body any) T {
+	t.Helper()
+	payload, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-ClickClack-User", userID)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("POST %s: %s %s", endpoint, resp.Status, string(body))
+	}
+	var out T
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	return out
 }
 
 func postForm[T any](t *testing.T, endpoint string, form url.Values) T {
@@ -429,6 +596,50 @@ func uploadFile(t *testing.T, endpoint, workspaceID, filename, content string) s
 	if resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(resp.Body)
 		t.Fatalf("upload: %s %s", resp.Status, string(body))
+	}
+	var out struct {
+		Upload store.Upload `json:"upload"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	return out.Upload
+}
+
+func uploadFileWithoutPartContentType(t *testing.T, endpoint, workspaceID string) store.Upload {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for key, value := range map[string]string{
+		"workspace_id": workspaceID,
+		"width":        "33",
+		"height":       "-1",
+		"duration_ms":  "bad",
+	} {
+		if err := writer.WriteField(key, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	header := textproto.MIMEHeader{}
+	header.Set("Content-Disposition", `form-data; name="file"; filename="raw.bin"`)
+	part, err := writer.CreatePart(header)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write([]byte("raw")); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.Post(endpoint, writer.FormDataContentType(), &body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("raw upload: %s %s", resp.Status, string(body))
 	}
 	var out struct {
 		Upload store.Upload `json:"upload"`

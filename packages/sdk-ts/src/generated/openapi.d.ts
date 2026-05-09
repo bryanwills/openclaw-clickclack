@@ -164,6 +164,22 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/channels/{channel_id}/read": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["markChannelRead"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/messages/{message_id}": {
     parameters: {
       query?: never;
@@ -388,6 +404,22 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/dms/{conversation_id}/read": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["markDirectRead"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/hooks/mattermost/{channel_id}": {
     parameters: {
       query?: never;
@@ -475,6 +507,27 @@ export interface components {
        *     soft snapshot of the quoted body at send time.
        */
       quoted_message_id?: string;
+      /**
+       * @description Optional client idempotency key for retry-safe message creation.
+       *     Reusing the same nonce with the same body and quote returns the
+       *     existing message with HTTP 200 instead of creating a duplicate.
+       */
+      nonce?: string;
+    };
+    MarkReadRequest: {
+      /**
+       * Format: int64
+       * @description Last visible channel or DM sequence to mark as read.
+       */
+      seq: number;
+    };
+    ReadReceipt: {
+      scope_id: string;
+      user_id: string;
+      /** Format: int64 */
+      last_read_seq: number;
+      /** Format: date-time */
+      last_read_at: string;
     };
     AddReactionRequest: {
       emoji: string;
@@ -489,6 +542,7 @@ export interface components {
     EphemeralEventRequest: {
       workspace_id: string;
       channel_id?: string;
+      direct_conversation_id?: string;
       /** @enum {string} */
       type: "typing.started" | "typing.stopped" | "presence.changed";
       payload?: {
@@ -835,8 +889,39 @@ export interface operations {
       };
     };
     responses: {
+      /** @description Existing message returned for an idempotent nonce replay */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
       /** @description Created message */
       201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  markChannelRead: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        channel_id: components["parameters"]["channel_id"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MarkReadRequest"];
+      };
+    };
+    responses: {
+      /** @description Updated channel read receipt */
+      200: {
         headers: {
           [name: string]: unknown;
         };
@@ -1100,6 +1185,9 @@ export interface operations {
           workspace_id: string;
           /** Format: binary */
           file: string;
+          width?: number;
+          height?: number;
+          duration_ms?: number;
         };
       };
     };
@@ -1213,8 +1301,39 @@ export interface operations {
       };
     };
     responses: {
+      /** @description Existing direct message returned for an idempotent nonce replay */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
       /** @description Created direct message */
       201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  markDirectRead: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        conversation_id: components["parameters"]["conversation_id"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MarkReadRequest"];
+      };
+    };
+    responses: {
+      /** @description Updated direct-conversation read receipt */
+      200: {
         headers: {
           [name: string]: unknown;
         };

@@ -21,6 +21,46 @@ func formInt(r *http.Request, key string) int {
 	return v
 }
 
+func (s *Server) markChannelRead(w http.ResponseWriter, r *http.Request) {
+	user, err := s.currentUser(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	var body struct {
+		Seq int64 `json:"seq"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	receipt, event, err := s.store.MarkChannelRead(r.Context(), chi.URLParam(r, "channel_id"), user.ID, body.Seq)
+	if err == nil && event.ID != "" {
+		s.hub.Publish(event)
+	}
+	writeResult(w, map[string]any{"receipt": receipt}, err)
+}
+
+func (s *Server) markDirectRead(w http.ResponseWriter, r *http.Request) {
+	user, err := s.currentUser(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	var body struct {
+		Seq int64 `json:"seq"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	receipt, event, err := s.store.MarkDirectRead(r.Context(), chi.URLParam(r, "conversation_id"), user.ID, body.Seq)
+	if err == nil && event.ID != "" {
+		s.hub.Publish(event)
+	}
+	writeResult(w, map[string]any{"receipt": receipt}, err)
+}
+
 func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	user, err := s.currentUser(r)
 	if err != nil {

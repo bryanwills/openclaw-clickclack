@@ -29,12 +29,17 @@
   </div>
   <div class="nav-list">
     {#each channels as channel (channel.id)}
+      {@const unread = channel.unread_count || 0}
       <button
         class="nav-item channel"
         class:active={channel.id === selectedChannelID && !selectedDirectID}
+        class:has-unread={unread > 0 && !(channel.id === selectedChannelID && !selectedDirectID)}
         onclick={() => onSelectChannel(channel.id)}
       >
         <span class="hash">#</span> <span class="nav-label">{channel.name}</span>
+        {#if unread > 0 && !(channel.id === selectedChannelID && !selectedDirectID)}
+          <span class="unread-badge" aria-label={`${unread} unread`}>{unread > 99 ? "99+" : unread}</span>
+        {/if}
       </button>
     {/each}
     {#if channels.length === 0}

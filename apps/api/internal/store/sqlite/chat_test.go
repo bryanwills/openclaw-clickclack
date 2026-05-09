@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/openclaw/clickclack/apps/api/internal/store"
@@ -241,8 +242,32 @@ func TestStoreAccessErrors(t *testing.T) {
 			_, err := st.ListMessages(ctx, channels[0].ID, outsider.ID, 0, 10)
 			return err
 		}},
+		{"create message denied", func() error {
+			_, _, err := st.CreateMessage(ctx, store.CreateMessageInput{ChannelID: channels[0].ID, AuthorID: outsider.ID, Body: "x"})
+			return err
+		}},
 		{"thread denied", func() error {
 			_, _, _, err := st.GetThread(ctx, root.ID, outsider.ID, 10)
+			return err
+		}},
+		{"reply denied", func() error {
+			_, _, _, err := st.CreateThreadReply(ctx, store.CreateThreadReplyInput{RootMessageID: root.ID, AuthorID: outsider.ID, Body: "x"})
+			return err
+		}},
+		{"update message denied", func() error {
+			_, _, err := st.UpdateMessage(ctx, store.UpdateMessageInput{MessageID: root.ID, UserID: outsider.ID, Body: "x"})
+			return err
+		}},
+		{"delete message denied", func() error {
+			_, _, err := st.DeleteMessage(ctx, store.DeleteMessageInput{MessageID: root.ID, UserID: outsider.ID})
+			return err
+		}},
+		{"add reaction denied", func() error {
+			_, err := st.AddReaction(ctx, store.CreateReactionInput{MessageID: root.ID, UserID: outsider.ID, Emoji: "x"})
+			return err
+		}},
+		{"remove reaction denied", func() error {
+			_, err := st.RemoveReaction(ctx, store.CreateReactionInput{MessageID: root.ID, UserID: outsider.ID, Emoji: "x"})
 			return err
 		}},
 		{"events denied", func() error {
@@ -353,6 +378,22 @@ func TestStoreDirectMessagesAndUserLookup(t *testing.T) {
 	if replayedDM.ID != msg.ID || replayedDMEvent.ID != "" {
 		t.Fatalf("expected idempotent dm replay without event, got %#v %#v", replayedDM, replayedDMEvent)
 	}
+	if _, _, err := st.CreateDirectMessage(ctx, store.CreateDirectMessageInput{
+		ConversationID: dm.ID,
+		AuthorID:       other.ID,
+		Body:           "different direct hello",
+		Nonce:          "dm-nonce-1",
+	}); !errors.Is(err, store.ErrClientNonceConflict) {
+		t.Fatalf("expected dm nonce conflict, got %v", err)
+	}
+	if _, _, err := st.CreateDirectMessage(ctx, store.CreateDirectMessageInput{
+		ConversationID: dm.ID,
+		AuthorID:       other.ID,
+		Body:           "too long nonce",
+		Nonce:          strings.Repeat("n", 129),
+	}); err == nil {
+		t.Fatal("expected too-long dm nonce to be rejected")
+	}
 	messages, err := st.ListDirectMessages(ctx, dm.ID, third.ID, 0, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -386,6 +427,10 @@ func TestStoreDirectMessagesAndUserLookup(t *testing.T) {
 		}},
 		{"empty dm body", func() error {
 			_, _, err := st.CreateDirectMessage(ctx, store.CreateDirectMessageInput{ConversationID: dm.ID, AuthorID: owner.ID})
+			return err
+		}},
+		{"missing dm create", func() error {
+			_, _, err := st.CreateDirectMessage(ctx, store.CreateDirectMessageInput{ConversationID: "dm_missing", AuthorID: owner.ID, Body: "x"})
 			return err
 		}},
 		{"missing dm", func() error {
@@ -468,6 +513,9 @@ func TestStoreBranchCases(t *testing.T) {
 	}
 	if _, _, err := st.CreateMessage(ctx, store.CreateMessageInput{ChannelID: "chn_missing", AuthorID: owner.ID, Body: "x"}); err == nil {
 		t.Fatal("expected missing channel error")
+	}
+	if _, err := st.ListMessages(ctx, "chn_missing", owner.ID, 0, 10); err == nil {
+		t.Fatal("expected missing channel list error")
 	}
 	if results, err := st.SearchMessages(ctx, workspace.ID, owner.ID, "missingterm", 999); err != nil || len(results) != 0 {
 		t.Fatalf("expected no search results, got %#v err=%v", results, err)

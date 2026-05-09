@@ -33,9 +33,13 @@ POST /api/realtime/ephemeral
   durable events newer than `after_cursor`, then streams live publishes until
   the client disconnects. Membership is rechecked on every connect.
 - `GET /events` is the same backfill in pull form. Use it after a long offline
-  period instead of relying on the connect-time backfill.
+  period instead of relying on the connect-time backfill. User-private durable
+  events, such as read receipts, are filtered the same way as the WebSocket
+  stream.
 - `POST /ephemeral` publishes a non-durable typing/presence event into the
-  hub.
+  hub. Channel typing events are scoped by `channel_id`; DM typing events must
+  send `direct_conversation_id` and are delivered only to that conversation's
+  members.
 
 ## Event shape
 
@@ -58,11 +62,18 @@ Inserted in the same transaction as the underlying mutation:
 
 - `channel.created`, `channel.updated`
 - `message.created`, `message.updated`, `message.deleted`
+- `channel.read`, `dm.read`
 - `thread.reply_created`, `thread.state_updated`
 - `reaction.added`, `reaction.removed`
 
 Direct messages also publish into the workspace event stream so DM lists stay
 fresh.
+
+`message.created` carries the message sequence in top-level `seq` and includes
+`message_id`, `author_id`, optional `direct_conversation_id`, and optional
+`nonce` in `payload`. Read receipt events carry the updated read pointer in
+top-level `seq` and include `user_id` plus the channel or DM conversation ID in
+`payload`; they are delivered only to that user.
 
 ## Ephemeral events
 
@@ -71,6 +82,10 @@ Not persisted, not delivered after disconnect, may be dropped under load:
 - `typing.started`
 - `typing.stopped`
 - `presence.changed`
+
+For DM typing, the server verifies the sender is in the direct conversation and
+filters WebSocket delivery to that member set. Workspace members outside the DM
+do not receive the event.
 
 `POST /api/realtime/ephemeral` validates workspace membership and tags the
 payload with `user_id` from the caller before publishing.

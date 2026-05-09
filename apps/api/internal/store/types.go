@@ -36,6 +36,9 @@ type Channel struct {
 	Kind        string  `json:"kind"`
 	CreatedAt   string  `json:"created_at"`
 	ArchivedAt  *string `json:"archived_at,omitempty"`
+	LastSeq     int64   `json:"last_seq"`
+	LastReadSeq int64   `json:"last_read_seq"`
+	UnreadCount int64   `json:"unread_count"`
 }
 
 type Message struct {
@@ -74,15 +77,16 @@ type ThreadState struct {
 }
 
 type Event struct {
-	ID          string `json:"id"`
-	Cursor      string `json:"cursor"`
-	Type        string `json:"type"`
-	WorkspaceID string `json:"workspace_id"`
-	ChannelID   string `json:"channel_id,omitempty"`
-	Seq         *int64 `json:"seq,omitempty"`
-	CreatedAt   string `json:"created_at"`
-	PayloadJSON string `json:"-"`
-	Payload     any    `json:"payload"`
+	ID               string   `json:"id"`
+	Cursor           string   `json:"cursor"`
+	Type             string   `json:"type"`
+	WorkspaceID      string   `json:"workspace_id"`
+	ChannelID        string   `json:"channel_id,omitempty"`
+	Seq              *int64   `json:"seq,omitempty"`
+	CreatedAt        string   `json:"created_at"`
+	PayloadJSON      string   `json:"-"`
+	Payload          any      `json:"payload"`
+	RecipientUserIDs []string `json:"-"`
 }
 
 type CreateUserInput struct {
@@ -199,6 +203,9 @@ type DirectConversation struct {
 	WorkspaceID string `json:"workspace_id"`
 	CreatedAt   string `json:"created_at"`
 	Members     []User `json:"members"`
+	LastSeq     int64  `json:"last_seq"`
+	LastReadSeq int64  `json:"last_read_seq"`
+	UnreadCount int64  `json:"unread_count"`
 }
 
 type CreateDirectConversationInput struct {
@@ -242,6 +249,13 @@ type Session struct {
 	ExpiresAt string `json:"expires_at"`
 }
 
+type ReadReceipt struct {
+	ScopeID     string `json:"scope_id"`
+	UserID      string `json:"user_id"`
+	LastReadSeq int64  `json:"last_read_seq"`
+	LastReadAt  string `json:"last_read_at"`
+}
+
 type Store interface {
 	Close() error
 	Migrate(ctx context.Context) error
@@ -273,9 +287,12 @@ type Store interface {
 	AttachUpload(ctx context.Context, input AttachUploadInput) error
 	SearchMessages(ctx context.Context, workspaceID, userID, query string, limit int) ([]SearchResult, error)
 	ListDirectConversations(ctx context.Context, workspaceID, userID string) ([]DirectConversation, error)
+	GetDirectConversation(ctx context.Context, conversationID, userID string) (DirectConversation, error)
 	CreateDirectConversation(ctx context.Context, input CreateDirectConversationInput) (DirectConversation, error)
 	ListDirectMessages(ctx context.Context, conversationID, userID string, afterSeq int64, limit int) ([]Message, error)
 	CreateDirectMessage(ctx context.Context, input CreateDirectMessageInput) (Message, Event, error)
+	MarkChannelRead(ctx context.Context, channelID, userID string, seq int64) (ReadReceipt, Event, error)
+	MarkDirectRead(ctx context.Context, conversationID, userID string, seq int64) (ReadReceipt, Event, error)
 	CreateInvite(ctx context.Context, workspaceID, createdBy string) (Invite, error)
 	CreateMagicLink(ctx context.Context, email, displayName string) (MagicLink, error)
 	ConsumeMagicLink(ctx context.Context, token string) (User, Session, error)
