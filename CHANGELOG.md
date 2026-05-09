@@ -25,6 +25,11 @@
 - Polished profile pane/profile settings actions and message hover states so
   buttons share the same height, contact icons stay centered, and hovered
   messages no longer also highlight the inner text row.
+- Added a persistent in-timeline "New" divider for unread channel and DM
+  messages. The divider anchors to the read boundary, survives the
+  jump-to-bottom unread FAB, and clears smoothly only when the user manually
+  reaches the bottom/read boundary so it remains clear which messages were new. Thanks
+  @shakkernerd.
 - Added retry-safe optimistic sends, per-user unread/read receipts for
   channels and DMs, private read events, and member-scoped DM typing
   indicators. The chat UI now shows unread badges and jump-to-bottom unread

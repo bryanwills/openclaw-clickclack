@@ -14,68 +14,83 @@
   pointer-events: none;
 }
 
-.messages-vlist {
+.messages-scroll {
   flex: 1;
   min-height: 0;
+  overflow-y: auto;
+  /* Browser scroll anchoring would fight virtua's own. Disable per official chat example. */
+  overflow-anchor: none;
+  display: flex;
+  flex-direction: column;
+  padding: 0 4px;
 }
 
-.jump-to-bottom {
+/* Spacer above the Virtualizer so a short list aligns to the bottom of the
+   viewport (chat-style), and so the first item has top breathing room. */
+.messages-spacer {
+  flex-grow: 1;
+  min-height: 16px;
+}
+
+.unread-bar {
   position: absolute;
-  right: 18px;
-  bottom: 16px;
+  left: 16px;
+  right: 16px;
+  top: 8px;
   z-index: 5;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px 6px 14px;
-  height: 32px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--text);
+  display: flex;
+  align-items: stretch;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--accent, #5865f2);
+  color: white;
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.01em;
+  box-shadow: 0 8px 22px -10px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.unread-bar__jump,
+.unread-bar__mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
   cursor: pointer;
-  box-shadow: 0 8px 22px -10px rgba(0, 0, 0, 0.35);
-  opacity: 0;
-  transform: translateY(8px) scale(0.96);
-  pointer-events: none;
-  transition:
-    opacity 140ms ease-out,
-    transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    background-color 120ms ease-out,
-    border-color 120ms ease-out;
+  padding: 0 12px;
+  transition: background-color 100ms ease-out;
 }
 
-.jump-to-bottom.visible {
-  opacity: 1;
-  transform: translateY(0) scale(1);
-  pointer-events: auto;
+.unread-bar__jump {
+  flex: 1;
+  justify-content: flex-start;
+  text-align: left;
 }
 
-.jump-to-bottom:hover {
-  background: var(--hover-strong);
-  border-color: var(--accent);
+.unread-bar__mark {
+  border-left: 1px solid rgba(255, 255, 255, 0.18);
+  flex-shrink: 0;
 }
 
-.jump-to-bottom:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+.unread-bar__jump:hover,
+.unread-bar__mark:hover {
+  background: rgba(0, 0, 0, 0.12);
 }
 
-.jump-to-bottom__count {
-  color: var(--accent);
+.unread-bar__jump:focus-visible,
+.unread-bar__mark:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.6);
+  outline-offset: -2px;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .jump-to-bottom {
-    transition: opacity 80ms ease-out;
-    transform: none;
-  }
-  .jump-to-bottom.visible {
-    transform: none;
-  }
+.unread-bar__label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .typing-indicator {
@@ -250,6 +265,52 @@
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+.new-messages-divider {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin: 14px 0 6px;
+  padding: 0 18px;
+  pointer-events: none;
+  position: relative;
+}
+
+.new-messages-divider::before {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--danger, #ed4245);
+  opacity: 0.85;
+}
+
+.new-messages-divider span {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 6px;
+  margin-left: 8px;
+  background: var(--danger, #ed4245);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-radius: 3px 0 0 3px;
+  position: relative;
+}
+
+.new-messages-divider span::after {
+  content: "";
+  position: absolute;
+  right: -8px;
+  top: 0;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 8px 0 8px 8px;
+  border-color: transparent transparent transparent var(--danger, #ed4245);
 }
 
 .message-group {

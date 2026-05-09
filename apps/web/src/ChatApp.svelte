@@ -9,7 +9,10 @@
   import { notifyTyping, stopTyping } from "./lib/typing";
   import ChatComposer from "./components/composer/ChatComposer.svelte";
   import ImageViewer from "./components/media/ImageViewer.svelte";
-  import MessageList, { type MessageListHandle, type MessageListState } from "./components/messages/MessageList.svelte";
+  import MessageList, {
+    type MessageListHandle,
+    type MessageListState,
+  } from "./components/messages/MessageList.svelte";
   import TypingIndicator, { TYPING_TTL_MS, type TypingEntry } from "./components/messages/TypingIndicator.svelte";
   import CreateChannelModal from "./components/navigation/CreateChannelModal.svelte";
   import CreateDirectModal from "./components/navigation/CreateDirectModal.svelte";
@@ -62,6 +65,8 @@
   let socket: RealtimeConnection | null = null;
   let messageList: MessageListHandle | null = null;
   let scrollMemory = new Map<string, MessageListState>();
+  let unreadAnchors = new Map<string, string>();
+  let unreadAnchorMessageID = "";
   let viewKey = "";
   let viewRestoreState: MessageListState | undefined = undefined;
   let messagesLoading = true;
@@ -335,6 +340,44 @@
     }
   }
 
+  function clearActiveUnreadBoundary() {
+    const key = currentConversationKey();
+    if (!key) return;
+    unreadAnchors.delete(key);
+    if (key === viewKey) unreadAnchorMessageID = "";
+  }
+
+  function lastReadSeqForKey(key: string): number {
+    const channel = channels.find((c) => c.id === key);
+    if (channel) return channel.last_read_seq || 0;
+    const dm = directConversations.find((c) => c.id === key);
+    return dm?.last_read_seq || 0;
+  }
+
+  function firstUnreadAnchorFor(key: string, list: Message[], lastReadSeq: number): string {
+    for (const message of list) {
+      if (!belongsToView(message, key)) continue;
+      if (message.parent_message_id) continue;
+      if (message.author?.id === user?.id || message.author_id === user?.id) continue;
+      const seq = message.channel_seq;
+      if (typeof seq === "number" && seq > lastReadSeq) return message.id;
+    }
+    return "";
+  }
+
+  function ensureUnreadAnchor(key: string, lastReadSeq: number) {
+    if (!key) return;
+    const existing = unreadAnchors.get(key);
+    if (existing && messages.some((m) => m.id === existing)) {
+      if (key === viewKey) unreadAnchorMessageID = existing;
+      return;
+    }
+    const anchor = firstUnreadAnchorFor(key, messages, lastReadSeq);
+    if (anchor) unreadAnchors.set(key, anchor);
+    else unreadAnchors.delete(key);
+    if (key === viewKey) unreadAnchorMessageID = anchor;
+  }
+
   function captureScrollMemory() {
     if (!viewKey || !messageList) return;
     const captured = messageList.captureState();
@@ -344,6 +387,10 @@
   function commitView(key: string, msgs: Message[]) {
     // Update viewKey + messages atomically so MessageList sees the swap as one tick.
     const switchingView = key !== viewKey;
+    // Capture at-bottom BEFORE mutating `messages` so the read reflects the
+    // user's pre-event state (DOM hasn't re-rendered yet either way, but
+    // making the order explicit avoids regressions).
+    const wasAtBottomBeforeCommit = !switchingView && messageList?.isAtBottom() !== false;
     viewRestoreState = scrollMemory.get(key);
     // Preserve outgoing optimistic placeholders for this view that the server
     // hasn't echoed yet. Without this the placeholder would flicker out when a
@@ -385,6 +432,29 @@
     if (switchingView) {
       typingEntries = [];
       stopTyping();
+      const anchor = key ? firstUnreadAnchorFor(key, messages, lastReadSeqForKey(key)) : "";
+      if (anchor) unreadAnchors.set(key, anchor);
+      else unreadAnchors.delete(key);
+      unreadAnchorMessageID = anchor;
+    } else {
+      // Same view. The divider exists to mark "stuff you missed" — so if the
+      // user is actively at the bottom when a new message arrives, they're
+      // reading it live and the divider has no purpose. Clear it (and any
+      // stale prior divider, since burying it under live-read content would
+      // be misleading). Only when the user is scrolled up do we create or
+      // preserve an anchor.
+      if (wasAtBottomBeforeCommit) {
+        unreadAnchors.delete(key);
+        unreadAnchorMessageID = "";
+      } else {
+        const existing = unreadAnchors.get(key);
+        const stillVisible = existing && messages.some((m) => m.id === existing);
+        if (stillVisible) {
+          unreadAnchorMessageID = existing as string;
+        } else {
+          ensureUnreadAnchor(key, lastReadSeqForKey(key));
+        }
+      }
     }
   }
 
@@ -471,8 +541,10 @@
     if (existingNonce) {
       messages = messages.map((m) => (m.id === localID ? placeholder : m));
     } else if (currentConversationKey() === draft.viewKey) {
+      const wasAtBottom = messageList?.isAtBottom() !== false;
       messages = [...messages, placeholder];
-      void scrollMessagesToBottom();
+      clearActiveUnreadBoundary();
+      if (wasAtBottom) void scrollMessagesToBottom();
     }
     const path = draft.directConversationID
       ? `/api/dms/${draft.directConversationID}/messages`
@@ -754,11 +826,13 @@
       await loadChannels();
       return;
     }
-    if (event.type === "message.created") {
+    const affectsActiveView =
+      event.channel_id === selectedChannelID || event.payload.direct_conversation_id === selectedDirectID;
+    if (event.type === "message.created" && !affectsActiveView) {
       handleUnreadBump(event);
     }
     if (
-      (event.channel_id === selectedChannelID || event.payload.direct_conversation_id === selectedDirectID) &&
+      affectsActiveView &&
       (event.type === "message.created" || event.type === "message.updated" || event.type === "message.deleted")
     ) {
       // Optimistic-send echo: if this is our own outgoing message, the HTTP
@@ -767,10 +841,20 @@
       if (event.type === "message.created" && echoNonce && pendingDrafts.has(echoNonce)) {
         return;
       }
+      // Snapshot stuck-to-bottom state BEFORE mutating messages. Once the
+      // reload completes, virtua's scrollSize grows while offset is unchanged
+      // and the cached atBottom flag flips to false — we'd lose the signal.
+      const wasAtBottom = messageList?.isAtBottom() !== false;
       await loadMessages();
-      // If the new message is in the active view and we're at the bottom,
-      // advance the read pointer — don't strand the user with a stale unread.
-      if (event.type === "message.created" && messageList?.isAtBottom() !== false) {
+      if (event.type === "message.created") {
+        handleUnreadBump(event);
+      }
+      // Drive the scroll explicitly from here rather than relying on the
+      // MessageList $effect: its cached atBottom may already have flipped.
+      if (event.type === "message.created" && wasAtBottom) {
+        void scrollMessagesToBottom();
+      }
+      if (event.type === "message.created" && wasAtBottom) {
         if (selectedChannelID && event.channel_id === selectedChannelID) {
           void markChannelRead(selectedChannelID);
         } else if (selectedDirectID && event.payload.direct_conversation_id === selectedDirectID) {
@@ -821,25 +905,31 @@
     const channelID = event.channel_id || (typeof payload.channel_id === "string" ? payload.channel_id : "");
     const dmID = typeof payload.direct_conversation_id === "string" ? payload.direct_conversation_id : "";
     if (channelID) {
+      const isActive = channelID === selectedChannelID && !selectedDirectID;
+      const activeAtBottom = messageList?.isAtBottom() !== false;
+      const channel = channels.find((c) => c.id === channelID);
+      const incomingSeq = seq > 0 ? seq : (channel?.last_seq || 0) + 1;
+      if (isActive && !activeAtBottom) {
+        ensureUnreadAnchor(channelID, channel?.last_read_seq || 0);
+      }
       channels = channels.map((c) => {
         if (c.id !== channelID) return c;
-        const lastSeq = seq > 0 ? Math.max(c.last_seq || 0, seq) : (c.last_seq || 0) + 1;
-        const isActive = channelID === selectedChannelID && !selectedDirectID;
-        const unread =
-          isActive && messageList?.isAtBottom() !== false
-            ? c.unread_count || 0
-            : Math.max(0, lastSeq - (c.last_read_seq || 0));
+        const lastSeq = Math.max(c.last_seq || 0, incomingSeq);
+        const unread = isActive && activeAtBottom ? c.unread_count || 0 : Math.max(0, lastSeq - (c.last_read_seq || 0));
         return { ...c, last_seq: lastSeq, unread_count: unread };
       });
     } else if (dmID) {
+      const isActive = dmID === selectedDirectID;
+      const activeAtBottom = messageList?.isAtBottom() !== false;
+      const dm = directConversations.find((c) => c.id === dmID);
+      const incomingSeq = seq > 0 ? seq : (dm?.last_seq || 0) + 1;
+      if (isActive && !activeAtBottom) {
+        ensureUnreadAnchor(dmID, dm?.last_read_seq || 0);
+      }
       directConversations = directConversations.map((c) => {
         if (c.id !== dmID) return c;
-        const lastSeq = seq > 0 ? Math.max(c.last_seq || 0, seq) : (c.last_seq || 0) + 1;
-        const isActive = dmID === selectedDirectID;
-        const unread =
-          isActive && messageList?.isAtBottom() !== false
-            ? c.unread_count || 0
-            : Math.max(0, lastSeq - (c.last_read_seq || 0));
+        const lastSeq = Math.max(c.last_seq || 0, incomingSeq);
+        const unread = isActive && activeAtBottom ? c.unread_count || 0 : Math.max(0, lastSeq - (c.last_read_seq || 0));
         return { ...c, last_seq: lastSeq, unread_count: unread };
       });
     }
@@ -1000,6 +1090,12 @@
         event.preventDefault();
         clearReplyTarget();
         return;
+      } else {
+        // Discord parity: Esc with no modal/reply jumps you to live chat.
+        // Clear any divider, mark the view read, and scroll to bottom.
+        if (unreadAnchorMessageID) clearActiveUnreadBoundary();
+        markActiveViewRead();
+        void scrollMessagesToBottom();
       }
     }
     redirectTypingToComposer(event, {
@@ -1124,6 +1220,7 @@
       {viewKey}
       loading={messagesLoading}
       unreadCount={(selectedChannel?.unread_count || selectedDirect?.unread_count || 0)}
+      {unreadAnchorMessageID}
       selectedThreadID={selectedThread?.id}
       currentUserID={user?.id}
       onListRef={(handle) => (messageList = handle)}
@@ -1135,6 +1232,10 @@
       onJumpToQuote={(message) => void jumpToQuotedMessage(message)}
       onOpenImage={openImageViewer}
       onReachedBottom={markActiveViewRead}
+      onMarkRead={() => {
+        markActiveViewRead();
+        clearActiveUnreadBoundary();
+      }}
       onRetry={retryFailedMessage}
       onDiscard={discardFailedMessage}
     />
