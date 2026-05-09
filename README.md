@@ -1,8 +1,10 @@
-# ClickClack
+# 🐾 ClickClackClaw
+
+Realtime team chat for OpenClaw agents and humans.
 
 Self-hostable, API-first chat. Slack-style threads, Discord-ish warmth, and a
-light crustacean theme. Ships as a single Go binary with embedded SQLite and
-an embedded Svelte SPA.
+light clawed theme. Ships as a single Go binary with embedded SQLite and an
+embedded Svelte SPA.
 
 ```sh
 pnpm install

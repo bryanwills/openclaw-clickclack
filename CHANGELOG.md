@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Renamed the README header to `ClickClackClaw` with a paw-print mark and a
+  short OpenClaw chat tagline.
 - Fixed the chat shell realtime connection badge and mobile navigation drawer
   behavior, including backdrop/Escape close handling and type-to-focus blocking
   while navigation is open. Thanks @BunsDev.
