@@ -22,7 +22,7 @@ func formInt(r *http.Request, key string) int {
 }
 
 func (s *Server) markChannelRead(w http.ResponseWriter, r *http.Request) {
-	user, err := s.currentUser(r)
+	act, err := s.currentActor(r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err)
 		return
@@ -34,7 +34,11 @@ func (s *Server) markChannelRead(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	receipt, event, err := s.store.MarkChannelRead(r.Context(), chi.URLParam(r, "channel_id"), user.ID, body.Seq)
+	if err := act.requireScope("messages:read"); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	receipt, event, err := s.store.MarkChannelRead(r.Context(), chi.URLParam(r, "channel_id"), act.user.ID, body.Seq)
 	if err == nil && event.ID != "" {
 		s.hub.Publish(event)
 	}
@@ -42,7 +46,7 @@ func (s *Server) markChannelRead(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) markDirectRead(w http.ResponseWriter, r *http.Request) {
-	user, err := s.currentUser(r)
+	act, err := s.currentActor(r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err)
 		return
@@ -54,7 +58,11 @@ func (s *Server) markDirectRead(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	receipt, event, err := s.store.MarkDirectRead(r.Context(), chi.URLParam(r, "conversation_id"), user.ID, body.Seq)
+	if err := act.requireScope("dms:read"); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	receipt, event, err := s.store.MarkDirectRead(r.Context(), chi.URLParam(r, "conversation_id"), act.user.ID, body.Seq)
 	if err == nil && event.ID != "" {
 		s.hub.Publish(event)
 	}
@@ -62,17 +70,26 @@ func (s *Server) markDirectRead(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) search(w http.ResponseWriter, r *http.Request) {
-	user, err := s.currentUser(r)
+	act, err := s.currentActor(r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err)
 		return
 	}
-	results, err := s.store.SearchMessages(r.Context(), r.URL.Query().Get("workspace_id"), user.ID, r.URL.Query().Get("q"), queryInt(r, "limit", 50))
+	workspaceID := r.URL.Query().Get("workspace_id")
+	if err := act.requireScope("messages:read"); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	if err := act.requireWorkspace(workspaceID); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	results, err := s.store.SearchMessages(r.Context(), workspaceID, act.user.ID, r.URL.Query().Get("q"), queryInt(r, "limit", 50))
 	writeResult(w, map[string]any{"results": results}, err)
 }
 
 func (s *Server) createUpload(w http.ResponseWriter, r *http.Request) {
-	user, err := s.currentUser(r)
+	act, err := s.currentActor(r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err)
 		return
@@ -86,6 +103,14 @@ func (s *Server) createUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	workspaceID := r.FormValue("workspace_id")
+	if err := act.requireScope("uploads:write"); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	if err := act.requireWorkspace(workspaceID); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
 	file, header, err := r.FormFile("file")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -113,7 +138,7 @@ func (s *Server) createUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	upload, err := s.store.CreateUpload(r.Context(), store.CreateUploadInput{
 		WorkspaceID: workspaceID,
-		OwnerID:     user.ID,
+		OwnerID:     act.user.ID,
 		Filename:    filepath.Base(header.Filename),
 		ContentType: contentType,
 		ByteSize:    size,
@@ -126,12 +151,16 @@ func (s *Server) createUpload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getUpload(w http.ResponseWriter, r *http.Request) {
-	user, err := s.currentUser(r)
+	act, err := s.currentActor(r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err)
 		return
 	}
-	upload, err := s.store.GetUpload(r.Context(), chi.URLParam(r, "upload_id"), user.ID)
+	if err := act.requireScope("messages:read"); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	upload, err := s.store.GetUpload(r.Context(), chi.URLParam(r, "upload_id"), act.user.ID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err)
 		return
@@ -140,7 +169,7 @@ func (s *Server) getUpload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) attachUpload(w http.ResponseWriter, r *http.Request) {
-	user, err := s.currentUser(r)
+	act, err := s.currentActor(r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err)
 		return
@@ -152,22 +181,35 @@ func (s *Server) attachUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	err = s.store.AttachUpload(r.Context(), store.AttachUploadInput{MessageID: chi.URLParam(r, "message_id"), UploadID: body.UploadID, UserID: user.ID})
+	if err := act.requireScope("uploads:write"); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	err = s.store.AttachUpload(r.Context(), store.AttachUploadInput{MessageID: chi.URLParam(r, "message_id"), UploadID: body.UploadID, UserID: act.user.ID})
 	writeResult(w, map[string]any{"ok": true}, err)
 }
 
 func (s *Server) listDirectConversations(w http.ResponseWriter, r *http.Request) {
-	user, err := s.currentUser(r)
+	act, err := s.currentActor(r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err)
 		return
 	}
-	items, err := s.store.ListDirectConversations(r.Context(), r.URL.Query().Get("workspace_id"), user.ID)
+	workspaceID := r.URL.Query().Get("workspace_id")
+	if err := act.requireScope("dms:read"); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	if err := act.requireWorkspace(workspaceID); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	items, err := s.store.ListDirectConversations(r.Context(), workspaceID, act.user.ID)
 	writeResult(w, map[string]any{"conversations": items}, err)
 }
 
 func (s *Server) createDirectConversation(w http.ResponseWriter, r *http.Request) {
-	user, err := s.currentUser(r)
+	act, err := s.currentActor(r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err)
 		return
@@ -180,22 +222,34 @@ func (s *Server) createDirectConversation(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	dm, err := s.store.CreateDirectConversation(r.Context(), store.CreateDirectConversationInput{WorkspaceID: body.WorkspaceID, UserID: user.ID, MemberIDs: body.MemberIDs})
+	if err := act.requireScope("dms:write"); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	if err := act.requireWorkspace(body.WorkspaceID); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	dm, err := s.store.CreateDirectConversation(r.Context(), store.CreateDirectConversationInput{WorkspaceID: body.WorkspaceID, UserID: act.user.ID, MemberIDs: body.MemberIDs})
 	writeResultStatus(w, http.StatusCreated, map[string]any{"conversation": dm}, err)
 }
 
 func (s *Server) listDirectMessages(w http.ResponseWriter, r *http.Request) {
-	user, err := s.currentUser(r)
+	act, err := s.currentActor(r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err)
 		return
 	}
-	messages, err := s.store.ListDirectMessages(r.Context(), chi.URLParam(r, "conversation_id"), user.ID, queryInt64(r, "after_seq", 0), queryInt(r, "limit", 100))
+	if err := act.requireScope("dms:read"); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	messages, err := s.store.ListDirectMessages(r.Context(), chi.URLParam(r, "conversation_id"), act.user.ID, queryInt64(r, "after_seq", 0), queryInt(r, "limit", 100))
 	writeResult(w, map[string]any{"messages": messages}, err)
 }
 
 func (s *Server) createDirectMessage(w http.ResponseWriter, r *http.Request) {
-	user, err := s.currentUser(r)
+	act, err := s.currentActor(r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err)
 		return
@@ -209,7 +263,11 @@ func (s *Server) createDirectMessage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	message, event, err := s.store.CreateDirectMessage(r.Context(), store.CreateDirectMessageInput{ConversationID: chi.URLParam(r, "conversation_id"), AuthorID: user.ID, Body: body.Body, QuotedMessageID: optionalString(body.QuotedMessageID), Nonce: body.Nonce})
+	if err := act.requireScope("dms:write"); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	message, event, err := s.store.CreateDirectMessage(r.Context(), store.CreateDirectMessageInput{ConversationID: chi.URLParam(r, "conversation_id"), AuthorID: act.user.ID, Body: body.Body, QuotedMessageID: optionalString(body.QuotedMessageID), Nonce: body.Nonce})
 	if err == nil && event.ID != "" {
 		s.hub.Publish(event)
 		s.notifyMessageCreated(r.Context(), message)
@@ -218,7 +276,7 @@ func (s *Server) createDirectMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) mattermostWebhook(w http.ResponseWriter, r *http.Request) {
-	user, err := s.currentUser(r)
+	act, err := s.currentActor(r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err)
 		return
@@ -230,7 +288,11 @@ func (s *Server) mattermostWebhook(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	message, event, err := s.store.CreateMessage(r.Context(), store.CreateMessageInput{ChannelID: chi.URLParam(r, "channel_id"), AuthorID: user.ID, Body: body.Text})
+	if err := act.requireScope("messages:write"); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	message, event, err := s.store.CreateMessage(r.Context(), store.CreateMessageInput{ChannelID: chi.URLParam(r, "channel_id"), AuthorID: act.user.ID, Body: body.Text})
 	if err == nil {
 		s.hub.Publish(event)
 		s.notifyMessageCreated(r.Context(), message)
@@ -239,13 +301,17 @@ func (s *Server) mattermostWebhook(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) slashCommand(w http.ResponseWriter, r *http.Request) {
-	user, err := s.currentUser(r)
+	act, err := s.currentActor(r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
 		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := act.requireScope("messages:write"); err != nil {
+		writeError(w, http.StatusForbidden, err)
 		return
 	}
 	text := strings.TrimSpace(r.FormValue("text"))
@@ -255,7 +321,7 @@ func (s *Server) slashCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body := strings.TrimSpace(command + " " + text)
-	message, event, err := s.store.CreateMessage(r.Context(), store.CreateMessageInput{ChannelID: chi.URLParam(r, "channel_id"), AuthorID: user.ID, Body: body})
+	message, event, err := s.store.CreateMessage(r.Context(), store.CreateMessageInput{ChannelID: chi.URLParam(r, "channel_id"), AuthorID: act.user.ID, Body: body})
 	if err == nil {
 		s.hub.Publish(event)
 		s.notifyMessageCreated(r.Context(), message)

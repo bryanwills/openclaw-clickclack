@@ -18,7 +18,7 @@ func (s *Store) ExportJSON(ctx context.Context, writer io.Writer) error {
 		"users", "user_notification_settings", "identities", "workspaces", "workspace_members", "channels",
 		"messages", "thread_state", "reactions", "events", "uploads",
 		"message_attachments", "direct_conversations", "direct_conversation_members",
-		"invites", "auth_magic_links", "sessions",
+		"invites", "auth_magic_links", "sessions", "bot_tokens",
 	}
 	for _, table := range tables {
 		rows, err := s.db.QueryContext(ctx, `SELECT * FROM `+table)

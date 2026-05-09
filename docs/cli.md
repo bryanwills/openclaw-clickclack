@@ -121,6 +121,30 @@ Mints an invite token (created by the first user in the DB, which is the
 owner in single-tenant deployments). Prints the token. There is no consume
 endpoint over HTTP yet — invite tokens are reserved for V1 work.
 
+### `admin bot create`
+
+```sh
+clickclack admin bot create \
+  --workspace wsp_... \
+  --name "OpenClaw Service" \
+  --handle openclaw \
+  --scopes bot:write \
+  --plain
+
+clickclack admin bot create \
+  --workspace wsp_... \
+  --owner usr_peter \
+  --name "Peter's OpenClaw" \
+  --handle peter-openclaw \
+  --scopes bot:write
+```
+
+Creates a `kind=bot` user, adds it to the workspace, and mints a scoped
+`ccb_...` bot token. `--owner` makes it a user-owned bot; omitting `--owner`
+makes it an independent service bot. Plain output prints only the raw token.
+JSON output includes `{bot, bot_token, token}`. See
+[features/bots.md](features/bots.md).
+
 ### `admin magic-link create`
 
 ```sh

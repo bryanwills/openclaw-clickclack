@@ -478,6 +478,13 @@ export interface components {
     };
     User: {
       id: string;
+      /**
+       * @description Human users sign in directly. Bot users authenticate with bot tokens and may be service-owned or owned by a human.
+       * @enum {string}
+       */
+      kind: "human" | "bot";
+      /** @description Human owner for a user-owned bot. Empty for humans and service bots. */
+      owner_user_id?: string;
       display_name: string;
       handle: string;
       avatar_url: string;

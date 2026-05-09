@@ -30,6 +30,9 @@
     onRetry,
     onDiscard,
   }: Props = $props();
+
+  const author = $derived(group.messages[0]?.author);
+  const isBot = $derived(author?.kind === "bot");
 </script>
 
 <article class="message-group">
@@ -53,6 +56,7 @@
         class="author-name"
         onclick={() => onOpenProfile(group.messages[0]?.author)}
       >{group.authorName}</button>
+      {#if isBot}<span class="bot-chip">bot</span>{/if}
       {#if group.authorHandle}<span>{handleLabel(group.authorHandle)}</span>{/if}
       <time>{time(group.timestamp)}</time>
     </header>

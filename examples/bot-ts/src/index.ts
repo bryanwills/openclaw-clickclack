@@ -7,7 +7,7 @@ const text = process.env.CLICKCLACK_TEXT ?? "clack from bot";
 const client = new ClickClackClient({
   baseUrl,
   token: process.env.CLICKCLACK_TOKEN,
-  userId: process.env.CLICKCLACK_USER_ID,
+  userId: process.env.CLICKCLACK_TOKEN ? undefined : process.env.CLICKCLACK_USER_ID,
 });
 
 const message = await client.channels.sendMessage(channelId, { body: text });

@@ -70,6 +70,33 @@ func TestStoreValidationAndAdminHelpers(t *testing.T) {
 	if _, err := st.CreateMagicLink(ctx, "", "No Email"); err == nil {
 		t.Fatal("expected missing email error")
 	}
+	bot, botToken, err := st.CreateBot(ctx, store.CreateBotInput{
+		WorkspaceID: workspace.ID,
+		OwnerUserID: owner.ID,
+		DisplayName: "Owner Bot",
+		Handle:      "owner-bot",
+		Scopes:      []string{"messages:write", "realtime:read"},
+		CreatedBy:   owner.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bot.Kind != "bot" || bot.OwnerUserID != owner.ID || botToken.Token == "" {
+		t.Fatalf("unexpected bot/token: %#v %#v", bot, botToken)
+	}
+	botAuth, err := st.GetBotTokenAuth(ctx, botToken.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if botAuth.User.ID != bot.ID || botAuth.WorkspaceID != workspace.ID {
+		t.Fatalf("unexpected bot auth: %#v", botAuth)
+	}
+	if _, _, err := st.CreateBot(ctx, store.CreateBotInput{WorkspaceID: workspace.ID, OwnerUserID: bot.ID, DisplayName: "Nested"}); err == nil {
+		t.Fatal("expected bot owner rejection")
+	}
+	if _, _, err := st.CreateBot(ctx, store.CreateBotInput{WorkspaceID: workspace.ID, DisplayName: "Bad Scope", Scopes: []string{"bad:scope"}}); err == nil {
+		t.Fatal("expected bad scope rejection")
+	}
 	var exported bytes.Buffer
 	if err := st.ExportJSON(ctx, &exported); err != nil {
 		t.Fatal(err)
@@ -80,6 +107,9 @@ func TestStoreValidationAndAdminHelpers(t *testing.T) {
 	}
 	if len(exportBody["auth_magic_links"]) == 0 || len(exportBody["sessions"]) == 0 {
 		t.Fatalf("expected auth tables in export, got keys %#v", exportBody)
+	}
+	if len(exportBody["bot_tokens"]) == 0 {
+		t.Fatalf("expected bot_tokens in export, got keys %#v", exportBody)
 	}
 	if err := st.Backup(ctx, filepath.Join(t.TempDir(), "backup.db")); err != nil {
 		t.Fatal(err)

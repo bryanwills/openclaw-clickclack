@@ -16,6 +16,8 @@ var ErrClientNonceConflict = errors.New("client nonce was already used for a dif
 
 type User struct {
 	ID                   string                `json:"id"`
+	Kind                 string                `json:"kind"`
+	OwnerUserID          string                `json:"owner_user_id,omitempty"`
 	DisplayName          string                `json:"display_name"`
 	Handle               string                `json:"handle"`
 	AvatarURL            string                `json:"avatar_url"`
@@ -110,6 +112,38 @@ type Event struct {
 type CreateUserInput struct {
 	DisplayName string
 	Email       string
+}
+
+type CreateBotInput struct {
+	WorkspaceID string
+	OwnerUserID string
+	DisplayName string
+	Handle      string
+	AvatarURL   string
+	TokenName   string
+	Scopes      []string
+	CreatedBy   string
+}
+
+type BotToken struct {
+	ID          string   `json:"id"`
+	BotUserID   string   `json:"bot_user_id"`
+	WorkspaceID string   `json:"workspace_id"`
+	OwnerUserID string   `json:"owner_user_id,omitempty"`
+	Name        string   `json:"name"`
+	Scopes      []string `json:"scopes"`
+	CreatedBy   string   `json:"created_by,omitempty"`
+	CreatedAt   string   `json:"created_at"`
+	LastUsedAt  *string  `json:"last_used_at,omitempty"`
+	RevokedAt   *string  `json:"revoked_at,omitempty"`
+	Token       string   `json:"token,omitempty"`
+}
+
+type BotTokenAuth struct {
+	User        User
+	TokenID     string
+	WorkspaceID string
+	Scopes      []string
 }
 
 type UpsertIdentityUserInput struct {
@@ -279,6 +313,7 @@ type Store interface {
 	Migrate(ctx context.Context) error
 	EnsureBootstrap(ctx context.Context, name, email string) (User, error)
 	CreateUser(ctx context.Context, input CreateUserInput) (User, error)
+	CreateBot(ctx context.Context, input CreateBotInput) (User, BotToken, error)
 	UpsertIdentityUser(ctx context.Context, input UpsertIdentityUserInput) (User, error)
 	UpdateUserProfile(ctx context.Context, input UpdateUserProfileInput) (User, error)
 	UpdateNotificationSettings(ctx context.Context, input UpdateNotificationSettingsInput) (NotificationSettings, error)
@@ -318,4 +353,5 @@ type Store interface {
 	ConsumeMagicLink(ctx context.Context, token string) (User, Session, error)
 	CreateSession(ctx context.Context, userID string) (Session, error)
 	GetSessionUser(ctx context.Context, token string) (User, error)
+	GetBotTokenAuth(ctx context.Context, token string) (BotTokenAuth, error)
 }

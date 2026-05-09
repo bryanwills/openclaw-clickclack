@@ -28,6 +28,13 @@ type Server struct {
 	pushNotifier   PushNotifier
 }
 
+type actor struct {
+	user        store.User
+	botTokenID  string
+	workspaceID string
+	scopes      []string
+}
+
 type Options struct {
 	UploadDir      string
 	GitHubOAuth    GitHubOAuthConfig
@@ -98,18 +105,26 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) me(w http.ResponseWriter, r *http.Request) {
-	user, err := s.currentUser(r)
+	act, err := s.currentActor(r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"user": user})
+	if err := act.requireScope("profile:read"); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"user": act.user})
 }
 
 func (s *Server) updateMe(w http.ResponseWriter, r *http.Request) {
-	user, err := s.currentUser(r)
+	act, err := s.currentActor(r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if act.botTokenID != "" {
+		writeError(w, http.StatusForbidden, errors.New("bot tokens cannot update profiles"))
 		return
 	}
 	var body struct {
@@ -123,38 +138,46 @@ func (s *Server) updateMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	updated, err := s.store.UpdateUserProfile(r.Context(), store.UpdateUserProfileInput{
-		UserID:      user.ID,
+		UserID:      act.user.ID,
 		DisplayName: body.DisplayName,
 		Handle:      body.Handle,
 		AvatarURL:   body.AvatarURL,
 	})
 	if err == nil && body.NotificationSettings != nil {
 		_, err = s.store.UpdateNotificationSettings(r.Context(), store.UpdateNotificationSettingsInput{
-			UserID:          user.ID,
+			UserID:          act.user.ID,
 			PushoverEnabled: body.NotificationSettings.PushoverEnabled,
 			PushoverUserKey: body.NotificationSettings.PushoverUserKey,
 		})
 		if err == nil {
-			updated, err = s.store.GetUser(r.Context(), user.ID)
+			updated, err = s.store.GetUser(r.Context(), act.user.ID)
 		}
 	}
 	writeResult(w, map[string]any{"user": updated}, err)
 }
 
 func (s *Server) listWorkspaces(w http.ResponseWriter, r *http.Request) {
-	user, err := s.currentUser(r)
+	act, err := s.currentActor(r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err)
 		return
 	}
-	items, err := s.store.ListWorkspaces(r.Context(), user.ID)
+	if err := act.requireScope("workspaces:read"); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	items, err := s.store.ListWorkspaces(r.Context(), act.user.ID)
 	writeResult(w, map[string]any{"workspaces": items}, err)
 }
 
 func (s *Server) createWorkspace(w http.ResponseWriter, r *http.Request) {
-	user, err := s.currentUser(r)
+	act, err := s.currentActor(r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if act.botTokenID != "" {
+		writeError(w, http.StatusForbidden, errors.New("bot tokens cannot create workspaces"))
 		return
 	}
 	var body struct {
@@ -165,34 +188,60 @@ func (s *Server) createWorkspace(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	workspace, err := s.store.CreateWorkspace(r.Context(), store.CreateWorkspaceInput{Name: body.Name, Slug: body.Slug}, user.ID)
+	workspace, err := s.store.CreateWorkspace(r.Context(), store.CreateWorkspaceInput{Name: body.Name, Slug: body.Slug}, act.user.ID)
 	writeResultStatus(w, http.StatusCreated, map[string]any{"workspace": workspace}, err)
 }
 
 func (s *Server) getWorkspace(w http.ResponseWriter, r *http.Request) {
-	user, err := s.currentUser(r)
+	act, err := s.currentActor(r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err)
 		return
 	}
-	workspace, err := s.store.GetWorkspace(r.Context(), chi.URLParam(r, "workspace_id"), user.ID)
+	workspaceID := chi.URLParam(r, "workspace_id")
+	if err := act.requireScope("workspaces:read"); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	if err := act.requireWorkspace(workspaceID); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	workspace, err := s.store.GetWorkspace(r.Context(), workspaceID, act.user.ID)
 	writeResult(w, map[string]any{"workspace": workspace}, err)
 }
 
 func (s *Server) listChannels(w http.ResponseWriter, r *http.Request) {
-	user, err := s.currentUser(r)
+	act, err := s.currentActor(r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err)
 		return
 	}
-	channels, err := s.store.ListChannels(r.Context(), chi.URLParam(r, "workspace_id"), user.ID)
+	workspaceID := chi.URLParam(r, "workspace_id")
+	if err := act.requireScope("channels:read"); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	if err := act.requireWorkspace(workspaceID); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	channels, err := s.store.ListChannels(r.Context(), workspaceID, act.user.ID)
 	writeResult(w, map[string]any{"channels": channels}, err)
 }
 
 func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
-	user, err := s.currentUser(r)
+	act, err := s.currentActor(r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if err := act.requireScope("channels:write"); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	if err := act.requireWorkspace(chi.URLParam(r, "workspace_id")); err != nil {
+		writeError(w, http.StatusForbidden, err)
 		return
 	}
 	var body struct {
@@ -203,7 +252,7 @@ func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	channel, event, err := s.store.CreateChannel(r.Context(), store.CreateChannelInput{WorkspaceID: chi.URLParam(r, "workspace_id"), Name: body.Name, Kind: body.Kind, UserID: user.ID})
+	channel, event, err := s.store.CreateChannel(r.Context(), store.CreateChannelInput{WorkspaceID: chi.URLParam(r, "workspace_id"), Name: body.Name, Kind: body.Kind, UserID: act.user.ID})
 	if err == nil {
 		s.hub.Publish(event)
 	}
@@ -211,19 +260,27 @@ func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listMessages(w http.ResponseWriter, r *http.Request) {
-	user, err := s.currentUser(r)
+	act, err := s.currentActor(r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err)
 		return
 	}
-	messages, err := s.store.ListMessages(r.Context(), chi.URLParam(r, "channel_id"), user.ID, queryInt64(r, "after_seq", 0), queryInt(r, "limit", 100))
+	if err := act.requireScope("messages:read"); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	messages, err := s.store.ListMessages(r.Context(), chi.URLParam(r, "channel_id"), act.user.ID, queryInt64(r, "after_seq", 0), queryInt(r, "limit", 100))
 	writeResult(w, map[string]any{"messages": messages}, err)
 }
 
 func (s *Server) createMessage(w http.ResponseWriter, r *http.Request) {
-	user, err := s.currentUser(r)
+	act, err := s.currentActor(r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if err := act.requireScope("messages:write"); err != nil {
+		writeError(w, http.StatusForbidden, err)
 		return
 	}
 	var body struct {
@@ -235,7 +292,7 @@ func (s *Server) createMessage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	message, event, err := s.store.CreateMessage(r.Context(), store.CreateMessageInput{ChannelID: chi.URLParam(r, "channel_id"), AuthorID: user.ID, Body: body.Body, QuotedMessageID: optionalString(body.QuotedMessageID), Nonce: body.Nonce})
+	message, event, err := s.store.CreateMessage(r.Context(), store.CreateMessageInput{ChannelID: chi.URLParam(r, "channel_id"), AuthorID: act.user.ID, Body: body.Body, QuotedMessageID: optionalString(body.QuotedMessageID), Nonce: body.Nonce})
 	if err == nil && event.ID != "" {
 		s.hub.Publish(event)
 		s.notifyMessageCreated(r.Context(), message)
@@ -244,19 +301,27 @@ func (s *Server) createMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getThread(w http.ResponseWriter, r *http.Request) {
-	user, err := s.currentUser(r)
+	act, err := s.currentActor(r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err)
 		return
 	}
-	root, replies, state, err := s.store.GetThread(r.Context(), chi.URLParam(r, "message_id"), user.ID, queryInt(r, "limit", 100))
+	if err := act.requireScope("threads:read"); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	root, replies, state, err := s.store.GetThread(r.Context(), chi.URLParam(r, "message_id"), act.user.ID, queryInt(r, "limit", 100))
 	writeResult(w, map[string]any{"root": root, "replies": replies, "thread_state": state}, err)
 }
 
 func (s *Server) createThreadReply(w http.ResponseWriter, r *http.Request) {
-	user, err := s.currentUser(r)
+	act, err := s.currentActor(r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if err := act.requireScope("threads:write"); err != nil {
+		writeError(w, http.StatusForbidden, err)
 		return
 	}
 	var body struct {
@@ -267,7 +332,7 @@ func (s *Server) createThreadReply(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	message, state, events, err := s.store.CreateThreadReply(r.Context(), store.CreateThreadReplyInput{RootMessageID: chi.URLParam(r, "message_id"), AuthorID: user.ID, Body: body.Body, QuotedMessageID: optionalString(body.QuotedMessageID)})
+	message, state, events, err := s.store.CreateThreadReply(r.Context(), store.CreateThreadReplyInput{RootMessageID: chi.URLParam(r, "message_id"), AuthorID: act.user.ID, Body: body.Body, QuotedMessageID: optionalString(body.QuotedMessageID)})
 	if err == nil {
 		s.hub.PublishMany(events)
 		s.notifyMessageCreated(r.Context(), message)
@@ -276,9 +341,13 @@ func (s *Server) createThreadReply(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) addReaction(w http.ResponseWriter, r *http.Request) {
-	user, err := s.currentUser(r)
+	act, err := s.currentActor(r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if err := act.requireScope("messages:write"); err != nil {
+		writeError(w, http.StatusForbidden, err)
 		return
 	}
 	var body struct {
@@ -288,7 +357,7 @@ func (s *Server) addReaction(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	event, err := s.store.AddReaction(r.Context(), store.CreateReactionInput{MessageID: chi.URLParam(r, "message_id"), UserID: user.ID, Emoji: body.Emoji})
+	event, err := s.store.AddReaction(r.Context(), store.CreateReactionInput{MessageID: chi.URLParam(r, "message_id"), UserID: act.user.ID, Emoji: body.Emoji})
 	if err == nil {
 		s.hub.Publish(event)
 	}
@@ -296,12 +365,16 @@ func (s *Server) addReaction(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) removeReaction(w http.ResponseWriter, r *http.Request) {
-	user, err := s.currentUser(r)
+	act, err := s.currentActor(r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err)
 		return
 	}
-	event, err := s.store.RemoveReaction(r.Context(), store.CreateReactionInput{MessageID: chi.URLParam(r, "message_id"), UserID: user.ID, Emoji: chi.URLParam(r, "emoji")})
+	if err := act.requireScope("messages:write"); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	event, err := s.store.RemoveReaction(r.Context(), store.CreateReactionInput{MessageID: chi.URLParam(r, "message_id"), UserID: act.user.ID, Emoji: chi.URLParam(r, "emoji")})
 	if err == nil {
 		s.hub.Publish(event)
 	}
@@ -309,22 +382,35 @@ func (s *Server) removeReaction(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listEvents(w http.ResponseWriter, r *http.Request) {
-	user, err := s.currentUser(r)
+	act, err := s.currentActor(r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err)
 		return
 	}
-	events, err := s.store.ListEventsAfter(r.Context(), r.URL.Query().Get("workspace_id"), user.ID, r.URL.Query().Get("after_cursor"), queryInt(r, "limit", 200))
+	workspaceID := r.URL.Query().Get("workspace_id")
+	if err := act.requireScope("realtime:read"); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	if err := act.requireWorkspace(workspaceID); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	events, err := s.store.ListEventsAfter(r.Context(), workspaceID, act.user.ID, r.URL.Query().Get("after_cursor"), queryInt(r, "limit", 200))
 	if err == nil {
-		events = filterEventsForUser(events, user.ID)
+		events = filterEventsForUser(events, act.user.ID)
 	}
 	writeResult(w, map[string]any{"events": events}, err)
 }
 
 func (s *Server) websocket(w http.ResponseWriter, r *http.Request) {
-	user, err := s.currentUser(r)
+	act, err := s.currentActor(r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if err := act.requireScope("realtime:read"); err != nil {
+		writeError(w, http.StatusForbidden, err)
 		return
 	}
 	workspaceID := r.URL.Query().Get("workspace_id")
@@ -332,7 +418,11 @@ func (s *Server) websocket(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("workspace_id is required"))
 		return
 	}
-	if _, err := s.store.GetWorkspace(r.Context(), workspaceID, user.ID); err != nil {
+	if err := act.requireWorkspace(workspaceID); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	if _, err := s.store.GetWorkspace(r.Context(), workspaceID, act.user.ID); err != nil {
 		writeError(w, http.StatusForbidden, err)
 		return
 	}
@@ -342,13 +432,13 @@ func (s *Server) websocket(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.CloseNow()
 	ctx := r.Context()
-	backlog, err := s.store.ListEventsAfter(ctx, workspaceID, user.ID, r.URL.Query().Get("after_cursor"), 500)
+	backlog, err := s.store.ListEventsAfter(ctx, workspaceID, act.user.ID, r.URL.Query().Get("after_cursor"), 500)
 	if err != nil {
 		_ = conn.Close(websocket.StatusPolicyViolation, err.Error())
 		return
 	}
 	for _, event := range backlog {
-		if !shouldDeliverEvent(event, user.ID) {
+		if !shouldDeliverEvent(event, act.user.ID) {
 			continue
 		}
 		if err := writeWS(ctx, conn, event); err != nil {
@@ -362,7 +452,7 @@ func (s *Server) websocket(w http.ResponseWriter, r *http.Request) {
 		case <-ctx.Done():
 			return
 		case event := <-events:
-			if !shouldDeliverEvent(event, user.ID) {
+			if !shouldDeliverEvent(event, act.user.ID) {
 				continue
 			}
 			if err := writeWS(ctx, conn, event); err != nil {
@@ -412,19 +502,59 @@ func filterEventsForUser(events []store.Event, userID string) []store.Event {
 }
 
 func (s *Server) currentUser(r *http.Request) (store.User, error) {
+	actor, err := s.currentActor(r)
+	return actor.user, err
+}
+
+func (s *Server) currentActor(r *http.Request) (actor, error) {
 	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
-		return s.store.GetSessionUser(r.Context(), strings.TrimSpace(strings.TrimPrefix(auth, "Bearer ")))
+		token := strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
+		if botAuth, err := s.store.GetBotTokenAuth(r.Context(), token); err == nil {
+			return actor{
+				user:        botAuth.User,
+				botTokenID:  botAuth.TokenID,
+				workspaceID: botAuth.WorkspaceID,
+				scopes:      botAuth.Scopes,
+			}, nil
+		}
+		user, err := s.store.GetSessionUser(r.Context(), token)
+		return actor{user: user}, err
 	}
 	if cookie, err := r.Cookie("cc_session"); err == nil && cookie.Value != "" {
-		return s.store.GetSessionUser(r.Context(), cookie.Value)
+		user, err := s.store.GetSessionUser(r.Context(), cookie.Value)
+		return actor{user: user}, err
 	}
 	if s.disableDevAuth {
-		return store.User{}, errors.New("authentication required")
+		return actor{}, errors.New("authentication required")
 	}
 	if id := r.Header.Get("X-ClickClack-User"); id != "" {
-		return s.store.GetUser(r.Context(), id)
+		user, err := s.store.GetUser(r.Context(), id)
+		return actor{user: user}, err
 	}
-	return s.store.FirstUser(r.Context())
+	user, err := s.store.FirstUser(r.Context())
+	return actor{user: user}, err
+}
+
+func (a actor) requireScope(scope string) error {
+	if a.botTokenID == "" {
+		return nil
+	}
+	for _, candidate := range a.scopes {
+		if candidate == scope {
+			return nil
+		}
+	}
+	return errors.New("bot token is missing scope " + scope)
+}
+
+func (a actor) requireWorkspace(workspaceID string) error {
+	if a.botTokenID == "" {
+		return nil
+	}
+	if a.workspaceID == workspaceID {
+		return nil
+	}
+	return errors.New("bot token cannot access this workspace")
 }
 
 func (s *Server) serveSPA(w http.ResponseWriter, r *http.Request) {

@@ -13,6 +13,10 @@
   };
 
   let { profile, currentUser, workspaceName, onClose, onEdit, onMessage, onSetStatus }: Props = $props();
+
+  const botLabel = $derived(
+    profile.kind === "bot" ? (profile.owner_user_id ? `Bot of ${profile.owner_user_id}` : "Service bot") : "",
+  );
 </script>
 
 <header>
@@ -36,6 +40,7 @@
     <div class="profile-pane-title">
       <div>
         <h2>{profile.display_name}</h2>
+        {#if botLabel}<span class="bot-badge">{botLabel}</span>{/if}
         {#if profile.handle}<span>{handleLabel(profile.handle)}</span>{/if}
       </div>
       {#if currentUser?.id === profile.id}
@@ -94,6 +99,20 @@
           <span>{profile.id}</span>
         </div>
       </div>
+      {#if profile.kind === "bot"}
+        <div class="profile-info-row">
+          <span class="info-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18">
+              <rect x="5" y="7" width="14" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="2" />
+              <path d="M12 3v4M9 12h.01M15 12h.01" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2" />
+            </svg>
+          </span>
+          <div>
+            <small>User kind</small>
+            <span>{botLabel}</span>
+          </div>
+        </div>
+      {/if}
     </section>
     <section class="profile-info">
       <header>

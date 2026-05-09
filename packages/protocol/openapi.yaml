@@ -549,10 +549,17 @@ components:
           $ref: "#/components/schemas/NotificationSettings"
     User:
       type: object
-      required: [id, display_name, handle, avatar_url, created_at]
+      required: [id, kind, display_name, handle, avatar_url, created_at]
       properties:
         id:
           type: string
+        kind:
+          type: string
+          enum: [human, bot]
+          description: Human users sign in directly. Bot users authenticate with bot tokens and may be service-owned or owned by a human.
+        owner_user_id:
+          type: string
+          description: Human owner for a user-owned bot. Empty for humans and service bots.
         display_name:
           type: string
         handle:

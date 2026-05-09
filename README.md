@@ -65,6 +65,7 @@ Per-feature docs:
 | Search           | [docs/features/search.md](docs/features/search.md) |
 | Uploads          | [docs/features/uploads.md](docs/features/uploads.md) |
 | Direct messages  | [docs/features/dms.md](docs/features/dms.md) |
+| Bots             | [docs/features/bots.md](docs/features/bots.md) |
 | Integrations     | [docs/features/integrations.md](docs/features/integrations.md) |
 
 The product spec — locked decisions, milestones, and open questions — lives
@@ -117,18 +118,18 @@ script/agent contract.
 
 ```sh
 CLICKCLACK_URL=http://localhost:8080 \
-CLICKCLACK_USER_ID=usr_... \
+CLICKCLACK_TOKEN=ccb_... \
 CLICKCLACK_CHANNEL_ID=chn_... \
 CLICKCLACK_TEXT="clack from bot" \
 pnpm --filter @clickclack/example-bot start
 ```
 
-Use `CLICKCLACK_TOKEN` instead of `CLICKCLACK_USER_ID` once you have a real
-session token. See [docs/sdk.md](docs/sdk.md).
+Create bot tokens with `clickclack admin bot create`. See
+[docs/features/bots.md](docs/features/bots.md) and [docs/sdk.md](docs/sdk.md).
 
 ## Auth
 
-ClickClack accepts, in order: an `Authorization: Bearer` token, the
+ClickClack accepts, in order: an `Authorization: Bearer` session or bot token, the
 `cc_session` cookie, an `X-ClickClack-User` header, or a dev fallback to the
 first user in the DB. Magic-link tokens are mintable from the CLI today; the
 HTTP endpoint also exists. GitHub OAuth is opt-in via:

@@ -2,10 +2,24 @@ export type { components, paths } from "./generated/openapi";
 
 export type User = {
   id: string;
+  kind: "human" | "bot";
+  owner_user_id?: string;
   display_name: string;
   handle: string;
   avatar_url: string;
   created_at: string;
+};
+
+export type BotEventHandler = (
+  event: RealtimeEvent,
+  client: ClickClackClient,
+) => void | Promise<void>;
+
+export type ClickClackBotOptions = ClickClackClientOptions & {
+  workspaceId: string;
+  afterCursor?: string;
+  onEvent: BotEventHandler;
+  onClose?: () => void;
 };
 
 export type Workspace = {
@@ -375,5 +389,45 @@ export class ClickClackClient {
       throw new Error(await response.text());
     }
     return response.json() as Promise<T>;
+  }
+}
+
+export class ClickClackBot {
+  readonly client: ClickClackClient;
+  private readonly workspaceId: string;
+  private readonly afterCursor?: string;
+  private readonly onEvent: BotEventHandler;
+  private readonly onClose?: () => void;
+  private socket?: WebSocket;
+
+  constructor(options: ClickClackBotOptions) {
+    this.client = new ClickClackClient(options);
+    this.workspaceId = options.workspaceId;
+    this.afterCursor = options.afterCursor;
+    this.onEvent = options.onEvent;
+    this.onClose = options.onClose;
+  }
+
+  start(): WebSocket {
+    this.socket = this.client.events.subscribe({
+      workspaceId: this.workspaceId,
+      afterCursor: this.afterCursor,
+      onEvent: (event) => void this.onEvent(event, this.client),
+      onClose: this.onClose,
+    });
+    return this.socket;
+  }
+
+  stop(): void {
+    this.socket?.close();
+    this.socket = undefined;
+  }
+
+  sendChannelMessage(channelId: string, body: string): Promise<Message> {
+    return this.client.channels.sendMessage(channelId, { body });
+  }
+
+  sendDirectMessage(conversationId: string, body: string): Promise<Message> {
+    return this.client.dms.sendMessage(conversationId, { body });
   }
 }

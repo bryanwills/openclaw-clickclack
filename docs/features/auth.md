@@ -8,9 +8,10 @@ read_when:
 # Auth
 
 ClickClack accepts four ways to identify a caller, in order of precedence. The
-resolver lives in `apps/api/internal/httpapi/server.go` (`currentUser`).
+resolver lives in `apps/api/internal/httpapi/server.go` (`currentActor`).
 
-1. `Authorization: Bearer <token>` — bearer session token.
+1. `Authorization: Bearer <token>` — bearer session token or `ccb_...` bot
+   token. Bot tokens resolve to the bot user plus token workspace/scopes.
 2. `cc_session` cookie — HTTP-only session cookie set by magic-link consume and
    GitHub OAuth callback.
 3. `X-ClickClack-User: usr_...` header — explicit user impersonation for local
@@ -66,14 +67,15 @@ The client CLI can consume that token directly:
 clickclack login --magic-token mgt_...
 ```
 
-For remote agents and bots, use the resulting bearer session token. The CLI
-will not send a stored bearer token to a different `--server`, and it skips
+For remote human-operated clients, use the resulting bearer session token. For
+hosted bots, prefer a scoped `ccb_...` bot token from `admin bot create`. The
+CLI will not send a stored bearer token to a different `--server`, and it skips
 stored bearer tokens when `--user` / `CLICKCLACK_USER_ID` is set without an
 explicit `--token`.
 
 `ConsumeMagicLink` returns `{user, session, token}` and sets `cc_session` as an
-HTTP-only cookie. Browsers can drop the body; bots should hold the
-`session.token` for the `Authorization` header.
+HTTP-only cookie. Browsers can drop the body; non-browser clients should hold
+the `session.token` for the `Authorization` header.
 
 ## GitHub OAuth (optional)
 
@@ -117,6 +119,9 @@ upgrading.
 
 Roles today are limited to `owner` and `member`, used only by the bootstrap
 helper. There is no role enforcement on writes yet beyond membership.
+
+Bot tokens add a second layer on top of membership: scope checks and a token
+workspace check. See [bots.md](bots.md).
 
 ## Sessions
 

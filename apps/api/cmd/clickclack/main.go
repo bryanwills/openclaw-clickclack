@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -223,6 +224,52 @@ func admin(args []string) error {
 		}
 		fmt.Printf("%s\n", invite.Token)
 		return nil
+	case "bot":
+		if len(args) < 2 || args[1] != "create" {
+			return fmt.Errorf("usage: clickclack admin bot create --workspace WORKSPACE_ID --name NAME [--owner USER_ID] [--scopes bot:write]")
+		}
+		flags := flag.NewFlagSet("admin bot create", flag.ExitOnError)
+		data := flags.String("data", "./data", "data directory")
+		dbURL := flags.String("db", "", "database URL")
+		workspaceID := flags.String("workspace", "", "workspace id")
+		ownerID := flags.String("owner", "", "human owner user id")
+		name := flags.String("name", "", "bot display name")
+		handle := flags.String("handle", "", "bot handle")
+		avatarURL := flags.String("avatar-url", "", "bot avatar URL")
+		tokenName := flags.String("token-name", "default", "bot token label")
+		scopes := flags.String("scopes", "bot:write", "comma-separated scopes or bundle")
+		createdBy := flags.String("created-by", "", "human creator user id")
+		plain := flags.Bool("plain", false, "print only the raw bot token")
+		if err := flags.Parse(args[2:]); err != nil {
+			return err
+		}
+		st, err := sqlitestore.Open(resolveDB(*data, *dbURL))
+		if err != nil {
+			return err
+		}
+		defer st.Close()
+		ctx := context.Background()
+		if err := st.Migrate(ctx); err != nil {
+			return err
+		}
+		bot, token, err := st.CreateBot(ctx, store.CreateBotInput{
+			WorkspaceID: *workspaceID,
+			OwnerUserID: *ownerID,
+			DisplayName: *name,
+			Handle:      *handle,
+			AvatarURL:   *avatarURL,
+			TokenName:   *tokenName,
+			Scopes:      strings.Split(*scopes, ","),
+			CreatedBy:   *createdBy,
+		})
+		if err != nil {
+			return err
+		}
+		if *plain {
+			fmt.Printf("%s\n", token.Token)
+			return nil
+		}
+		return json.NewEncoder(os.Stdout).Encode(map[string]any{"bot": bot, "bot_token": token, "token": token.Token})
 	case "magic-link":
 		if len(args) < 2 || args[1] != "create" {
 			return fmt.Errorf("usage: clickclack admin magic-link create --email EMAIL [--name NAME]")

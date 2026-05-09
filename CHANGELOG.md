@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added first-class bot identities with human vs bot user kind, service-bot
+  and user-owned bot records, scoped `ccb_...` bot tokens, CLI bot creation,
+  bot-token auth checks, OpenAPI/SDK/web type coverage, visible bot badges,
+  and a bot architecture spec for the OpenClaw extension path.
 - Fixed profile contact-information icons so the glyph stays centered inside
   its square tile.
 - Forced Playwright E2E runs to stay headless by default across local and CI

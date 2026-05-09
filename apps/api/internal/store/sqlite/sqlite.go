@@ -125,6 +125,7 @@ func (s *Store) CreateUser(ctx context.Context, input store.CreateUserInput) (st
 	defer tx.Rollback()
 	user := store.User{
 		ID:          newID("usr"),
+		Kind:        "human",
 		DisplayName: strings.TrimSpace(input.DisplayName),
 		Handle:      "",
 		AvatarURL:   "",
@@ -146,7 +147,7 @@ func (s *Store) CreateUser(ctx context.Context, input store.CreateUserInput) (st
 }
 
 func (s *Store) FirstUser(ctx context.Context) (store.User, error) {
-	user, err := scanUser(s.db.QueryRowContext(ctx, `SELECT id, display_name, handle, avatar_url, created_at FROM users ORDER BY created_at LIMIT 1`))
+	user, err := scanUser(s.db.QueryRowContext(ctx, `SELECT id, kind, owner_user_id, display_name, handle, avatar_url, created_at FROM users ORDER BY created_at LIMIT 1`))
 	if err != nil {
 		return store.User{}, err
 	}
@@ -154,7 +155,7 @@ func (s *Store) FirstUser(ctx context.Context) (store.User, error) {
 }
 
 func (s *Store) GetUser(ctx context.Context, id string) (store.User, error) {
-	user, err := scanUser(s.db.QueryRowContext(ctx, `SELECT id, display_name, handle, avatar_url, created_at FROM users WHERE id = ?`, id))
+	user, err := scanUser(s.db.QueryRowContext(ctx, `SELECT id, kind, owner_user_id, display_name, handle, avatar_url, created_at FROM users WHERE id = ?`, id))
 	if err != nil {
 		return store.User{}, err
 	}

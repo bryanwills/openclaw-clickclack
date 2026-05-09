@@ -1,5 +1,7 @@
 export type User = {
   id: string;
+  kind: "human" | "bot";
+  owner_user_id?: string;
   display_name: string;
   handle: string;
   avatar_url: string;

@@ -25,7 +25,7 @@ import { ClickClackClient } from "@clickclack/sdk-ts";
 
 const client = new ClickClackClient({
   baseUrl: "http://localhost:8080",
-  token: process.env.CLICKCLACK_TOKEN,        // optional, sets Authorization
+  token: process.env.CLICKCLACK_TOKEN,        // session token or ccb_ bot token
   userId: process.env.CLICKCLACK_USER_ID,     // optional local/dev override
 });
 
@@ -105,17 +105,56 @@ Use the friendly hand-written types (`User`, `Workspace`, `Message`, etc.)
 for app code; reach into `components["schemas"]` only when you need the
 exact OpenAPI shape.
 
-## Bot example
+## Bot accounts
+
+Hosted bots should use bot tokens, not human session tokens. Create one from
+the admin CLI:
+
+```sh
+clickclack admin bot create \
+  --workspace wsp_... \
+  --name "OpenClaw Service" \
+  --handle openclaw \
+  --scopes bot:write \
+  --plain
+```
+
+The returned `ccb_...` token goes into `CLICKCLACK_TOKEN`.
+
+The SDK also exports `ClickClackBot`, a tiny runner around the same client plus
+the realtime WebSocket:
+
+```ts
+import { ClickClackBot } from "@clickclack/sdk-ts";
+
+const bot = new ClickClackBot({
+  baseUrl: "http://localhost:8080",
+  token: process.env.CLICKCLACK_TOKEN,
+  workspaceId: process.env.CLICKCLACK_WORKSPACE_ID!,
+  onEvent(event, client) {
+    if (event.type !== "message.created") return;
+    const channelId = event.channel_id;
+    if (channelId) void client.channels.sendMessage(channelId, { body: "ack" });
+  },
+});
+
+bot.start();
+```
+
+Persist `event.cursor` after each handled event and reconnect with
+`afterCursor` for exactly-once-ish processing. Ignore events whose
+`payload.author_id` matches the bot's own user ID to avoid loops.
+
+See [features/bots.md](features/bots.md).
+
+## Example package
 
 `examples/bot-ts` is a minimal one-shot bot that sends a single message:
 
 ```sh
 CLICKCLACK_URL=http://localhost:8080 \
-CLICKCLACK_USER_ID=usr_dev \
+CLICKCLACK_TOKEN=ccb_... \
 CLICKCLACK_CHANNEL_ID=chn_... \
 CLICKCLACK_TEXT="clack from bot" \
 pnpm --filter @clickclack/example-bot start
 ```
-
-Use `CLICKCLACK_TOKEN` instead of `CLICKCLACK_USER_ID` once you have a real
-session token.

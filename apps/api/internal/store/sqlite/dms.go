@@ -219,7 +219,7 @@ func requireDirectMembershipTx(ctx context.Context, tx *sql.Tx, conversationID, 
 
 func (s *Store) directConversationMembers(ctx context.Context, conversationID string) ([]store.User, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT u.id, u.display_name, u.handle, u.avatar_url, u.created_at
+		SELECT u.id, u.kind, u.owner_user_id, u.display_name, u.handle, u.avatar_url, u.created_at
 		FROM users u
 		JOIN direct_conversation_members dcm ON dcm.user_id = u.id
 		WHERE dcm.conversation_id = ?

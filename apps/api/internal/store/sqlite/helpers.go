@@ -27,7 +27,11 @@ var (
 
 func scanUser(row scanner) (store.User, error) {
 	var u store.User
-	err := row.Scan(&u.ID, &u.DisplayName, &u.Handle, &u.AvatarURL, &u.CreatedAt)
+	var owner sql.NullString
+	err := row.Scan(&u.ID, &u.Kind, &owner, &u.DisplayName, &u.Handle, &u.AvatarURL, &u.CreatedAt)
+	if owner.Valid {
+		u.OwnerUserID = owner.String
+	}
 	return u, err
 }
 
@@ -54,9 +58,9 @@ func getMessageTx(ctx context.Context, tx *sql.Tx, id string) (store.Message, er
 func messageSelect() string {
 	return `SELECT m.id, m.workspace_id, COALESCE(m.channel_id, ''), COALESCE(m.direct_conversation_id, ''), m.author_id, m.parent_message_id, m.thread_root_id, m.channel_seq, m.thread_seq,
 		       m.body, m.body_format, m.created_at, m.edited_at, m.deleted_at,
-		       u.id, u.display_name, u.handle, u.avatar_url, u.created_at,
+		       u.id, u.kind, u.owner_user_id, u.display_name, u.handle, u.avatar_url, u.created_at,
 		       m.quoted_message_id, m.quoted_body_snapshot, m.quoted_author_id,
-		       qu.id, qu.display_name, qu.handle, qu.avatar_url, qu.created_at,
+		       qu.id, qu.kind, qu.owner_user_id, qu.display_name, qu.handle, qu.avatar_url, qu.created_at,
 		       m.client_nonce
 		FROM messages m
 		JOIN users u ON u.id = m.author_id
@@ -69,14 +73,15 @@ func scanMessage(row scanner) (store.Message, error) {
 	var channelSeq, threadSeq sql.NullInt64
 	var author store.User
 	var quotedMessageID, quotedAuthorID sql.NullString
-	var quAuthorID, quDisplayName, quHandle, quAvatarURL, quCreatedAt sql.NullString
+	var authorOwnerID sql.NullString
+	var quAuthorID, quKind, quOwnerID, quDisplayName, quHandle, quAvatarURL, quCreatedAt sql.NullString
 	var nonce string
 	err := row.Scan(
 		&m.ID, &m.WorkspaceID, &m.ChannelID, &m.DirectConversationID, &m.AuthorID, &parent, &m.ThreadRootID, &channelSeq, &threadSeq,
 		&m.Body, &m.BodyFormat, &m.CreatedAt, &edited, &deleted,
-		&author.ID, &author.DisplayName, &author.Handle, &author.AvatarURL, &author.CreatedAt,
+		&author.ID, &author.Kind, &authorOwnerID, &author.DisplayName, &author.Handle, &author.AvatarURL, &author.CreatedAt,
 		&quotedMessageID, &m.QuotedBodySnapshot, &quotedAuthorID,
-		&quAuthorID, &quDisplayName, &quHandle, &quAvatarURL, &quCreatedAt,
+		&quAuthorID, &quKind, &quOwnerID, &quDisplayName, &quHandle, &quAvatarURL, &quCreatedAt,
 		&nonce,
 	)
 	if err != nil {
@@ -97,6 +102,9 @@ func scanMessage(row scanner) (store.Message, error) {
 	if deleted.Valid {
 		m.DeletedAt = &deleted.String
 	}
+	if authorOwnerID.Valid {
+		author.OwnerUserID = authorOwnerID.String
+	}
 	m.Author = &author
 	if quotedMessageID.Valid {
 		m.QuotedMessageID = &quotedMessageID.String
@@ -107,6 +115,8 @@ func scanMessage(row scanner) (store.Message, error) {
 	if quAuthorID.Valid {
 		m.QuotedAuthor = &store.User{
 			ID:          quAuthorID.String,
+			Kind:        quKind.String,
+			OwnerUserID: quOwnerID.String,
 			DisplayName: quDisplayName.String,
 			Handle:      quHandle.String,
 			AvatarURL:   quAvatarURL.String,

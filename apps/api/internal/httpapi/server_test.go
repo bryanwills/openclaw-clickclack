@@ -355,6 +355,16 @@ func TestHTTPErrorPathsAndSPA(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	workspaces, err := st.ListWorkspaces(ctx, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace := workspaces[0]
+	channels, err := st.ListChannels(ctx, workspace.ID, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	channel := channels[0]
 	server := httptest.NewServer(New(st, realtime.NewHub(), Options{UploadDir: filepath.Join(dataDir, "uploads")}).Handler())
 	t.Cleanup(server.Close)
 
@@ -405,6 +415,84 @@ func TestHTTPErrorPathsAndSPA(t *testing.T) {
 		body, _ := io.ReadAll(resp.Body)
 		t.Fatalf("expected bearer auth success, got %s %s", resp.Status, string(body))
 	}
+
+	bot, botToken, err := st.CreateBot(context.Background(), store.CreateBotInput{
+		WorkspaceID: workspace.ID,
+		OwnerUserID: owner.ID,
+		DisplayName: "HTTP Bot",
+		Handle:      "http-bot",
+		Scopes:      []string{"messages:write", "realtime:read", "profile:read"},
+		CreatedBy:   owner.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err = http.NewRequest(http.MethodGet, server.URL+"/api/me", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+botToken.Token)
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		t.Fatalf("expected bot bearer auth success, got %s %s", resp.Status, string(body))
+	}
+	resp.Body.Close()
+	req, err = http.NewRequest(http.MethodPost, server.URL+"/api/channels/"+channel.ID+"/messages", strings.NewReader(`{"body":"bot hello"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+botToken.Token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		t.Fatalf("expected bot message success, got %s %s", resp.Status, string(body))
+	}
+	resp.Body.Close()
+	messages, err := st.ListMessages(context.Background(), channel.ID, owner.ID, 0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if messages[len(messages)-1].AuthorID != bot.ID || messages[len(messages)-1].Author == nil || messages[len(messages)-1].Author.Kind != "bot" {
+		t.Fatalf("expected bot-authored message, got %#v", messages[len(messages)-1])
+	}
+	readOnlyBot, readOnlyToken, err := st.CreateBot(context.Background(), store.CreateBotInput{
+		WorkspaceID: workspace.ID,
+		DisplayName: "Read Bot",
+		Scopes:      []string{"profile:read"},
+		CreatedBy:   owner.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if readOnlyBot.Kind != "bot" {
+		t.Fatalf("expected bot kind, got %#v", readOnlyBot)
+	}
+	req, err = http.NewRequest(http.MethodPost, server.URL+"/api/channels/"+channel.ID+"/messages", strings.NewReader(`{"body":"nope"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+readOnlyToken.Token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusForbidden {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		t.Fatalf("expected bot scope failure, got %s %s", resp.Status, string(body))
+	}
+	resp.Body.Close()
 
 	expectStatus(t, http.MethodPatch, server.URL+"/api/me", strings.NewReader("{"), http.StatusBadRequest)
 	expectStatus(t, http.MethodPatch, server.URL+"/api/me", strings.NewReader(`{"display_name":"Owner","handle":"x"}`), http.StatusBadRequest)
