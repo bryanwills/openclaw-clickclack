@@ -9,8 +9,9 @@
   DM messages. Server admins configure `CLICKCLACK_PUSHOVER_API_TOKEN`; users
   opt in from account settings with their own Pushover user key. Thanks
   @thewilloftheshadow.
-- Polished profile pane actions and contact rows so profile buttons share the
-  same height and contact icons are centered in stable icon cells.
+- Polished profile pane/profile settings actions and message hover states so
+  buttons share the same height, contact icons stay centered, and hovered
+  messages no longer also highlight the inner text row.
 - Added retry-safe optimistic sends, per-user unread/read receipts for
   channels and DMs, private read events, and member-scoped DM typing
   indicators. The chat UI now shows unread badges and jump-to-bottom unread

@@ -372,10 +372,6 @@
   margin-top: 1px;
 }
 
-.message-row:hover {
-  background: var(--hover-strong);
-}
-
 .message-row.selected {
   background: var(--accent-soft);
 }
@@ -824,4 +820,3 @@
   color: var(--muted);
   font-size: 11px;
 }
-
