@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fixed profile contact-information icons so the glyph stays centered inside
+  its square tile.
 - Forced Playwright E2E runs to stay headless by default across local and CI
   invocations.
 - Moved channel and direct-message creation into modal flows opened from

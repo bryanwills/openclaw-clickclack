@@ -318,18 +318,18 @@
   flex: none;
 }
 
-.profile-info-row small,
-.profile-info-row span {
+.profile-info-row > div > small,
+.profile-info-row > div > span {
   display: block;
 }
 
-.profile-info-row small {
+.profile-info-row > div > small {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.2;
 }
 
-.profile-info-row span {
+.profile-info-row > div > span {
   color: var(--text);
   font-size: 14px;
   line-height: 1.3;

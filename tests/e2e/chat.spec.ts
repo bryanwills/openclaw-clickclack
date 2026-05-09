@@ -139,6 +139,20 @@ test("sends messages, searches, uploads, opens a thread, and creates a DM", asyn
     page.getByLabel("Profile pane").getByRole("heading", { name: "Peter Steinberger" }),
   ).toBeVisible();
   await expect(page.getByLabel("Profile pane").getByText("@steipete").first()).toBeVisible();
+  const infoIconOffset = await page
+    .getByLabel("Profile pane")
+    .locator(".info-icon")
+    .first()
+    .evaluate((node) => {
+      const box = node.getBoundingClientRect();
+      const svg = node.querySelector("svg")?.getBoundingClientRect();
+      if (!svg) return Number.POSITIVE_INFINITY;
+      return Math.max(
+        Math.abs(box.left + box.width / 2 - (svg.left + svg.width / 2)),
+        Math.abs(box.top + box.height / 2 - (svg.top + svg.height / 2)),
+      );
+    });
+  expect(infoIconOffset).toBeLessThan(1);
   await page.getByRole("button", { name: "Close profile" }).click();
 
   await page.getByLabel("Search messages").fill("playwright");
