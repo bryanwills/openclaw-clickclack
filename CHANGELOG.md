@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Moved channel and direct-message creation into modal flows opened from
+  right-aligned sidebar section plus buttons, removing the always-visible
+  inline create fields.
 - Renamed the README header to `ClickClackClaw` with a paw-print mark and a
   short OpenClaw chat tagline.
 - Fixed the chat shell realtime connection badge and mobile navigation drawer

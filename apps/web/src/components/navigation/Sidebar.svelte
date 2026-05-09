@@ -21,14 +21,10 @@
     selectedChannelID: string;
     selectedDirectID: string;
     selectedProfile: User | null;
-    channelName: string;
-    directMemberID: string;
     onToggleCollapse: () => void;
     onSelectChannel: (channelID: string) => void;
-    onChannelName: (value: string) => void;
     onCreateChannel: () => void;
     onSelectDirect: (conversationID: string) => void;
-    onDirectMemberID: (value: string) => void;
     onCreateDirect: () => void;
     onOpenProfile: (profile: User) => void;
     onOpenSettings: () => void;
@@ -46,14 +42,10 @@
     selectedChannelID,
     selectedDirectID,
     selectedProfile,
-    channelName,
-    directMemberID,
     onToggleCollapse,
     onSelectChannel,
-    onChannelName,
     onCreateChannel,
     onSelectDirect,
-    onDirectMemberID,
     onCreateDirect,
     onOpenProfile,
     onOpenSettings,
@@ -91,9 +83,7 @@
       {channels}
       {selectedChannelID}
       {selectedDirectID}
-      {channelName}
       {onSelectChannel}
-      {onChannelName}
       {onCreateChannel}
     />
 
@@ -101,9 +91,7 @@
       conversations={directConversations}
       currentUserID={currentUser?.id}
       {selectedDirectID}
-      {directMemberID}
       {onSelectDirect}
-      {onDirectMemberID}
       {onCreateDirect}
     />
 

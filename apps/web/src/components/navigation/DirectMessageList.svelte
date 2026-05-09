@@ -6,9 +6,7 @@
     conversations: DirectConversation[];
     currentUserID?: string;
     selectedDirectID: string;
-    directMemberID: string;
     onSelectDirect: (conversationID: string) => void;
-    onDirectMemberID: (value: string) => void;
     onCreateDirect: () => void;
   };
 
@@ -16,9 +14,7 @@
     conversations,
     currentUserID,
     selectedDirectID,
-    directMemberID,
     onSelectDirect,
-    onDirectMemberID,
     onCreateDirect,
   }: Props = $props();
 </script>
@@ -27,6 +23,13 @@
   <div class="section-title">
     <span class="caret" aria-hidden="true">▾</span>
     <span class="label">Direct messages</span>
+    <button
+      type="button"
+      class="add-button"
+      aria-label="Start direct message"
+      title="Start direct message"
+      onclick={onCreateDirect}
+    >＋</button>
   </div>
   <div class="nav-list">
     {#each conversations as conversation (conversation.id)}
@@ -58,19 +61,4 @@
       <p class="nav-empty">No direct messages yet</p>
     {/if}
   </div>
-  <form
-    class="inline-create"
-    onsubmit={(event) => {
-      event.preventDefault();
-      onCreateDirect();
-    }}
-  >
-    <input
-      value={directMemberID}
-      placeholder="user id"
-      aria-label="DM member user ID"
-      oninput={(event) => onDirectMemberID(event.currentTarget.value)}
-    />
-    <button type="submit" class="ghost" aria-label="Start DM">＋</button>
-  </form>
 </section>

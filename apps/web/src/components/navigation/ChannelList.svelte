@@ -5,9 +5,7 @@
     channels: Channel[];
     selectedChannelID: string;
     selectedDirectID: string;
-    channelName: string;
     onSelectChannel: (channelID: string) => void;
-    onChannelName: (value: string) => void;
     onCreateChannel: () => void;
   };
 
@@ -15,9 +13,7 @@
     channels,
     selectedChannelID,
     selectedDirectID,
-    channelName,
     onSelectChannel,
-    onChannelName,
     onCreateChannel,
   }: Props = $props();
 </script>
@@ -26,6 +22,13 @@
   <div class="section-title">
     <span class="caret" aria-hidden="true">▾</span>
     <span class="label">Channels</span>
+    <button
+      type="button"
+      class="add-button"
+      aria-label="Create channel"
+      title="Create channel"
+      onclick={onCreateChannel}
+    >＋</button>
   </div>
   <div class="nav-list">
     {#each channels as channel (channel.id)}
@@ -46,19 +49,4 @@
       <p class="nav-empty">No channels yet</p>
     {/if}
   </div>
-  <form
-    class="inline-create"
-    onsubmit={(event) => {
-      event.preventDefault();
-      onCreateChannel();
-    }}
-  >
-    <input
-      value={channelName}
-      placeholder="add-channel"
-      aria-label="New channel name"
-      oninput={(event) => onChannelName(event.currentTarget.value)}
-    />
-    <button type="submit" class="ghost" aria-label="Create channel">＋</button>
-  </form>
 </section>

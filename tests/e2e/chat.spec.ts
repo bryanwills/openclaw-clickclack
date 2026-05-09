@@ -228,8 +228,9 @@ test("sends messages, searches, uploads, opens a thread, and creates a DM", asyn
   await page.reload();
   await expect(page.locator(".markdown").filter({ hasText: "hello playwright" })).toBeVisible();
 
-  await page.getByLabel("DM member user ID").fill(secondUserId);
-  await page.getByLabel("DM member user ID").press("Enter");
+  await page.getByRole("button", { name: "Start direct message" }).click();
+  await page.getByLabel("Find a person").fill(secondUserId);
+  await page.getByLabel("Find a person").press("Enter");
   await expect(page.getByRole("heading", { name: /Second User/ })).toBeVisible();
   await expect(
     page.locator(".nav-section", { hasText: "People" }).getByText("Second User"),

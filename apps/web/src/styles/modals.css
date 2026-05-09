@@ -34,6 +34,10 @@
   overflow: hidden;
 }
 
+.create-modal {
+  width: min(420px, 100%);
+}
+
 .profile-modal > header {
   display: flex;
   align-items: center;
@@ -159,6 +163,66 @@
   justify-content: flex-end;
   gap: 8px;
   padding-top: 4px;
+}
+
+.person-picker {
+  display: grid;
+  gap: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+}
+
+.person-choice {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.person-choice:hover {
+  background: var(--hover-strong);
+}
+
+.person-choice .dm-avatar {
+  width: 32px;
+  height: 32px;
+}
+
+.person-choice strong,
+.person-choice small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.person-choice strong {
+  color: var(--text-strong);
+  font-size: 13px;
+}
+
+.person-choice small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.person-empty {
+  padding: 10px 8px;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .profile-actions .ghost-action,

@@ -11,6 +11,8 @@
   import ImageViewer from "./components/media/ImageViewer.svelte";
   import MessageList, { type MessageListHandle, type MessageListState } from "./components/messages/MessageList.svelte";
   import TypingIndicator, { TYPING_TTL_MS, type TypingEntry } from "./components/messages/TypingIndicator.svelte";
+  import CreateChannelModal from "./components/navigation/CreateChannelModal.svelte";
+  import CreateDirectModal from "./components/navigation/CreateDirectModal.svelte";
   import GuildRail from "./components/navigation/GuildRail.svelte";
   import Sidebar from "./components/navigation/Sidebar.svelte";
   import ProfilePane from "./components/profile/ProfilePane.svelte";
@@ -44,6 +46,8 @@
   let pendingUpload: Upload | null = null;
   let showGifPicker = false;
   let showProfileSettings = false;
+  let showCreateChannel = false;
+  let showCreateDirect = false;
   let gifQuery = "";
   let profileDisplayName = "";
   let profileHandle = "";
@@ -216,6 +220,7 @@
     channels = [...channels, data.channel];
     selectedChannelID = data.channel.id;
     selectedDirectID = "";
+    showCreateChannel = false;
     await loadMessages();
   }
 
@@ -577,7 +582,7 @@
   }
 
   function isModalOpen(): boolean {
-    return selectedImage !== null || showProfileSettings;
+    return selectedImage !== null || showProfileSettings || showCreateChannel || showCreateDirect;
   }
 
   function activeComposerTarget(): HTMLTextAreaElement | null {
@@ -654,13 +659,15 @@
     directConversations = data.conversations;
   }
 
-  async function createDirectConversation() {
-    if (!selectedWorkspaceID || !directMemberID.trim()) return;
+  async function createDirectConversation(memberID = directMemberID) {
+    const trimmed = memberID.trim();
+    if (!selectedWorkspaceID || !trimmed) return;
     const data = await api<{ conversation: DirectConversation }>("/api/dms", {
       method: "POST",
-      body: JSON.stringify({ workspace_id: selectedWorkspaceID, member_ids: [directMemberID.trim()] })
+      body: JSON.stringify({ workspace_id: selectedWorkspaceID, member_ids: [trimmed] })
     });
     directMemberID = "";
+    showCreateDirect = false;
     directConversations = [...directConversations, data.conversation];
     selectedDirectID = data.conversation.id;
     selectedChannelID = "";
@@ -669,6 +676,14 @@
     activeComposerContext = "message";
     mobileNavOpen = false;
     await loadMessages();
+  }
+
+  async function startDirectFromModal(memberID: string) {
+    const trimmed = memberID.trim();
+    if (!trimmed) return;
+    await startDirectWithUser(trimmed);
+    directMemberID = "";
+    showCreateDirect = false;
   }
 
   async function selectDirectConversation(conversationID: string) {
@@ -683,9 +698,10 @@
   }
 
   async function startDirectWithUser(memberID: string) {
-    if (!selectedWorkspaceID || !memberID) return;
+    const trimmed = memberID.trim();
+    if (!selectedWorkspaceID || !trimmed) return;
     const existing = directConversations.find((conversation) =>
-      conversation.members.some((member) => member.id === memberID),
+      conversation.members.some((member) => member.id === trimmed),
     );
     if (existing) {
       selectedDirectID = existing.id;
@@ -700,7 +716,7 @@
     }
     const data = await api<{ conversation: DirectConversation }>("/api/dms", {
       method: "POST",
-      body: JSON.stringify({ workspace_id: selectedWorkspaceID, member_ids: [memberID] })
+      body: JSON.stringify({ workspace_id: selectedWorkspaceID, member_ids: [trimmed] })
     });
     directConversations = [...directConversations, data.conversation];
     selectedDirectID = data.conversation.id;
@@ -958,6 +974,8 @@
   function closeModal() {
     selectedImage = null;
     showProfileSettings = false;
+    showCreateChannel = false;
+    showCreateDirect = false;
   }
 
   function closeMobileNav() {
@@ -1067,15 +1085,11 @@
     {selectedChannelID}
     {selectedDirectID}
     {selectedProfile}
-    {channelName}
-    {directMemberID}
     onToggleCollapse={() => (sidebarCollapsed = !sidebarCollapsed)}
     onSelectChannel={(channelID) => void selectChannel(channelID)}
-    onChannelName={(value) => (channelName = value)}
-    onCreateChannel={() => void createChannel()}
+    onCreateChannel={() => (showCreateChannel = true)}
     onSelectDirect={(conversationID) => void selectDirectConversation(conversationID)}
-    onDirectMemberID={(value) => (directMemberID = value)}
-    onCreateDirect={() => void createDirectConversation()}
+    onCreateDirect={() => (showCreateDirect = true)}
     onOpenProfile={openUserProfile}
     onOpenSettings={openProfileSettings}
   />
@@ -1218,6 +1232,25 @@
     onPushoverUserKey={(value) => (profilePushoverUserKey = value)}
     onClose={closeModal}
     onSave={() => void saveProfile()}
+  />
+{/if}
+{#if showCreateChannel}
+  <CreateChannelModal
+    {channelName}
+    status=""
+    onChannelName={(value) => (channelName = value)}
+    onClose={closeModal}
+    onCreate={() => void createChannel()}
+  />
+{/if}
+{#if showCreateDirect}
+  <CreateDirectModal
+    people={recentPeople}
+    currentUserID={user?.id}
+    memberID={directMemberID}
+    onMemberID={(value) => (directMemberID = value)}
+    onClose={closeModal}
+    onStart={(memberID) => void startDirectFromModal(memberID)}
   />
 {/if}
 {#if selectedImage}
