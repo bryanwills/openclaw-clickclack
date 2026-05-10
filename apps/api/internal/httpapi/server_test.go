@@ -300,6 +300,11 @@ func TestMessagePageHTTPCursors(t *testing.T) {
 	}
 
 	expectStatus(t, http.MethodGet, base+"?before_seq=4&after_seq=7", nil, http.StatusBadRequest)
+	expectStatus(t, http.MethodGet, base+"?before_seq=", nil, http.StatusBadRequest)
+	expectStatus(t, http.MethodGet, base+"?after_seq=bad", nil, http.StatusBadRequest)
+	expectStatus(t, http.MethodGet, base+"?around_seq=-1", nil, http.StatusBadRequest)
+	expectStatus(t, http.MethodGet, base+"?mode=history", nil, http.StatusBadRequest)
+	expectStatus(t, http.MethodGet, base+"?mode=latest&before_seq=4", nil, http.StatusBadRequest)
 }
 
 func TestReadEventsArePrivateAcrossWebSocketAndHTTPReplay(t *testing.T) {
@@ -566,6 +571,104 @@ func TestHTTPErrorPathsAndSPA(t *testing.T) {
 		t.Fatalf("expected bot scope failure, got %s %s", resp.Status, string(body))
 	}
 	resp.Body.Close()
+	messageID := messages[len(messages)-1].ID
+	for _, tc := range []struct {
+		name        string
+		method      string
+		path        string
+		body        string
+		contentType string
+	}{
+		{"list workspaces", http.MethodGet, "/api/workspaces", "", ""},
+		{"get workspace", http.MethodGet, "/api/workspaces/" + workspace.ID, "", ""},
+		{"list channels", http.MethodGet, "/api/workspaces/" + workspace.ID + "/channels", "", ""},
+		{"create channel", http.MethodPost, "/api/workspaces/" + workspace.ID + "/channels", `{"name":"bot-channel"}`, "application/json"},
+		{"update channel", http.MethodPatch, "/api/channels/" + channel.ID, `{"name":"bot-channel"}`, "application/json"},
+		{"list messages", http.MethodGet, "/api/channels/" + channel.ID + "/messages", "", ""},
+		{"update message", http.MethodPatch, "/api/messages/" + messageID, `{"body":"blocked"}`, "application/json"},
+		{"delete message", http.MethodDelete, "/api/messages/" + messageID, "", ""},
+		{"mark channel read", http.MethodPost, "/api/channels/" + channel.ID + "/read", `{"seq":1}`, "application/json"},
+		{"get thread", http.MethodGet, "/api/messages/" + messageID + "/thread", "", ""},
+		{"create thread reply", http.MethodPost, "/api/messages/" + messageID + "/thread/replies", `{"body":"reply"}`, "application/json"},
+		{"add reaction", http.MethodPost, "/api/messages/" + messageID + "/reactions", `{"emoji":"ok"}`, "application/json"},
+		{"remove reaction", http.MethodDelete, "/api/messages/" + messageID + "/reactions/%F0%9F%91%8D", "", ""},
+		{"list events", http.MethodGet, "/api/realtime/events?workspace_id=" + url.QueryEscape(workspace.ID), "", ""},
+		{"websocket", http.MethodGet, "/api/realtime/ws?workspace_id=" + url.QueryEscape(workspace.ID), "", ""},
+		{"search", http.MethodGet, "/api/search?workspace_id=" + url.QueryEscape(workspace.ID) + "&q=bot", "", ""},
+		{"get upload", http.MethodGet, "/api/uploads/missing", "", ""},
+		{"attach upload", http.MethodPost, "/api/messages/" + messageID + "/attachments", `{"upload_id":"upl_missing"}`, "application/json"},
+		{"list dms", http.MethodGet, "/api/dms?workspace_id=" + url.QueryEscape(workspace.ID), "", ""},
+		{"create dm", http.MethodPost, "/api/dms", `{"workspace_id":"` + workspace.ID + `"}`, "application/json"},
+		{"list dm messages", http.MethodGet, "/api/dms/dm_missing/messages", "", ""},
+		{"create dm message", http.MethodPost, "/api/dms/dm_missing/messages", `{"body":"dm"}`, "application/json"},
+		{"mark dm read", http.MethodPost, "/api/dms/dm_missing/read", `{"seq":1}`, "application/json"},
+		{"mattermost webhook", http.MethodPost, "/api/hooks/mattermost/" + channel.ID, `{"text":"hook"}`, "application/json"},
+		{"slash command", http.MethodPost, "/api/hooks/slash/" + channel.ID, "command=/bot&text=hello", "application/x-www-form-urlencoded"},
+		{"ephemeral", http.MethodPost, "/api/realtime/ephemeral", `{"workspace_id":"` + workspace.ID + `","type":"typing.started"}`, "application/json"},
+	} {
+		t.Run("read_only_bot_forbidden_"+tc.name, func(t *testing.T) {
+			req, err := http.NewRequest(tc.method, server.URL+tc.path, strings.NewReader(tc.body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Authorization", "Bearer "+readOnlyToken.Token)
+			if tc.contentType != "" {
+				req.Header.Set("Content-Type", tc.contentType)
+			}
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusForbidden {
+				payload, _ := io.ReadAll(resp.Body)
+				t.Fatalf("%s %s: expected forbidden, got %s %s", tc.method, tc.path, resp.Status, string(payload))
+			}
+		})
+	}
+	postUploadForm := func(t *testing.T, endpoint, token, workspaceID string, want int) {
+		t.Helper()
+		var body bytes.Buffer
+		writer := multipart.NewWriter(&body)
+		if err := writer.WriteField("workspace_id", workspaceID); err != nil {
+			t.Fatal(err)
+		}
+		if err := writer.Close(); err != nil {
+			t.Fatal(err)
+		}
+		req, err := http.NewRequest(http.MethodPost, endpoint, &body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != want {
+			payload, _ := io.ReadAll(resp.Body)
+			t.Fatalf("upload form: expected %d, got %s %s", want, resp.Status, string(payload))
+		}
+	}
+	postUploadForm(t, server.URL+"/api/uploads", readOnlyToken.Token, workspace.ID, http.StatusForbidden)
+	uploadBot, uploadToken, err := st.CreateBot(context.Background(), store.CreateBotInput{
+		WorkspaceID: workspace.ID,
+		DisplayName: "Upload Bot",
+		Scopes:      []string{"uploads:write"},
+		CreatedBy:   owner.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if uploadBot.Kind != "bot" {
+		t.Fatalf("expected upload bot kind, got %#v", uploadBot)
+	}
+	postUploadForm(t, server.URL+"/api/uploads", uploadToken.Token, "ws_missing", http.StatusForbidden)
+	noUploadServer := httptest.NewServer(New(st, realtime.NewHub(), Options{}).Handler())
+	t.Cleanup(noUploadServer.Close)
+	postUploadForm(t, noUploadServer.URL+"/api/uploads", uploadToken.Token, workspace.ID, http.StatusInternalServerError)
 
 	expectStatus(t, http.MethodPatch, server.URL+"/api/me", strings.NewReader("{"), http.StatusBadRequest)
 	expectStatus(t, http.MethodPatch, server.URL+"/api/me", strings.NewReader(`{"display_name":"Owner","handle":"x"}`), http.StatusBadRequest)
@@ -849,6 +952,48 @@ func TestDisableDevAuthRequiresSession(t *testing.T) {
 
 	expectStatus(t, http.MethodGet, server.URL+"/api/me", nil, http.StatusUnauthorized)
 	expectStatus(t, http.MethodPatch, server.URL+"/api/me", strings.NewReader(`{"display_name":"Nope"}`), http.StatusUnauthorized)
+	for _, tc := range []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{http.MethodGet, "/api/workspaces", ""},
+		{http.MethodPost, "/api/workspaces", `{"name":"Private"}`},
+		{http.MethodGet, "/api/workspaces/ws_missing", ""},
+		{http.MethodGet, "/api/workspaces/ws_missing/channels", ""},
+		{http.MethodPost, "/api/workspaces/ws_missing/channels", `{"name":"private"}`},
+		{http.MethodPatch, "/api/channels/chn_missing", `{"name":"private"}`},
+		{http.MethodGet, "/api/channels/chn_missing/messages", ""},
+		{http.MethodPost, "/api/channels/chn_missing/messages", `{"body":"private"}`},
+		{http.MethodPost, "/api/channels/chn_missing/read", `{"seq":1}`},
+		{http.MethodGet, "/api/messages/msg_missing", ""},
+		{http.MethodPatch, "/api/messages/msg_missing", `{"body":"private"}`},
+		{http.MethodDelete, "/api/messages/msg_missing", ""},
+		{http.MethodGet, "/api/messages/msg_missing/thread", ""},
+		{http.MethodPost, "/api/messages/msg_missing/thread/replies", `{"body":"private"}`},
+		{http.MethodPost, "/api/messages/msg_missing/reactions", `{"emoji":"ok"}`},
+		{http.MethodDelete, "/api/messages/msg_missing/reactions/ok", ""},
+		{http.MethodGet, "/api/realtime/events?workspace_id=ws_missing", ""},
+		{http.MethodGet, "/api/realtime/ws?workspace_id=ws_missing", ""},
+		{http.MethodPost, "/api/realtime/ephemeral", `{"workspace_id":"ws_missing","type":"typing.started"}`},
+		{http.MethodGet, "/api/search?workspace_id=ws_missing&q=x", ""},
+		{http.MethodPost, "/api/uploads", ""},
+		{http.MethodPost, "/api/messages/msg_missing/attachments", `{"upload_id":"upl_missing"}`},
+		{http.MethodGet, "/api/dms?workspace_id=ws_missing", ""},
+		{http.MethodPost, "/api/dms", `{"workspace_id":"ws_missing"}`},
+		{http.MethodGet, "/api/dms/dm_missing/messages", ""},
+		{http.MethodPost, "/api/dms/dm_missing/messages", `{"body":"private"}`},
+		{http.MethodPost, "/api/dms/dm_missing/read", `{"seq":1}`},
+		{http.MethodPost, "/api/hooks/mattermost/chn_missing", `{"text":"private"}`},
+		{http.MethodPost, "/api/hooks/slash/chn_missing", "command=/private"},
+	} {
+		var body io.Reader
+		if tc.body != "" {
+			body = strings.NewReader(tc.body)
+		}
+		expectStatus(t, tc.method, server.URL+tc.path, body, http.StatusUnauthorized)
+	}
+
 	req, err := http.NewRequest(http.MethodGet, server.URL+"/api/me", nil)
 	if err != nil {
 		t.Fatal(err)

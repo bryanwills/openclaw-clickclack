@@ -3,9 +3,12 @@ package sqlite
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/openclaw/clickclack/apps/api/internal/store"
@@ -97,6 +100,9 @@ func TestStoreValidationAndAdminHelpers(t *testing.T) {
 	if _, _, err := st.CreateBot(ctx, store.CreateBotInput{WorkspaceID: workspace.ID, DisplayName: "Bad Scope", Scopes: []string{"bad:scope"}}); err == nil {
 		t.Fatal("expected bad scope rejection")
 	}
+	if _, _, err := st.CreateBot(ctx, store.CreateBotInput{WorkspaceID: workspace.ID, DisplayName: "Duplicate Handle", Handle: "owner-bot"}); err == nil {
+		t.Fatal("expected duplicate bot handle rejection")
+	}
 	var exported bytes.Buffer
 	if err := st.ExportJSON(ctx, &exported); err != nil {
 		t.Fatal(err)
@@ -144,6 +150,121 @@ func TestStoreValidationAndAdminHelpers(t *testing.T) {
 	}
 	if _, _, err := st.CreateDirectMessage(ctx, store.CreateDirectMessageInput{ConversationID: dm.ID, AuthorID: second.ID}); err == nil {
 		t.Fatal("expected empty dm message error")
+	}
+}
+
+func TestBotStoreValidationAndAuthEdges(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	st := newTestStore(t)
+
+	owner, err := st.EnsureBootstrap(ctx, "Owner", "owner@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaces, err := st.ListWorkspaces(ctx, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace := workspaces[0]
+	outsider, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: "Outsider", Email: "outsider@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	createFailures := []struct {
+		name  string
+		input store.CreateBotInput
+	}{
+		{"missing workspace", store.CreateBotInput{DisplayName: "Missing Workspace"}},
+		{"missing display name", store.CreateBotInput{WorkspaceID: workspace.ID}},
+		{"display name too long", store.CreateBotInput{WorkspaceID: workspace.ID, DisplayName: strings.Repeat("a", 81)}},
+		{"invalid handle", store.CreateBotInput{WorkspaceID: workspace.ID, DisplayName: "Bad Handle", Handle: "!"}},
+		{"invalid avatar", store.CreateBotInput{WorkspaceID: workspace.ID, DisplayName: "Bad Avatar", AvatarURL: "ftp://example.com/avatar.png"}},
+		{"missing owner", store.CreateBotInput{WorkspaceID: workspace.ID, OwnerUserID: "usr_missing", DisplayName: "Missing Owner"}},
+		{"owner not member", store.CreateBotInput{WorkspaceID: workspace.ID, OwnerUserID: outsider.ID, DisplayName: "Outsider Bot"}},
+		{"unknown scope", store.CreateBotInput{WorkspaceID: workspace.ID, DisplayName: "Unknown Scope", Scopes: []string{"bad:scope"}}},
+	}
+	for _, tc := range createFailures {
+		t.Run("create_"+tc.name, func(t *testing.T) {
+			if _, _, err := st.CreateBot(ctx, tc.input); err == nil {
+				t.Fatal("expected CreateBot error")
+			}
+		})
+	}
+
+	bot, token, err := st.CreateBot(ctx, store.CreateBotInput{
+		WorkspaceID: workspace.ID,
+		OwnerUserID: owner.ID,
+		DisplayName: "Default Scope Bot",
+		TokenName:   " ",
+		CreatedBy:   owner.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token.Name != "default" || len(token.Scopes) == 0 {
+		t.Fatalf("expected default token metadata, got %#v", token)
+	}
+	auth, err := st.GetBotTokenAuth(ctx, " "+token.Token+" ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if auth.User.ID != bot.ID || auth.TokenID != token.ID || auth.WorkspaceID != workspace.ID {
+		t.Fatalf("unexpected bot token auth: %#v", auth)
+	}
+
+	if _, err := st.GetBotTokenAuth(ctx, "not-a-bot-token"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("expected non-bot token miss, got %v", err)
+	}
+	if _, err := st.GetBotTokenAuth(ctx, "ccb_missing"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("expected missing bot token miss, got %v", err)
+	}
+
+	_, revokedToken, err := st.CreateBot(ctx, store.CreateBotInput{WorkspaceID: workspace.ID, DisplayName: "Revoked Bot"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.db.ExecContext(ctx, `UPDATE bot_tokens SET revoked_at = ? WHERE id = ?`, now(), revokedToken.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.GetBotTokenAuth(ctx, revokedToken.Token); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("expected revoked token miss, got %v", err)
+	}
+
+	_, malformedToken, err := st.CreateBot(ctx, store.CreateBotInput{WorkspaceID: workspace.ID, DisplayName: "Malformed Scope Bot"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.db.ExecContext(ctx, `UPDATE bot_tokens SET scopes_json = ? WHERE id = ?`, `{`, malformedToken.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.GetBotTokenAuth(ctx, malformedToken.Token); err == nil {
+		t.Fatal("expected malformed scope JSON error")
+	}
+
+	ownerMembershipBot, ownerMembershipToken, err := st.CreateBot(ctx, store.CreateBotInput{
+		WorkspaceID: workspace.ID,
+		OwnerUserID: owner.ID,
+		DisplayName: "Owner Membership Bot",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.db.ExecContext(ctx, `DELETE FROM workspace_members WHERE workspace_id = ? AND user_id = ?`, workspace.ID, owner.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.GetBotTokenAuth(ctx, ownerMembershipToken.Token); err == nil {
+		t.Fatal("expected missing bot owner membership error")
+	}
+	if err := st.AddWorkspaceMember(ctx, workspace.ID, owner.ID, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.db.ExecContext(ctx, `DELETE FROM workspace_members WHERE workspace_id = ? AND user_id = ?`, workspace.ID, ownerMembershipBot.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.GetBotTokenAuth(ctx, ownerMembershipToken.Token); err == nil {
+		t.Fatal("expected missing bot membership error")
 	}
 }
 
