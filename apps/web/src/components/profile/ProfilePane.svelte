@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { avatarHue, avatarInitial, handleLabel } from "../../lib/chat/people";
+  import Avatar from "../avatar/Avatar.svelte";
+  import { avatarHue, handleLabel } from "../../lib/chat/people";
   import type { User } from "../../lib/types";
 
   type Props = {
@@ -28,13 +29,15 @@
 </header>
 <div class="profile-pane">
   <div class="profile-hero" style="--hue: {avatarHue(profile.id)}deg">
-    <span class="profile-avatar">
-      {#if profile.avatar_url}
-        <img src={profile.avatar_url} alt="" loading="lazy" />
-      {:else}
-        {avatarInitial(profile.display_name)}
-      {/if}
-    </span>
+    <Avatar
+      class="profile-avatar"
+      id={profile.id}
+      name={profile.display_name}
+      src={profile.avatar_url}
+      size={240}
+      loading="eager"
+      fetchPriority="auto"
+    />
   </div>
   <section class="profile-pane-body">
     <div class="profile-pane-title">

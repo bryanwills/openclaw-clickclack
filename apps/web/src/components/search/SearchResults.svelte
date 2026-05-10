@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { avatarHue, avatarInitial } from "../../lib/chat/people";
+  import Avatar from "../avatar/Avatar.svelte";
   import { time } from "../../lib/format";
   import type { SearchResult } from "../../lib/types";
 
@@ -20,13 +20,13 @@
     </div>
     {#each results as result (result.message.id)}
       <button class="search-result" onclick={() => onOpenResult(result)}>
-        <span class="dm-avatar" style="--hue: {avatarHue(result.message.author?.id || result.message.author_id || 'x')}deg">
-          {#if result.message.author?.avatar_url}
-            <img src={result.message.author.avatar_url} alt="" loading="lazy" />
-          {:else}
-            {avatarInitial(result.message.author?.display_name)}
-          {/if}
-        </span>
+        <Avatar
+          class="dm-avatar"
+          id={result.message.author?.id || result.message.author_id}
+          name={result.message.author?.display_name}
+          src={result.message.author?.avatar_url}
+          size={30}
+        />
         <div class="search-result-body">
           <div>
             <strong>{result.message.author?.display_name || "Local User"}</strong>

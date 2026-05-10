@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { avatarHue, avatarInitial, handleLabel } from "../../lib/chat/people";
+  import Avatar from "../avatar/Avatar.svelte";
+  import { handleLabel } from "../../lib/chat/people";
   import { markdown, time } from "../../lib/format";
   import { uploadURL } from "../../lib/uploads";
   import type { Message, ThreadState } from "../../lib/types";
@@ -67,13 +68,13 @@
   onpointerup={onInlineImagePointerUp}
 >
   <article class="thread-root" data-message-id={root.id}>
-    <div class="avatar" style="--hue: {avatarHue(root.author?.id || root.author_id || 'x')}deg">
-      {#if root.author?.avatar_url}
-        <img src={root.author.avatar_url} alt="" loading="lazy" />
-      {:else}
-        {avatarInitial(root.author?.display_name)}
-      {/if}
-    </div>
+    <Avatar
+      class="avatar"
+      id={root.author?.id || root.author_id}
+      name={root.author?.display_name}
+      src={root.author?.avatar_url}
+      size={38}
+    />
     <div class="group-body">
       <header>
         <strong>{root.author?.display_name || "Local User"}</strong>
@@ -105,13 +106,13 @@
   <div class="reply-list">
     {#each replies as reply (reply.id)}
       <article class="reply" data-message-id={reply.id}>
-        <div class="avatar small" style="--hue: {avatarHue(reply.author?.id || reply.author_id || 'x')}deg">
-          {#if reply.author?.avatar_url}
-            <img src={reply.author.avatar_url} alt="" loading="lazy" />
-          {:else}
-            {avatarInitial(reply.author?.display_name)}
-          {/if}
-        </div>
+        <Avatar
+          class="avatar small"
+          id={reply.author?.id || reply.author_id}
+          name={reply.author?.display_name}
+          src={reply.author?.avatar_url}
+          size={30}
+        />
         <div class="group-body">
           <header>
             <strong>{reply.author?.display_name || "Local User"}</strong>

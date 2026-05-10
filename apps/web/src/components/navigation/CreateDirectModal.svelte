@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { avatarHue, avatarInitial, handleLabel } from "../../lib/chat/people";
+  import Avatar from "../avatar/Avatar.svelte";
+  import { handleLabel } from "../../lib/chat/people";
   import type { User } from "../../lib/types";
 
   type Props = {
@@ -57,13 +58,13 @@
       <div class="person-picker" aria-label="People">
         {#each choices as person (person.id)}
           <button type="button" class="person-choice" onclick={() => onStart(person.id)}>
-            <span class="dm-avatar" style="--hue: {avatarHue(person.id)}deg">
-              {#if person.avatar_url}
-                <img src={person.avatar_url} alt="" loading="lazy" />
-              {:else}
-                {avatarInitial(person.display_name)}
-              {/if}
-            </span>
+            <Avatar
+              class="dm-avatar"
+              id={person.id}
+              name={person.display_name}
+              src={person.avatar_url}
+              size={32}
+            />
             <span>
               <strong>{person.display_name}</strong>
               <small>{handleLabel(person.handle) || person.id}</small>

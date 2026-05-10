@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { avatarHue, avatarInitial, dmAvatarUser, dmTitle } from "../../lib/chat/people";
+  import Avatar from "../avatar/Avatar.svelte";
+  import { dmAvatarUser, dmTitle } from "../../lib/chat/people";
   import type { DirectConversation } from "../../lib/types";
 
   type Props = {
@@ -42,13 +43,13 @@
         class:has-unread={unread > 0 && !isActive}
         onclick={() => onSelectDirect(conversation.id)}
       >
-        <span class="dm-avatar" style="--hue: {avatarHue(dmUser?.id || conversation.id)}deg">
-          {#if dmUser?.avatar_url}
-            <img src={dmUser.avatar_url} alt="" loading="lazy" />
-          {:else}
-            {avatarInitial(dmUser?.display_name)}
-          {/if}
-        </span>
+        <Avatar
+          class="dm-avatar"
+          id={dmUser?.id || conversation.id}
+          name={dmUser?.display_name}
+          src={dmUser?.avatar_url}
+          size={22}
+        />
         <span class="nav-label">{dmTitle(conversation, currentUserID)}</span>
         {#if unread > 0 && !isActive}
           <span class="unread-badge" aria-label={`${unread} unread`}>{unread > 99 ? "99+" : unread}</span>

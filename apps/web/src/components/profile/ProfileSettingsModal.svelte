@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { avatarHue, avatarInitial, handleLabel } from "../../lib/chat/people";
+  import Avatar from "../avatar/Avatar.svelte";
+  import { handleLabel } from "../../lib/chat/people";
   import type { User } from "../../lib/types";
 
   type Props = {
@@ -57,13 +58,15 @@
       }}
     >
       <div class="profile-preview">
-        <span class="avatar large" style="--hue: {avatarHue(user.id)}deg">
-          {#if avatarURL}
-            <img src={avatarURL} alt="" loading="lazy" />
-          {:else}
-            {avatarInitial(displayName)}
-          {/if}
-        </span>
+        <Avatar
+          class="avatar large"
+          id={user.id}
+          name={displayName}
+          src={avatarURL}
+          size={56}
+          loading="eager"
+          fetchPriority="auto"
+        />
         <div>
           <strong>{displayName || user.display_name}</strong>
           <span>{handle || handleLabel(user.handle) || "No handle set"}</span>

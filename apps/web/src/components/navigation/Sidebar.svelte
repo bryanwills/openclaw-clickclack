@@ -1,10 +1,6 @@
 <script lang="ts">
-  import {
-    avatarHue,
-    avatarInitial,
-    directConversationForUser,
-    handleLabel,
-  } from "../../lib/chat/people";
+  import Avatar from "../avatar/Avatar.svelte";
+  import { avatarHue, directConversationForUser, handleLabel } from "../../lib/chat/people";
   import type { Channel, DirectConversation, User } from "../../lib/types";
   import ChannelList from "./ChannelList.svelte";
   import DirectMessageList from "./DirectMessageList.svelte";
@@ -111,13 +107,13 @@
               else onOpenProfile(person);
             }}
           >
-            <span class="dm-avatar" style="--hue: {avatarHue(person.id)}deg">
-              {#if person.avatar_url}
-                <img src={person.avatar_url} alt="" loading="lazy" />
-              {:else}
-                {avatarInitial(person.display_name)}
-              {/if}
-            </span>
+            <Avatar
+              class="dm-avatar"
+              id={person.id}
+              name={person.display_name}
+              src={person.avatar_url}
+              size={22}
+            />
             <span class="nav-label">{person.display_name}</span>
             <span class="presence-dot active" aria-hidden="true"></span>
           </button>
@@ -140,13 +136,15 @@
       }}
       aria-label={`Account settings for ${currentUser.display_name} ${handleLabel(currentUser.handle)}`}
     >
-      <span class="dm-avatar" style="--hue: {avatarHue(currentUser.id)}deg">
-        {#if currentUser.avatar_url}
-          <img src={currentUser.avatar_url} alt="" loading="lazy" />
-        {:else}
-          {avatarInitial(currentUser.display_name)}
-        {/if}
-      </span>
+      <Avatar
+        class="dm-avatar"
+        id={currentUser.id}
+        name={currentUser.display_name}
+        src={currentUser.avatar_url}
+        size={28}
+        loading="eager"
+        fetchPriority="auto"
+      />
       <div class="user-meta">
         <strong>{currentUser.display_name}</strong>
         <span>{currentUser.handle ? handleLabel(currentUser.handle) : connected ? "Active" : "Reconnecting…"}</span>

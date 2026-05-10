@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { avatarHue, avatarInitial, handleLabel } from "../../lib/chat/people";
+  import Avatar from "../avatar/Avatar.svelte";
+  import { handleLabel } from "../../lib/chat/people";
   import { time } from "../../lib/format";
   import type { Message } from "../../lib/types";
   import type { MessageGroup as MessageGroupType } from "../../lib/chat/messages";
@@ -36,19 +37,15 @@
 </script>
 
 <article class="message-group">
-  <button
-    type="button"
+  <Avatar
     class="avatar avatar-button"
-    style="--hue: {avatarHue(group.authorID)}deg"
-    aria-label={`View profile for ${group.authorName}`}
+    id={group.authorID}
+    name={group.authorName}
+    src={group.authorAvatarURL}
+    size={38}
+    buttonLabel={`View profile for ${group.authorName}`}
     onclick={() => onOpenProfile(group.messages[0]?.author)}
-  >
-    {#if group.authorAvatarURL}
-      <img src={group.authorAvatarURL} alt="" loading="lazy" />
-    {:else}
-      {avatarInitial(group.authorName)}
-    {/if}
-  </button>
+  />
   <div class="group-body">
     <header>
       <button
