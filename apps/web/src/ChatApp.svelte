@@ -424,6 +424,13 @@
     activeHasNewer = window?.has_newer || false;
   }
 
+  function markMessageWindowHasNewer(key: string) {
+    const window = messageWindows.get(key);
+    if (!key || !window) return;
+    rememberMessageWindow(key, { ...window, has_newer: true });
+    updateActiveMessageWindowFlags(key);
+  }
+
   function setHistoryEdgeState(direction: "older" | "newer", state: HistoryEdgeState) {
     if (direction === "older") {
       olderPageState = state;
@@ -1408,8 +1415,10 @@
       // reload completes, virtua's scrollSize grows while offset is unchanged
       // and the cached atBottom flag flips to false — we'd lose the signal.
       const wasAtBottom = messageList?.isAtBottom() !== false;
-      if (event.type === "message.created") {
-        if (!wasAtBottom) suppressAutoReadUntil = Date.now() + 1200;
+      if (event.type === "message.created" && !wasAtBottom) {
+        suppressAutoReadUntil = Date.now() + 1200;
+        markMessageWindowHasNewer(currentConversationKey());
+      } else if (event.type === "message.created") {
         await loadNewerMessages();
       } else {
         await loadMessages();

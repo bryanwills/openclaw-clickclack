@@ -559,6 +559,19 @@ test("message history pages older, newer, and search target windows", async ({ p
     data: { name: channelName, kind: "public" },
   });
   const channel = (await channelResponse.json()) as { channel: { id: string; name: string } };
+  const senderID = clickclack([
+    "admin",
+    "user",
+    "create",
+    "--data",
+    "./data/e2e",
+    "--workspace",
+    workspaceId,
+    "--name",
+    "History Sender",
+    "--email",
+    `${channelName}@example.com`,
+  ]);
 
   for (let i = 0; i < 260; i++) {
     const response = await page.request.post(`/api/channels/${channel.channel.id}/messages`, {
@@ -659,6 +672,22 @@ test("message history pages older, newer, and search target windows", async ({ p
       newerResponses.push(response.url());
     }
   });
+
+  const liveMessageResponse = await page.request.post(
+    `/api/channels/${channel.channel.id}/messages`,
+    {
+      headers: { "X-ClickClack-User": senderID },
+      data: { body: "live while reading old history" },
+    },
+  );
+  expect(liveMessageResponse.ok()).toBe(true);
+  await page.waitForTimeout(300);
+  expect(newerResponses).toHaveLength(0);
+  await expect(page.locator(".markdown").filter({ hasText: "history-msg-010" })).toBeVisible();
+  await expect(
+    page.locator(".markdown").filter({ hasText: "live while reading old history" }),
+  ).toHaveCount(0);
+
   const newerPage = page.waitForResponse(
     (response) =>
       response.url().includes(`/api/channels/${channel.channel.id}/messages`) &&

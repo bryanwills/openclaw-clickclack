@@ -31,6 +31,9 @@
   older and newer history as users move through the timeline, and opens search
   or quote targets with around-sequence context without breaking the
   after-sequence API contract. Thanks @shakkernerd.
+- Fixed live-message handling while reading older history so incoming messages
+  mark the current window as having newer history instead of silently paging
+  the timeline forward.
 - Added a persistent in-timeline "New" divider and unread bar for unread
   channel and DM messages. The divider anchors to the read boundary, the bar
   jumps back to that boundary, and users can explicitly mark the view read
