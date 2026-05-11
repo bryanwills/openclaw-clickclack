@@ -100,6 +100,22 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/routes/{workspace_route_id}/{target_route_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["resolveRoute"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/workspaces/{workspace_id}": {
     parameters: {
       query?: never;
@@ -543,6 +559,91 @@ export interface components {
       /** Format: date-time */
       last_read_at: string;
     };
+    Workspace: {
+      id: string;
+      /** @description Immutable public route ID used in app URLs. */
+      route_id: string;
+      name: string;
+      slug: string;
+      /** Format: date-time */
+      created_at: string;
+    };
+    Channel: {
+      id: string;
+      /** @description Immutable public route ID used in app URLs. */
+      route_id: string;
+      workspace_id: string;
+      name: string;
+      kind: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      archived_at?: string;
+      /** Format: int64 */
+      last_seq?: number;
+      /** Format: int64 */
+      last_read_seq?: number;
+      /** Format: int64 */
+      unread_count?: number;
+    };
+    DirectConversation: {
+      id: string;
+      /** @description Immutable public route ID used in app URLs. */
+      route_id: string;
+      workspace_id: string;
+      /** Format: date-time */
+      created_at: string;
+      members: components["schemas"]["User"][];
+      /** Format: int64 */
+      last_seq?: number;
+      /** Format: int64 */
+      last_read_seq?: number;
+      /** Format: int64 */
+      unread_count?: number;
+    };
+    Message: {
+      id: string;
+      /** @description Immutable public route ID for thread roots. Omitted when the message has no route. */
+      route_id?: string;
+      workspace_id: string;
+      channel_id?: string;
+      direct_conversation_id?: string;
+      author_id: string;
+      parent_message_id?: string;
+      thread_root_id: string;
+      /** Format: int64 */
+      channel_seq?: number;
+      /** Format: int64 */
+      thread_seq?: number;
+      body: string;
+      /** @enum {string} */
+      body_format: "markdown";
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      edited_at?: string;
+      /** Format: date-time */
+      deleted_at?: string;
+      author?: components["schemas"]["User"];
+      quoted_message_id?: string;
+      quoted_body_snapshot?: string;
+      quoted_author_id?: string;
+      quoted_author?: components["schemas"]["User"];
+      nonce?: string;
+    };
+    RouteTarget: {
+      workspace_id: string;
+      workspace_route_id: string;
+      /** @enum {string} */
+      target_type: "channel" | "direct" | "thread";
+      target_id: string;
+      target_route_id: string;
+      /** @enum {string} */
+      parent_type?: "channel" | "direct";
+      parent_id?: string;
+      parent_route_id?: string;
+      canonical_path: string;
+    };
     AddReactionRequest: {
       emoji: string;
     };
@@ -578,6 +679,8 @@ export interface components {
     channel_id: string;
     message_id: string;
     conversation_id: string;
+    workspace_route_id: string;
+    target_route_id: string;
   };
   requestBodies: never;
   headers: never;
@@ -770,6 +873,38 @@ export interface operations {
     responses: {
       /** @description Created workspace */
       201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  resolveRoute: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace_route_id: components["parameters"]["workspace_route_id"];
+        target_route_id: components["parameters"]["target_route_id"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Resolved route target and canonical public URL path */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            route: components["schemas"]["RouteTarget"];
+          };
+        };
+      };
+      /** @description Route was missing or inaccessible */
+      404: {
         headers: {
           [name: string]: unknown;
         };

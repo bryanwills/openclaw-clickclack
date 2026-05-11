@@ -28,6 +28,11 @@ Sortable ULID-style text IDs with semantic prefixes:
 | `mlk_`  | magic link |
 | `ses_`  | session |
 
+Public app URLs use separate immutable random route IDs. They do not replace
+the internal IDs above. Workspaces expose `T...`, channels expose `C...`,
+direct conversations expose `D...`, and thread root messages expose `M...`
+only when a thread URL is needed.
+
 ## Tables (V1)
 
 ```text

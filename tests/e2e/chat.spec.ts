@@ -297,7 +297,7 @@ test("sends messages, searches, uploads, opens a thread, and creates a DM", asyn
 
   await page.reload();
   await page.getByRole("link", { name: `# ${channel.name}` }).click();
-  await expect(page).toHaveURL(new RegExp(`/app/[^/]+/${channel.id}$`));
+  await expect(page).toHaveURL(/\/app\/T[A-Z0-9]{16}\/C[A-Z0-9]{16}$/);
   await expect(
     page.locator(".messages-scroll .markdown").filter({ hasText: "hello playwright" }),
   ).toBeVisible();
@@ -508,19 +508,24 @@ test("remote messages keep a live channel pinned without unread UI", async ({ pa
 
 test("clicking the active conversation does not refetch its messages", async ({ page }) => {
   const workspacesResponse = await page.request.get("/api/workspaces");
-  const workspaces = (await workspacesResponse.json()) as { workspaces: { id: string }[] };
-  const workspaceId = workspaces.workspaces[0].id;
+  const workspaces = (await workspacesResponse.json()) as {
+    workspaces: { id: string; route_id: string }[];
+  };
+  const workspace = workspaces.workspaces[0];
+  const workspaceId = workspace.id;
   const channelName = `active-nav-${Date.now()}`;
   const channelResponse = await page.request.post(`/api/workspaces/${workspaceId}/channels`, {
     data: { name: channelName, kind: "public" },
   });
-  const channel = (await channelResponse.json()) as { channel: { id: string; name: string } };
+  const channel = (await channelResponse.json()) as {
+    channel: { id: string; route_id: string; name: string };
+  };
   const messageResponse = await page.request.post(`/api/channels/${channel.channel.id}/messages`, {
     data: { body: "active nav baseline" },
   });
   expect(messageResponse.ok()).toBe(true);
 
-  await page.goto(`/app/${workspaceId}/${channel.channel.id}`);
+  await page.goto(`/app/${workspace.route_id}/${channel.channel.route_id}`);
   await expect(page.getByRole("heading", { name: `#${channel.channel.name}` })).toBeVisible();
   await expect(page.locator(".markdown").filter({ hasText: "active nav baseline" })).toBeVisible();
   await settleScrollFrames(page);
@@ -612,13 +617,18 @@ test("read history returns to latest with Escape when scrolled up", async ({ pag
 
 test("refresh with unread messages opens at the divider without marking read", async ({ page }) => {
   const workspacesResponse = await page.request.get("/api/workspaces");
-  const workspaces = (await workspacesResponse.json()) as { workspaces: { id: string }[] };
-  const workspaceId = workspaces.workspaces[0].id;
+  const workspaces = (await workspacesResponse.json()) as {
+    workspaces: { id: string; route_id: string }[];
+  };
+  const workspace = workspaces.workspaces[0];
+  const workspaceId = workspace.id;
   const channelName = `refresh-read-${Date.now()}`;
   const channelResponse = await page.request.post(`/api/workspaces/${workspaceId}/channels`, {
     data: { name: channelName, kind: "public" },
   });
-  const channel = (await channelResponse.json()) as { channel: { id: string; name: string } };
+  const channel = (await channelResponse.json()) as {
+    channel: { id: string; route_id: string; name: string };
+  };
   const senderID = clickclack([
     "admin",
     "user",
@@ -652,6 +662,9 @@ test("refresh with unread messages opens at the divider without marking read", a
   }
 
   await page.goto(`/app/${workspaceId}/${channel.channel.id}`);
+  await expect(page).toHaveURL(
+    new RegExp(`/app/${workspace.route_id}/${channel.channel.route_id}$`),
+  );
   await expect(page.getByRole("heading", { name: `#${channel.channel.name}` })).toBeVisible();
   await expect(page.locator(".markdown").filter({ hasText: "refresh unread 5" })).toBeVisible();
   await expect(page.getByRole("separator", { name: "New messages" })).toBeVisible();

@@ -108,6 +108,25 @@ paths:
       responses:
         "201":
           description: Created workspace
+  /api/routes/{workspace_route_id}/{target_route_id}:
+    get:
+      operationId: resolveRoute
+      parameters:
+        - $ref: "#/components/parameters/workspace_route_id"
+        - $ref: "#/components/parameters/target_route_id"
+      responses:
+        "200":
+          description: Resolved route target and canonical public URL path
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [route]
+                properties:
+                  route:
+                    $ref: "#/components/schemas/RouteTarget"
+        "404":
+          description: Route was missing or inaccessible
   /api/workspaces/{workspace_id}:
     get:
       operationId: getWorkspace
@@ -519,6 +538,20 @@ components:
       required: true
       schema:
         type: string
+    workspace_route_id:
+      name: workspace_route_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^(T[A-Z0-9]{16}|wsp_[A-Za-z0-9-]+)$"
+    target_route_id:
+      name: target_route_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^([CDM][A-Z0-9]{16}|(chn|dm|msg)_[A-Za-z0-9-]+)$"
   schemas:
     CreateWorkspaceRequest:
       type: object
@@ -658,6 +691,156 @@ components:
         last_read_at:
           type: string
           format: date-time
+    Workspace:
+      type: object
+      required: [id, route_id, name, slug, created_at]
+      properties:
+        id:
+          type: string
+        route_id:
+          type: string
+          description: Immutable public route ID used in app URLs.
+        name:
+          type: string
+        slug:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    Channel:
+      type: object
+      required: [id, route_id, workspace_id, name, kind, created_at]
+      properties:
+        id:
+          type: string
+        route_id:
+          type: string
+          description: Immutable public route ID used in app URLs.
+        workspace_id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        archived_at:
+          type: string
+          format: date-time
+        last_seq:
+          type: integer
+          format: int64
+        last_read_seq:
+          type: integer
+          format: int64
+        unread_count:
+          type: integer
+          format: int64
+    DirectConversation:
+      type: object
+      required: [id, route_id, workspace_id, created_at, members]
+      properties:
+        id:
+          type: string
+        route_id:
+          type: string
+          description: Immutable public route ID used in app URLs.
+        workspace_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/User"
+        last_seq:
+          type: integer
+          format: int64
+        last_read_seq:
+          type: integer
+          format: int64
+        unread_count:
+          type: integer
+          format: int64
+    Message:
+      type: object
+      required: [id, workspace_id, author_id, thread_root_id, body, body_format, created_at]
+      properties:
+        id:
+          type: string
+        route_id:
+          type: string
+          description: Immutable public route ID for thread roots. Omitted when the message has no route.
+        workspace_id:
+          type: string
+        channel_id:
+          type: string
+        direct_conversation_id:
+          type: string
+        author_id:
+          type: string
+        parent_message_id:
+          type: string
+        thread_root_id:
+          type: string
+        channel_seq:
+          type: integer
+          format: int64
+        thread_seq:
+          type: integer
+          format: int64
+        body:
+          type: string
+        body_format:
+          type: string
+          enum: [markdown]
+        created_at:
+          type: string
+          format: date-time
+        edited_at:
+          type: string
+          format: date-time
+        deleted_at:
+          type: string
+          format: date-time
+        author:
+          $ref: "#/components/schemas/User"
+        quoted_message_id:
+          type: string
+        quoted_body_snapshot:
+          type: string
+        quoted_author_id:
+          type: string
+        quoted_author:
+          $ref: "#/components/schemas/User"
+        nonce:
+          type: string
+    RouteTarget:
+      type: object
+      required: [workspace_id, workspace_route_id, target_type, target_id, target_route_id, canonical_path]
+      properties:
+        workspace_id:
+          type: string
+        workspace_route_id:
+          type: string
+        target_type:
+          type: string
+          enum: [channel, direct, thread]
+        target_id:
+          type: string
+        target_route_id:
+          type: string
+        parent_type:
+          type: string
+          enum: [channel, direct]
+        parent_id:
+          type: string
+        parent_route_id:
+          type: string
+        canonical_path:
+          type: string
     AddReactionRequest:
       type: object
       required: [emoji]

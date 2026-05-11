@@ -34,7 +34,7 @@
   import ThreadEmptyState from "./components/thread/ThreadEmptyState.svelte";
   import ThreadPanel from "./components/thread/ThreadPanel.svelte";
   import Topbar from "./components/topbar/Topbar.svelte";
-  import type { Channel, DirectConversation, Message, MessagePage, RealtimeEvent, SearchResult, ThreadState, Upload, User, Workspace } from "./lib/types";
+  import type { Channel, DirectConversation, Message, MessagePage, RealtimeEvent, RouteTarget, SearchResult, ThreadState, Upload, User, Workspace } from "./lib/types";
 
   const LIVE_EDGE_TOLERANCE_PX = 96;
 
@@ -238,9 +238,25 @@
   }
 
   function appHref(workspaceID = selectedWorkspaceID, targetID = ""): string {
-    if (!workspaceID) return "/app";
-    const workspacePath = `/app/${encodeURIComponent(workspaceID)}`;
-    return targetID ? `${workspacePath}/${encodeURIComponent(targetID)}` : workspacePath;
+    const workspaceRouteID = routeWorkspaceIDFor(workspaceID);
+    if (!workspaceRouteID) return "/app";
+    const workspacePath = `/app/${encodeURIComponent(workspaceRouteID)}`;
+    const targetRouteID = routeTargetIDFor(targetID);
+    return targetRouteID ? `${workspacePath}/${encodeURIComponent(targetRouteID)}` : workspacePath;
+  }
+
+  function routeWorkspaceIDFor(workspaceID = selectedWorkspaceID): string {
+    if (!workspaceID) return "";
+    return workspaces.find((workspace) => workspace.id === workspaceID || workspace.route_id === workspaceID)?.route_id || workspaceID;
+  }
+
+  function routeTargetIDFor(targetID = ""): string {
+    if (!targetID) return "";
+    return channels.find((channel) => channel.id === targetID || channel.route_id === targetID)?.route_id ||
+      directConversations.find((conversation) => conversation.id === targetID || conversation.route_id === targetID)?.route_id ||
+      (selectedThread?.id === targetID ? selectedThread.route_id || "" : "") ||
+      messages.find((message) => message.id === targetID)?.route_id ||
+      targetID;
   }
 
   async function navigateToApp(workspaceID = selectedWorkspaceID, targetID = "", replaceState = false) {
@@ -265,12 +281,21 @@
   async function applyRoute(workspaceIDParam = "", targetIDParam = "") {
     const serial = ++routeApplySerial;
     const requestedRouteKey = routeKey(workspaceIDParam, targetIDParam);
-    const workspace = workspaces.find((candidate) => candidate.id === workspaceIDParam) || workspaces[0];
+    const routeTarget = targetIDParam.trim()
+      ? await resolveRouteTarget(workspaceIDParam, targetIDParam)
+      : null;
+    if (serial !== routeApplySerial) return;
+    const workspace = routeTarget
+      ? workspaces.find((candidate) => candidate.id === routeTarget.workspace_id)
+      : workspaces.find((candidate) => candidate.id === workspaceIDParam || candidate.route_id === workspaceIDParam) || workspaces[0];
     if (!workspace) {
       commitMessageWindow("", pageToWindow({ messages: [], oldest_seq: 0, newest_seq: 0, has_older: false, has_newer: false }), "replace");
       appliedRouteKey = requestedRouteKey;
       return;
     }
+    const canonicalRouteKey = routeTarget
+      ? routeKey(routeTarget.workspace_route_id, routeTarget.target_route_id)
+      : routeKey(workspace.route_id, "");
 
     const workspaceChanged = selectedWorkspaceID !== workspace.id;
     if (workspaceChanged) {
@@ -294,46 +319,63 @@
     if (workspaceChanged || directConversations.length === 0) await loadDirectConversations();
     if (serial !== routeApplySerial) return;
 
-    const targetID = targetIDParam.trim();
-    if (targetID.startsWith("chn_") && channels.some((channel) => channel.id === targetID)) {
+    if (routeTarget) {
+      const routeTargetAvailable = await ensureResolvedRouteTargetLoaded(routeTarget, serial);
+      if (serial !== routeApplySerial) return;
+      if (!routeTargetAvailable) {
+        clearRoutePanelState();
+        await navigateToApp(workspace.id, defaultTargetID(), true);
+        return;
+      }
+    }
+
+    if (routeTarget?.canonical_path && window.location.pathname !== routeTarget.canonical_path) {
+      appliedRouteKey = canonicalRouteKey;
+      await goto(routeTarget.canonical_path, { replaceState: true, noScroll: true, keepFocus: true });
+      if (serial !== routeApplySerial) return;
+    }
+
+    if (routeTarget?.target_type === "channel" && channels.some((channel) => channel.id === routeTarget.target_id)) {
+      const targetID = routeTarget.target_id;
       const sameConversation =
         !workspaceChanged && selectedChannelID === targetID && !selectedDirectID && viewKey === targetID;
       selectedChannelID = targetID;
       selectedDirectID = "";
       clearRoutePanelState();
       if (sameConversation) {
-        appliedRouteKey = requestedRouteKey;
+        appliedRouteKey = canonicalRouteKey;
         updateActiveMessageWindowFlags(targetID);
         return;
       }
       await loadMessages();
       if (serial !== routeApplySerial) return;
-      appliedRouteKey = requestedRouteKey;
+      appliedRouteKey = canonicalRouteKey;
       return;
     }
 
-    if (targetID.startsWith("dm_") && directConversations.some((conversation) => conversation.id === targetID)) {
+    if (routeTarget?.target_type === "direct" && directConversations.some((conversation) => conversation.id === routeTarget.target_id)) {
+      const targetID = routeTarget.target_id;
       const sameConversation =
         !workspaceChanged && selectedDirectID === targetID && !selectedChannelID && viewKey === targetID;
       selectedDirectID = targetID;
       selectedChannelID = "";
       clearRoutePanelState();
       if (sameConversation) {
-        appliedRouteKey = requestedRouteKey;
+        appliedRouteKey = canonicalRouteKey;
         updateActiveMessageWindowFlags(targetID);
         return;
       }
       await loadMessages();
       if (serial !== routeApplySerial) return;
-      appliedRouteKey = requestedRouteKey;
+      appliedRouteKey = canonicalRouteKey;
       return;
     }
 
-    if (targetID.startsWith("msg_")) {
-      const resolved = await resolveThreadRoute(workspace.id, targetID);
+    if (routeTarget?.target_type === "thread") {
+      const resolved = await applyThreadRoute(routeTarget);
       if (serial !== routeApplySerial) return;
       if (resolved) {
-        appliedRouteKey = requestedRouteKey;
+        appliedRouteKey = canonicalRouteKey;
         return;
       }
     }
@@ -345,23 +387,48 @@
       selectedDirectID = "";
       await loadMessages();
       appliedRouteKey = requestedRouteKey;
-      if (workspaceIDParam !== workspace.id || targetIDParam) await navigateToApp(workspace.id, "", true);
+      if (workspaceIDParam !== workspace.route_id || targetIDParam) await navigateToApp(workspace.id, "", true);
       return;
     }
     await navigateToApp(workspace.id, fallbackTargetID, true);
   }
 
-  async function resolveThreadRoute(workspaceID: string, messageID: string): Promise<boolean> {
-    let data: { root: Message; replies: Message[]; thread_state: ThreadState };
+  async function ensureResolvedRouteTargetLoaded(route: RouteTarget, serial: number): Promise<boolean> {
+    if (route.target_type === "channel") {
+      if (!channels.some((channel) => channel.id === route.target_id)) await loadChannels(false, false, false);
+      return serial === routeApplySerial && channels.some((channel) => channel.id === route.target_id);
+    }
+    if (route.target_type === "direct") {
+      if (!directConversations.some((conversation) => conversation.id === route.target_id)) await loadDirectConversations();
+      return serial === routeApplySerial && directConversations.some((conversation) => conversation.id === route.target_id);
+    }
+    if (route.parent_type === "channel" && route.parent_id) {
+      if (!channels.some((channel) => channel.id === route.parent_id)) await loadChannels(false, false, false);
+      return serial === routeApplySerial && channels.some((channel) => channel.id === route.parent_id);
+    }
+    if (route.parent_type === "direct" && route.parent_id) {
+      if (!directConversations.some((conversation) => conversation.id === route.parent_id)) await loadDirectConversations();
+      return serial === routeApplySerial && directConversations.some((conversation) => conversation.id === route.parent_id);
+    }
+    return true;
+  }
+
+  async function resolveRouteTarget(workspaceID: string, targetID: string): Promise<RouteTarget | null> {
     try {
-      data = await api<{ root: Message; replies: Message[]; thread_state: ThreadState }>(`/api/messages/${messageID}/thread`);
+      const data = await api<{ route: RouteTarget }>(
+        `/api/routes/${encodeURIComponent(workspaceID)}/${encodeURIComponent(targetID)}`,
+      );
+      return data.route;
     } catch (error) {
-      if (error instanceof APIError && (error.status === 400 || error.status === 403 || error.status === 404)) return false;
+      if (error instanceof APIError && (error.status === 403 || error.status === 404)) return null;
       throw error;
     }
-    if (data.root.workspace_id !== workspaceID) return false;
-    const parentChannelID = data.root.channel_id || "";
-    const parentDirectID = data.root.direct_conversation_id || "";
+  }
+
+  async function applyThreadRoute(route: RouteTarget): Promise<boolean> {
+    if (route.workspace_id !== selectedWorkspaceID) return false;
+    const parentChannelID = route.parent_type === "channel" ? route.parent_id || "" : "";
+    const parentDirectID = route.parent_type === "direct" ? route.parent_id || "" : "";
     if (parentChannelID) {
       if (!channels.some((channel) => channel.id === parentChannelID)) return false;
       selectedChannelID = parentChannelID;
@@ -373,13 +440,12 @@
     } else {
       return false;
     }
+    const sameThread = selectedThread?.id === route.target_id && viewKey === currentConversationKey();
     selectedProfile = null;
-    selectedThread = data.root;
-    selectedThreadState = data.thread_state;
-    replies = data.replies;
     activeComposerContext = "thread";
     mobileNavOpen = false;
-    await loadMessagesAround(data.root);
+    await refreshThread(route.target_id);
+    if (!sameThread && selectedThread) await loadMessagesAround(selectedThread);
     return true;
   }
 
@@ -433,11 +499,11 @@
 
   async function selectChannel(channelID: string) {
     mobileNavOpen = false;
-    const targetRouteKey = routeKey(selectedWorkspaceID, channelID);
+    const targetPath = appHref(selectedWorkspaceID, channelID);
     if (
       channelID === selectedChannelID &&
       !selectedDirectID &&
-      routeKey(routeWorkspaceID, routeTargetID) === targetRouteKey
+      window.location.pathname === targetPath
     ) {
       return;
     }
@@ -1318,11 +1384,10 @@
   }
 
   async function openThread(message: Message) {
-    if (selectedWorkspaceID && window.location.pathname !== appHref(selectedWorkspaceID, message.id)) {
-      await navigateToApp(selectedWorkspaceID, message.id);
-      return;
-    }
     await refreshThread(message.id, message);
+    if (selectedWorkspaceID && selectedThread?.route_id && window.location.pathname !== appHref(selectedWorkspaceID, selectedThread.id)) {
+      await navigateToApp(selectedWorkspaceID, selectedThread.id);
+    }
   }
 
   async function refreshThread(messageID: string, optimisticRoot?: Message) {
@@ -1331,6 +1396,7 @@
     activeComposerContext = "thread";
     const data = await api<{ root: Message; replies: Message[]; thread_state: ThreadState }>(`/api/messages/${messageID}/thread`);
     selectedThread = data.root;
+    setActiveMessages(messages.map((message) => message.id === data.root.id ? data.root : message));
     replies = data.replies;
     selectedThreadState = data.thread_state;
   }
@@ -1525,11 +1591,11 @@
 
   async function selectDirectConversation(conversationID: string) {
     mobileNavOpen = false;
-    const targetRouteKey = routeKey(selectedWorkspaceID, conversationID);
+    const targetPath = appHref(selectedWorkspaceID, conversationID);
     if (
       conversationID === selectedDirectID &&
       !selectedChannelID &&
-      routeKey(routeWorkspaceID, routeTargetID) === targetRouteKey
+      window.location.pathname === targetPath
     ) {
       return;
     }

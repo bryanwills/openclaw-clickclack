@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
 	"regexp"
 	"strings"
@@ -37,13 +38,13 @@ func scanUser(row scanner) (store.User, error) {
 
 func scanWorkspace(row scanner) (store.Workspace, error) {
 	var w store.Workspace
-	err := row.Scan(&w.ID, &w.Name, &w.Slug, &w.CreatedAt)
+	err := row.Scan(&w.ID, &w.RouteID, &w.Name, &w.Slug, &w.CreatedAt)
 	return w, err
 }
 
 func scanChannel(row scanner) (store.Channel, error) {
 	var ch store.Channel
-	err := row.Scan(&ch.ID, &ch.WorkspaceID, &ch.Name, &ch.Kind, &ch.CreatedAt, &ch.ArchivedAt)
+	err := row.Scan(&ch.ID, &ch.RouteID, &ch.WorkspaceID, &ch.Name, &ch.Kind, &ch.CreatedAt, &ch.ArchivedAt)
 	return ch, err
 }
 
@@ -56,7 +57,7 @@ func getMessageTx(ctx context.Context, tx *sql.Tx, id string) (store.Message, er
 }
 
 func messageSelect() string {
-	return `SELECT m.id, m.workspace_id, COALESCE(m.channel_id, ''), COALESCE(m.direct_conversation_id, ''), m.author_id, m.parent_message_id, m.thread_root_id, m.channel_seq, m.thread_seq,
+	return `SELECT m.id, COALESCE(m.route_id, ''), m.workspace_id, COALESCE(m.channel_id, ''), COALESCE(m.direct_conversation_id, ''), m.author_id, m.parent_message_id, m.thread_root_id, m.channel_seq, m.thread_seq,
 		       m.body, m.body_format, m.created_at, m.edited_at, m.deleted_at,
 		       u.id, u.kind, u.owner_user_id, u.display_name, u.handle, u.avatar_url, u.created_at,
 		       m.quoted_message_id, m.quoted_body_snapshot, m.quoted_author_id,
@@ -77,7 +78,7 @@ func scanMessage(row scanner) (store.Message, error) {
 	var quAuthorID, quKind, quOwnerID, quDisplayName, quHandle, quAvatarURL, quCreatedAt sql.NullString
 	var nonce string
 	err := row.Scan(
-		&m.ID, &m.WorkspaceID, &m.ChannelID, &m.DirectConversationID, &m.AuthorID, &parent, &m.ThreadRootID, &channelSeq, &threadSeq,
+		&m.ID, &m.RouteID, &m.WorkspaceID, &m.ChannelID, &m.DirectConversationID, &m.AuthorID, &parent, &m.ThreadRootID, &channelSeq, &threadSeq,
 		&m.Body, &m.BodyFormat, &m.CreatedAt, &edited, &deleted,
 		&author.ID, &author.Kind, &authorOwnerID, &author.DisplayName, &author.Handle, &author.AvatarURL, &author.CreatedAt,
 		&quotedMessageID, &m.QuotedBodySnapshot, &quotedAuthorID,
@@ -315,6 +316,39 @@ func newID(prefix string) string {
 	id := ulid.MustNew(ulid.Timestamp(time.Now()), idEntropy)
 	idMu.Unlock()
 	return prefix + "_" + strings.ToLower(id.String())
+}
+
+const routeIDAlphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+
+func newRouteID(prefix byte) (string, error) {
+	const routeIDRandomBytes = 10
+	var raw [routeIDRandomBytes]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", err
+	}
+	var out [17]byte
+	out[0] = prefix
+	bitBuffer := 0
+	bits := 0
+	pos := 1
+	for _, b := range raw {
+		bitBuffer = (bitBuffer << 8) | int(b)
+		bits += 8
+		for bits >= 5 {
+			bits -= 5
+			out[pos] = routeIDAlphabet[(bitBuffer>>bits)&31]
+			pos++
+			if bits > 0 {
+				bitBuffer &= (1 << bits) - 1
+			} else {
+				bitBuffer = 0
+			}
+		}
+	}
+	if pos != len(out) {
+		return "", fmt.Errorf("route id encoder produced %d characters", pos)
+	}
+	return string(out[:]), nil
 }
 
 func now() string {

@@ -32,8 +32,10 @@ uses `go:embed`. The `pnpm build` script copies `apps/web/dist` into
 
 The embedded frontend is a SvelteKit static SPA. Reverse proxies should pass
 unknown paths through to the ClickClack binary, because direct visits to app
-routes such as `/app/wsp_.../chn_...`, `/app/wsp_.../dm_...`, and
-`/app/wsp_.../msg_...` are resolved by the frontend fallback.
+routes such as `/app/T.../C...`, `/app/T.../D...`, and `/app/T.../M...` are
+resolved by the frontend fallback. Older internal-ID links such as
+`/app/wsp_.../chn_...`, `/app/wsp_.../dm_...`, and `/app/wsp_.../msg_...`
+are still accepted and canonicalized by the app after API permission checks.
 
 `pnpm build` defaults the SvelteKit app version to `dev` so repeated local
 builds do not rewrite embedded asset filenames when source code has not

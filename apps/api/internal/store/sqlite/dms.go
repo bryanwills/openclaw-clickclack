@@ -17,7 +17,7 @@ func (s *Store) ListDirectConversations(ctx context.Context, workspaceID, userID
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT dc.id, dc.workspace_id, dc.created_at,
+		SELECT dc.id, COALESCE(dc.route_id, ''), dc.workspace_id, dc.created_at,
 		       COALESCE((SELECT MAX(channel_seq) FROM messages WHERE direct_conversation_id = dc.id AND parent_message_id IS NULL), 0) AS last_seq,
 		       COALESCE((SELECT last_read_seq FROM direct_reads WHERE conversation_id = dc.id AND user_id = ?), 0) AS last_read_seq,
 		       COALESCE((
@@ -38,7 +38,7 @@ func (s *Store) ListDirectConversations(ctx context.Context, workspaceID, userID
 	out := []store.DirectConversation{}
 	for rows.Next() {
 		var dm store.DirectConversation
-		if err := rows.Scan(&dm.ID, &dm.WorkspaceID, &dm.CreatedAt, &dm.LastSeq, &dm.LastReadSeq, &dm.UnreadCount); err != nil {
+		if err := rows.Scan(&dm.ID, &dm.RouteID, &dm.WorkspaceID, &dm.CreatedAt, &dm.LastSeq, &dm.LastReadSeq, &dm.UnreadCount); err != nil {
 			return nil, err
 		}
 		out = append(out, dm)
@@ -67,7 +67,7 @@ func (s *Store) ListDirectConversations(ctx context.Context, workspaceID, userID
 func (s *Store) GetDirectConversation(ctx context.Context, conversationID, userID string) (store.DirectConversation, error) {
 	var dm store.DirectConversation
 	if err := s.db.QueryRowContext(ctx, `
-		SELECT dc.id, dc.workspace_id, dc.created_at,
+		SELECT dc.id, COALESCE(dc.route_id, ''), dc.workspace_id, dc.created_at,
 		       COALESCE((SELECT MAX(channel_seq) FROM messages WHERE direct_conversation_id = dc.id AND parent_message_id IS NULL), 0) AS last_seq,
 		       COALESCE((SELECT last_read_seq FROM direct_reads WHERE conversation_id = dc.id AND user_id = ?), 0) AS last_read_seq,
 		       COALESCE((
@@ -81,7 +81,7 @@ func (s *Store) GetDirectConversation(ctx context.Context, conversationID, userI
 		FROM direct_conversations dc
 		JOIN direct_conversation_members dcm ON dcm.conversation_id = dc.id
 		WHERE dc.id = ? AND dcm.user_id = ?`, userID, userID, userID, conversationID, userID).
-		Scan(&dm.ID, &dm.WorkspaceID, &dm.CreatedAt, &dm.LastSeq, &dm.LastReadSeq, &dm.UnreadCount); err != nil {
+		Scan(&dm.ID, &dm.RouteID, &dm.WorkspaceID, &dm.CreatedAt, &dm.LastSeq, &dm.LastReadSeq, &dm.UnreadCount); err != nil {
 		return store.DirectConversation{}, err
 	}
 	members, err := s.directConversationMembers(ctx, dm.ID)
@@ -112,8 +112,24 @@ func (s *Store) CreateDirectConversation(ctx context.Context, input store.Create
 		}
 	}
 	dm := store.DirectConversation{ID: newID("dm"), WorkspaceID: input.WorkspaceID, CreatedAt: now()}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO direct_conversations (id, workspace_id, created_at) VALUES (?, ?, ?)`, dm.ID, dm.WorkspaceID, dm.CreatedAt); err != nil {
-		return store.DirectConversation{}, err
+	inserted := false
+	for attempt := 0; attempt < routeIDInsertAttempts; attempt++ {
+		routeID, err := newRouteID('D')
+		if err != nil {
+			return store.DirectConversation{}, err
+		}
+		dm.RouteID = routeID
+		if _, err := tx.ExecContext(ctx, `INSERT INTO direct_conversations (id, route_id, workspace_id, created_at) VALUES (?, ?, ?, ?)`, dm.ID, dm.RouteID, dm.WorkspaceID, dm.CreatedAt); err != nil {
+			if isRouteIDConflict(err) {
+				continue
+			}
+			return store.DirectConversation{}, err
+		}
+		inserted = true
+		break
+	}
+	if !inserted {
+		return store.DirectConversation{}, errors.New("could not create direct conversation route_id after collision retries")
 	}
 	for _, memberID := range memberIDs {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO direct_conversation_members (conversation_id, user_id, created_at) VALUES (?, ?, ?)`, dm.ID, memberID, dm.CreatedAt); err != nil {

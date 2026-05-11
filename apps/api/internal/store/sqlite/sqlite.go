@@ -94,7 +94,7 @@ func (s *Store) Migrate(ctx context.Context) error {
 			return err
 		}
 	}
-	return nil
+	return s.backfillRouteIDsOnce(ctx)
 }
 
 func (s *Store) EnsureBootstrap(ctx context.Context, name, email string) (store.User, error) {
@@ -193,7 +193,7 @@ func (s *Store) UpdateUserProfile(ctx context.Context, input store.UpdateUserPro
 
 func (s *Store) ListWorkspaces(ctx context.Context, userID string) ([]store.Workspace, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT w.id, w.name, w.slug, w.created_at
+		SELECT w.id, COALESCE(w.route_id, ''), w.name, w.slug, w.created_at
 		FROM workspaces w
 		JOIN workspace_members wm ON wm.workspace_id = w.id
 		WHERE wm.user_id = ?
@@ -205,7 +205,7 @@ func (s *Store) ListWorkspaces(ctx context.Context, userID string) ([]store.Work
 	out := []store.Workspace{}
 	for rows.Next() {
 		var w store.Workspace
-		if err := rows.Scan(&w.ID, &w.Name, &w.Slug, &w.CreatedAt); err != nil {
+		if err := rows.Scan(&w.ID, &w.RouteID, &w.Name, &w.Slug, &w.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, w)
@@ -226,8 +226,24 @@ func (s *Store) CreateWorkspace(ctx context.Context, input store.CreateWorkspace
 	if w.Slug == "" {
 		w.Slug = slug(w.Name)
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO workspaces (id, name, slug, created_at) VALUES (?, ?, ?, ?)`, w.ID, w.Name, w.Slug, w.CreatedAt); err != nil {
-		return store.Workspace{}, err
+	inserted := false
+	for attempt := 0; attempt < routeIDInsertAttempts; attempt++ {
+		routeID, err := newRouteID('T')
+		if err != nil {
+			return store.Workspace{}, err
+		}
+		w.RouteID = routeID
+		if _, err := tx.ExecContext(ctx, `INSERT INTO workspaces (id, route_id, name, slug, created_at) VALUES (?, ?, ?, ?, ?)`, w.ID, w.RouteID, w.Name, w.Slug, w.CreatedAt); err != nil {
+			if isRouteIDConflict(err) {
+				continue
+			}
+			return store.Workspace{}, err
+		}
+		inserted = true
+		break
+	}
+	if !inserted {
+		return store.Workspace{}, errors.New("could not create workspace route_id after collision retries")
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role, created_at) VALUES (?, ?, 'owner', ?)`, w.ID, ownerID, w.CreatedAt); err != nil {
 		return store.Workspace{}, err
@@ -237,7 +253,7 @@ func (s *Store) CreateWorkspace(ctx context.Context, input store.CreateWorkspace
 
 func (s *Store) GetWorkspace(ctx context.Context, workspaceID, userID string) (store.Workspace, error) {
 	return scanWorkspace(s.db.QueryRowContext(ctx, `
-		SELECT w.id, w.name, w.slug, w.created_at
+		SELECT w.id, COALESCE(w.route_id, ''), w.name, w.slug, w.created_at
 		FROM workspaces w
 		JOIN workspace_members wm ON wm.workspace_id = w.id
 		WHERE w.id = ? AND wm.user_id = ?`, workspaceID, userID))
@@ -248,7 +264,7 @@ func (s *Store) ListChannels(ctx context.Context, workspaceID, userID string) ([
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT c.id, c.workspace_id, c.name, c.kind, c.created_at, c.archived_at,
+		SELECT c.id, COALESCE(c.route_id, ''), c.workspace_id, c.name, c.kind, c.created_at, c.archived_at,
 		       COALESCE((SELECT MAX(channel_seq) FROM messages WHERE channel_id = c.id AND parent_message_id IS NULL), 0) AS last_seq,
 		       COALESCE((SELECT last_read_seq FROM channel_reads WHERE channel_id = c.id AND user_id = ?), 0) AS last_read_seq,
 		       COALESCE((
@@ -269,7 +285,7 @@ func (s *Store) ListChannels(ctx context.Context, workspaceID, userID string) ([
 	out := []store.Channel{}
 	for rows.Next() {
 		var ch store.Channel
-		if err := rows.Scan(&ch.ID, &ch.WorkspaceID, &ch.Name, &ch.Kind, &ch.CreatedAt, &ch.ArchivedAt, &ch.LastSeq, &ch.LastReadSeq, &ch.UnreadCount); err != nil {
+		if err := rows.Scan(&ch.ID, &ch.RouteID, &ch.WorkspaceID, &ch.Name, &ch.Kind, &ch.CreatedAt, &ch.ArchivedAt, &ch.LastSeq, &ch.LastReadSeq, &ch.UnreadCount); err != nil {
 			return nil, err
 		}
 		out = append(out, ch)
@@ -293,8 +309,24 @@ func (s *Store) CreateChannel(ctx context.Context, input store.CreateChannelInpu
 	if ch.Kind == "" {
 		ch.Kind = "public"
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO channels (id, workspace_id, name, kind, created_at) VALUES (?, ?, ?, ?, ?)`, ch.ID, ch.WorkspaceID, ch.Name, ch.Kind, ch.CreatedAt); err != nil {
-		return store.Channel{}, store.Event{}, err
+	inserted := false
+	for attempt := 0; attempt < routeIDInsertAttempts; attempt++ {
+		routeID, err := newRouteID('C')
+		if err != nil {
+			return store.Channel{}, store.Event{}, err
+		}
+		ch.RouteID = routeID
+		if _, err := tx.ExecContext(ctx, `INSERT INTO channels (id, route_id, workspace_id, name, kind, created_at) VALUES (?, ?, ?, ?, ?, ?)`, ch.ID, ch.RouteID, ch.WorkspaceID, ch.Name, ch.Kind, ch.CreatedAt); err != nil {
+			if isRouteIDConflict(err) {
+				continue
+			}
+			return store.Channel{}, store.Event{}, err
+		}
+		inserted = true
+		break
+	}
+	if !inserted {
+		return store.Channel{}, store.Event{}, errors.New("could not create channel route_id after collision retries")
 	}
 	event, err := insertEvent(ctx, tx, ch.WorkspaceID, ch.ID, "channel.created", nil, map[string]string{"channel_id": ch.ID})
 	if err != nil {
@@ -430,6 +462,10 @@ func (s *Store) GetThread(ctx context.Context, rootMessageID, userID string, lim
 	if err := s.requireMessageAccess(ctx, root, userID); err != nil {
 		return store.Message{}, nil, store.ThreadState{}, err
 	}
+	root, err = s.EnsureThreadRouteID(ctx, userID, root.ID)
+	if err != nil {
+		return store.Message{}, nil, store.ThreadState{}, err
+	}
 	roots, err := s.hydrateAttachments(ctx, []store.Message{root})
 	if err != nil {
 		return store.Message{}, nil, store.ThreadState{}, err
@@ -469,6 +505,10 @@ func (s *Store) CreateThreadReply(ctx context.Context, input store.CreateThreadR
 		return store.Message{}, store.ThreadState{}, nil, errors.New("nested thread replies are not supported")
 	}
 	if err := requireMessageAccessTx(ctx, tx, root, input.AuthorID); err != nil {
+		return store.Message{}, store.ThreadState{}, nil, err
+	}
+	root, err = ensureThreadRouteIDTx(ctx, tx, root)
+	if err != nil {
 		return store.Message{}, store.ThreadState{}, nil, err
 	}
 	var seq int64

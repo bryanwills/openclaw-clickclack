@@ -15,7 +15,7 @@ func (s *Store) UpdateChannel(ctx context.Context, input store.UpdateChannelInpu
 		return store.Channel{}, store.Event{}, err
 	}
 	defer tx.Rollback()
-	ch, err := scanChannel(tx.QueryRowContext(ctx, `SELECT id, workspace_id, name, kind, created_at, archived_at FROM channels WHERE id = ?`, input.ChannelID))
+	ch, err := scanChannel(tx.QueryRowContext(ctx, `SELECT id, COALESCE(route_id, ''), workspace_id, name, kind, created_at, archived_at FROM channels WHERE id = ?`, input.ChannelID))
 	if err != nil {
 		return store.Channel{}, store.Event{}, err
 	}

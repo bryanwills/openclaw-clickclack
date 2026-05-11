@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added short public route IDs for workspace, channel, DM, and thread URLs while
+  preserving internal IDs and canonicalizing older copied links. Thanks
+  @shakkernerd.
 - Added first-class bot identities with human vs bot user kind, service-bot
   and user-owned bot records, scoped `ccb_...` bot tokens, CLI bot creation,
   bot-token auth checks, OpenAPI/SDK/web type coverage, visible bot badges,

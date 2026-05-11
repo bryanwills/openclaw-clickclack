@@ -48,6 +48,7 @@ type PushNotificationRecipient struct {
 
 type Workspace struct {
 	ID        string `json:"id"`
+	RouteID   string `json:"route_id"`
 	Name      string `json:"name"`
 	Slug      string `json:"slug"`
 	CreatedAt string `json:"created_at"`
@@ -55,6 +56,7 @@ type Workspace struct {
 
 type Channel struct {
 	ID          string  `json:"id"`
+	RouteID     string  `json:"route_id"`
 	WorkspaceID string  `json:"workspace_id"`
 	Name        string  `json:"name"`
 	Kind        string  `json:"kind"`
@@ -67,6 +69,7 @@ type Channel struct {
 
 type Message struct {
 	ID                   string   `json:"id"`
+	RouteID              string   `json:"route_id,omitempty"`
 	WorkspaceID          string   `json:"workspace_id"`
 	ChannelID            string   `json:"channel_id,omitempty"`
 	DirectConversationID string   `json:"direct_conversation_id,omitempty"`
@@ -271,6 +274,7 @@ type SearchResult struct {
 
 type DirectConversation struct {
 	ID          string `json:"id"`
+	RouteID     string `json:"route_id"`
 	WorkspaceID string `json:"workspace_id"`
 	CreatedAt   string `json:"created_at"`
 	Members     []User `json:"members"`
@@ -327,6 +331,18 @@ type ReadReceipt struct {
 	LastReadAt  string `json:"last_read_at"`
 }
 
+type RouteTarget struct {
+	WorkspaceID      string `json:"workspace_id"`
+	WorkspaceRouteID string `json:"workspace_route_id"`
+	TargetType       string `json:"target_type"`
+	TargetID         string `json:"target_id"`
+	TargetRouteID    string `json:"target_route_id"`
+	ParentType       string `json:"parent_type,omitempty"`
+	ParentID         string `json:"parent_id,omitempty"`
+	ParentRouteID    string `json:"parent_route_id,omitempty"`
+	CanonicalPath    string `json:"canonical_path"`
+}
+
 type Store interface {
 	Close() error
 	Migrate(ctx context.Context) error
@@ -344,11 +360,14 @@ type Store interface {
 	ListWorkspaces(ctx context.Context, userID string) ([]Workspace, error)
 	CreateWorkspace(ctx context.Context, input CreateWorkspaceInput, ownerID string) (Workspace, error)
 	GetWorkspace(ctx context.Context, workspaceID, userID string) (Workspace, error)
+	ResolveRouteTarget(ctx context.Context, userID, workspaceRouteID, targetRouteID string) (RouteTarget, error)
+	ResolveLegacyRouteTarget(ctx context.Context, userID, workspaceID, targetID string) (RouteTarget, error)
 	ListChannels(ctx context.Context, workspaceID, userID string) ([]Channel, error)
 	CreateChannel(ctx context.Context, input CreateChannelInput) (Channel, Event, error)
 	UpdateChannel(ctx context.Context, input UpdateChannelInput) (Channel, Event, error)
 	ListMessages(ctx context.Context, channelID, userID string, page MessagePageRequest) (MessagePage, error)
 	GetMessage(ctx context.Context, messageID, userID string) (Message, error)
+	EnsureThreadRouteID(ctx context.Context, userID, rootMessageID string) (Message, error)
 	CreateMessage(ctx context.Context, input CreateMessageInput) (Message, Event, error)
 	UpdateMessage(ctx context.Context, input UpdateMessageInput) (Message, Event, error)
 	DeleteMessage(ctx context.Context, input DeleteMessageInput) (Message, Event, error)

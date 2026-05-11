@@ -347,6 +347,24 @@ func TestStoreClosedDatabaseErrors(t *testing.T) {
 			_, _, err := st.CreateDirectMessage(ctx, store.CreateDirectMessageInput{})
 			return err
 		}},
+		{"resolve route", func() error {
+			_, err := st.ResolveRouteTarget(ctx, "usr_missing", "TMISSING", "CMISSING")
+			return err
+		}},
+		{"resolve legacy route", func() error {
+			_, err := st.ResolveLegacyRouteTarget(ctx, "usr_missing", "wsp_missing", "chn_missing")
+			return err
+		}},
+		{"ensure thread route", func() error {
+			_, err := st.EnsureThreadRouteID(ctx, "usr_missing", "msg_missing")
+			return err
+		}},
+		{"backfill route ids", func() error {
+			return st.backfillRouteIDs(ctx)
+		}},
+		{"assign route id", func() error {
+			return st.assignRouteID(ctx, "workspaces", "wsp_missing", 'T')
+		}},
 		{"magic link", func() error {
 			_, err := st.CreateMagicLink(ctx, "x@example.com", "x")
 			return err

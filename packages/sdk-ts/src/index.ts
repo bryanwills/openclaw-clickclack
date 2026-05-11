@@ -24,6 +24,7 @@ export type ClickClackBotOptions = ClickClackClientOptions & {
 
 export type Workspace = {
   id: string;
+  route_id: string;
   name: string;
   slug: string;
   created_at: string;
@@ -31,6 +32,7 @@ export type Workspace = {
 
 export type Channel = {
   id: string;
+  route_id: string;
   workspace_id: string;
   name: string;
   kind: string;
@@ -43,6 +45,7 @@ export type Channel = {
 
 export type Message = {
   id: string;
+  route_id?: string;
   workspace_id: string;
   channel_id?: string;
   direct_conversation_id?: string;
@@ -80,6 +83,7 @@ export type Upload = {
 
 export type DirectConversation = {
   id: string;
+  route_id: string;
   workspace_id: string;
   created_at: string;
   members: User[];
@@ -93,6 +97,18 @@ export type ReadReceipt = {
   user_id: string;
   last_read_seq: number;
   last_read_at: string;
+};
+
+export type RouteTarget = {
+  workspace_id: string;
+  workspace_route_id: string;
+  target_type: "channel" | "direct" | "thread";
+  target_id: string;
+  target_route_id: string;
+  parent_type?: "channel" | "direct";
+  parent_id?: string;
+  parent_route_id?: string;
+  canonical_path: string;
 };
 
 export type RealtimeEvent = {
@@ -182,6 +198,15 @@ export class ClickClackClient {
         body: JSON.stringify(input),
       });
       return data.workspace;
+    },
+  };
+
+  routes = {
+    resolve: async (workspaceRouteId: string, targetRouteId: string): Promise<RouteTarget> => {
+      const data = await this.request<{ route: RouteTarget }>(
+        `/api/routes/${encodeURIComponent(workspaceRouteId)}/${encodeURIComponent(targetRouteId)}`,
+      );
+      return data.route;
     },
   };
 

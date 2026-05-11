@@ -254,6 +254,7 @@
   let pendingRestore = false;
   let suppressPagination = false;
   let newerEdgeConsumed = false;
+  let wasLoadingNewer = false;
   let suppressPaginationGeneration = 0;
   let scrollCommandGeneration = 0;
 
@@ -321,6 +322,16 @@
     if (targetUnreadCount > 0) return;
     onReachedBottom?.();
   }
+
+  $effect(() => {
+    if (loadingNewer) {
+      wasLoadingNewer = true;
+      return;
+    }
+    if (!wasLoadingNewer) return;
+    wasLoadingNewer = false;
+    newerEdgeConsumed = false;
+  });
 
   async function scrollToBottom() {
     if (!virtualizer || items.length === 0) return;

@@ -307,6 +307,135 @@ func TestMessagePageHTTPCursors(t *testing.T) {
 	expectStatus(t, http.MethodGet, base+"?mode=latest&before_seq=4", nil, http.StatusBadRequest)
 }
 
+func TestRouteResolverAPI(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dataDir := t.TempDir()
+	st, err := sqlitestore.Open("sqlite://" + filepath.Join(dataDir, "clickclack.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := st.EnsureBootstrap(ctx, "Owner", "owner@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	member, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: "Member", Email: "route-member@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaceOnly, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: "Workspace Only", Email: "route-workspace-only@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaces, err := st.ListWorkspaces(ctx, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace := workspaces[0]
+	if err := st.AddWorkspaceMember(ctx, workspace.ID, member.ID, "member"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AddWorkspaceMember(ctx, workspace.ID, workspaceOnly.ID, "member"); err != nil {
+		t.Fatal(err)
+	}
+	channels, err := st.ListChannels(ctx, workspace.ID, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	channel := channels[0]
+	dm, err := st.CreateDirectConversation(ctx, store.CreateDirectConversationInput{WorkspaceID: workspace.ID, UserID: owner.ID, MemberIDs: []string{member.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, _, err := st.CreateMessage(ctx, store.CreateMessageInput{ChannelID: channel.ID, AuthorID: owner.ID, Body: "thread root"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err = st.EnsureThreadRouteID(ctx, owner.ID, root.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewServer(New(st, realtime.NewHub(), Options{UploadDir: filepath.Join(dataDir, "uploads")}).Handler())
+	t.Cleanup(server.Close)
+
+	channelRoute := getJSON[struct {
+		Route store.RouteTarget `json:"route"`
+	}](t, server.URL+"/api/routes/"+workspace.RouteID+"/"+channel.RouteID)
+	if channelRoute.Route.TargetType != "channel" || channelRoute.Route.TargetID != channel.ID || channelRoute.Route.CanonicalPath != "/app/"+workspace.RouteID+"/"+channel.RouteID {
+		t.Fatalf("unexpected channel route response: %#v", channelRoute.Route)
+	}
+
+	legacyChannelRoute := getJSON[struct {
+		Route store.RouteTarget `json:"route"`
+	}](t, server.URL+"/api/routes/"+workspace.ID+"/"+channel.ID)
+	if legacyChannelRoute.Route != channelRoute.Route {
+		t.Fatalf("legacy route did not canonicalize: %#v %#v", legacyChannelRoute.Route, channelRoute.Route)
+	}
+	scopeBot, scopeToken, err := st.CreateBot(ctx, store.CreateBotInput{
+		WorkspaceID: workspace.ID,
+		OwnerUserID: owner.ID,
+		DisplayName: "Route Scope Bot",
+		Scopes:      []string{"profile:read"},
+		CreatedBy:   owner.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scopeBot.ID == "" {
+		t.Fatal("expected route scope bot")
+	}
+	expectStatusWithBearer(t, scopeToken.Token, http.MethodGet, server.URL+"/api/routes/"+workspace.RouteID+"/"+channel.RouteID, nil, http.StatusForbidden)
+	expectStatusWithBearer(t, scopeToken.Token, http.MethodGet, server.URL+"/api/routes/"+workspace.RouteID+"/CMISSING", nil, http.StatusForbidden)
+
+	dmRoute := getJSONAsUser[struct {
+		Route store.RouteTarget `json:"route"`
+	}](t, member.ID, server.URL+"/api/routes/"+workspace.RouteID+"/"+dm.RouteID)
+	if dmRoute.Route.TargetType != "direct" || dmRoute.Route.TargetID != dm.ID {
+		t.Fatalf("unexpected dm route response: %#v", dmRoute.Route)
+	}
+	legacyDMRoute := getJSONAsUser[struct {
+		Route store.RouteTarget `json:"route"`
+	}](t, member.ID, server.URL+"/api/routes/"+workspace.ID+"/"+dm.ID)
+	if legacyDMRoute.Route != dmRoute.Route {
+		t.Fatalf("legacy dm route did not canonicalize: %#v %#v", legacyDMRoute.Route, dmRoute.Route)
+	}
+	expectStatusAsUser(t, workspaceOnly.ID, http.MethodGet, server.URL+"/api/routes/"+workspace.RouteID+"/"+dm.RouteID, nil, http.StatusNotFound)
+
+	threadRoute := getJSON[struct {
+		Route store.RouteTarget `json:"route"`
+	}](t, server.URL+"/api/routes/"+workspace.RouteID+"/"+root.RouteID)
+	if threadRoute.Route.TargetType != "thread" || threadRoute.Route.TargetID != root.ID || threadRoute.Route.ParentType != "channel" || threadRoute.Route.ParentID != channel.ID || threadRoute.Route.ParentRouteID != channel.RouteID {
+		t.Fatalf("unexpected thread route response: %#v", threadRoute.Route)
+	}
+	dmRoot, _, err := st.CreateDirectMessage(ctx, store.CreateDirectMessageInput{ConversationID: dm.ID, AuthorID: member.ID, Body: "dm thread root"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dmRoot, err = st.EnsureThreadRouteID(ctx, member.ID, dmRoot.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dmThreadRoute := getJSONAsUser[struct {
+		Route store.RouteTarget `json:"route"`
+	}](t, member.ID, server.URL+"/api/routes/"+workspace.RouteID+"/"+dmRoot.RouteID)
+	if dmThreadRoute.Route.TargetType != "thread" || dmThreadRoute.Route.ParentType != "direct" || dmThreadRoute.Route.ParentID != dm.ID || dmThreadRoute.Route.ParentRouteID != dm.RouteID {
+		t.Fatalf("unexpected dm thread route response: %#v", dmThreadRoute.Route)
+	}
+	expectStatusAsUser(t, workspaceOnly.ID, http.MethodGet, server.URL+"/api/routes/"+workspace.RouteID+"/"+dmRoot.RouteID, nil, http.StatusNotFound)
+	expectStatus(t, http.MethodGet, server.URL+"/api/routes/"+workspace.RouteID+"/Xbad", nil, http.StatusNotFound)
+
+	otherWorkspace, err := st.CreateWorkspace(ctx, store.CreateWorkspaceInput{Name: "Other Workspace"}, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectStatus(t, http.MethodGet, server.URL+"/api/routes/"+otherWorkspace.RouteID+"/"+channel.RouteID, nil, http.StatusNotFound)
+}
+
 func TestReadEventsArePrivateAcrossWebSocketAndHTTPReplay(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -832,6 +961,48 @@ func expectStatus(t *testing.T, method, endpoint string, body io.Reader, status 
 	if resp.StatusCode != status {
 		payload, _ := io.ReadAll(resp.Body)
 		t.Fatalf("%s %s: expected %d, got %s %s", method, endpoint, status, resp.Status, string(payload))
+	}
+}
+
+func expectStatusAsUser(t *testing.T, userID, method, endpoint string, body io.Reader, status int) {
+	t.Helper()
+	req, err := http.NewRequest(method, endpoint, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("X-ClickClack-User", userID)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != status {
+		payload, _ := io.ReadAll(resp.Body)
+		t.Fatalf("%s %s as %s: expected %d, got %s %s", method, endpoint, userID, status, resp.Status, string(payload))
+	}
+}
+
+func expectStatusWithBearer(t *testing.T, token, method, endpoint string, body io.Reader, status int) {
+	t.Helper()
+	req, err := http.NewRequest(method, endpoint, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != status {
+		payload, _ := io.ReadAll(resp.Body)
+		t.Fatalf("%s %s with bearer: expected %d, got %s %s", method, endpoint, status, resp.Status, string(payload))
 	}
 }
 

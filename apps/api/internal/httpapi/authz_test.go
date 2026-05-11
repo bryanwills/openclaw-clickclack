@@ -33,6 +33,7 @@ func TestHTTPUnauthorizedRoutes(t *testing.T) {
 		{http.MethodGet, "/api/me", ""},
 		{http.MethodGet, "/api/workspaces", ""},
 		{http.MethodPost, "/api/workspaces", `{"name":"x"}`},
+		{http.MethodGet, "/api/routes/TMISSING/CMISSING", ""},
 		{http.MethodGet, "/api/workspaces/wsp_missing", ""},
 		{http.MethodGet, "/api/workspaces/wsp_missing/channels", ""},
 		{http.MethodPost, "/api/workspaces/wsp_missing/channels", `{"name":"x"}`},
@@ -104,6 +105,62 @@ func TestShouldDeliverPrivateEvents(t *testing.T) {
 	if shouldDeliverEvent(store.Event{Type: "channel.read", Payload: "bad"}, "usr_owner") {
 		t.Fatal("expected malformed read receipt to be hidden")
 	}
+}
+
+func TestHTTPBotTokenWorkspaceIsolation(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dataDir := t.TempDir()
+	st, err := sqlitestore.Open("sqlite://" + filepath.Join(dataDir, "clickclack.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := st.EnsureBootstrap(ctx, "Owner", "owner@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaces, err := st.ListWorkspaces(ctx, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace := workspaces[0]
+	otherWorkspace, err := st.CreateWorkspace(ctx, store.CreateWorkspaceInput{Name: "Other Workspace"}, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherChannel, _, err := st.CreateChannel(ctx, store.CreateChannelInput{WorkspaceID: otherWorkspace.ID, UserID: owner.ID, Name: "other"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bot, token, err := st.CreateBot(ctx, store.CreateBotInput{
+		WorkspaceID: workspace.ID,
+		OwnerUserID: owner.ID,
+		DisplayName: "Workspace Locked Bot",
+		Scopes:      []string{"bot:admin"},
+		CreatedBy:   owner.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AddWorkspaceMember(ctx, otherWorkspace.ID, bot.ID, "bot"); err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewServer(New(st, realtime.NewHub(), Options{UploadDir: filepath.Join(dataDir, "uploads")}).Handler())
+	t.Cleanup(server.Close)
+	expectStatusWithBearer(t, token.Token, http.MethodPatch, server.URL+"/api/me", strings.NewReader(`{"display_name":"Bot"}`), http.StatusForbidden)
+	expectStatusWithBearer(t, token.Token, http.MethodPost, server.URL+"/api/workspaces", strings.NewReader(`{"name":"Nope"}`), http.StatusForbidden)
+	expectStatusWithBearer(t, token.Token, http.MethodGet, server.URL+"/api/workspaces/"+otherWorkspace.ID, nil, http.StatusForbidden)
+	expectStatusWithBearer(t, token.Token, http.MethodGet, server.URL+"/api/workspaces/"+otherWorkspace.ID+"/channels", nil, http.StatusForbidden)
+	expectStatusWithBearer(t, token.Token, http.MethodPost, server.URL+"/api/workspaces/"+otherWorkspace.ID+"/channels", strings.NewReader(`{"name":"hidden"}`), http.StatusForbidden)
+	expectStatusWithBearer(t, token.Token, http.MethodGet, server.URL+"/api/search?workspace_id="+otherWorkspace.ID+"&q=scope", nil, http.StatusForbidden)
+	expectStatusWithBearer(t, token.Token, http.MethodGet, server.URL+"/api/realtime/events?workspace_id="+otherWorkspace.ID, nil, http.StatusForbidden)
+	expectStatusWithBearer(t, token.Token, http.MethodPost, server.URL+"/api/dms", strings.NewReader(`{"workspace_id":"`+otherWorkspace.ID+`","member_ids":[]}`), http.StatusForbidden)
+	expectStatusWithBearer(t, token.Token, http.MethodGet, server.URL+"/api/routes/"+otherWorkspace.RouteID+"/"+otherChannel.RouteID, nil, http.StatusForbidden)
 }
 
 func TestHTTPUploadNotConfiguredAndCookieAuth(t *testing.T) {

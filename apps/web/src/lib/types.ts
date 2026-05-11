@@ -16,6 +16,7 @@ export type NotificationSettings = {
 
 export type Workspace = {
   id: string;
+  route_id: string;
   name: string;
   slug: string;
   created_at: string;
@@ -23,6 +24,7 @@ export type Workspace = {
 
 export type Channel = {
   id: string;
+  route_id: string;
   workspace_id: string;
   name: string;
   kind: string;
@@ -35,6 +37,7 @@ export type Channel = {
 
 export type Message = {
   id: string;
+  route_id?: string;
   workspace_id: string;
   channel_id?: string;
   direct_conversation_id?: string;
@@ -89,6 +92,7 @@ export type SearchResult = {
 
 export type DirectConversation = {
   id: string;
+  route_id: string;
   workspace_id: string;
   created_at: string;
   members: User[];
@@ -102,6 +106,18 @@ export type ThreadState = {
   reply_count: number;
   last_reply_at?: string;
   last_reply_author_ids: string[];
+};
+
+export type RouteTarget = {
+  workspace_id: string;
+  workspace_route_id: string;
+  target_type: "channel" | "direct" | "thread";
+  target_id: string;
+  target_route_id: string;
+  parent_type?: "channel" | "direct";
+  parent_id?: string;
+  parent_route_id?: string;
+  canonical_path: string;
 };
 
 export type EventPayload = {

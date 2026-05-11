@@ -45,17 +45,24 @@ polling.
 
 ## Web routes
 
-The web app uses ID-based routes for conversation navigation:
+The web app uses public route IDs for conversation navigation:
 
 ```text
-/app/{workspace_id}
-/app/{workspace_id}/{target_id}
+/app/{workspace_route_id}
+/app/{workspace_route_id}/{target_route_id}
 ```
 
-`target_id` is a channel ID (`chn_...`), direct conversation ID (`dm_...`), or
-thread root message ID (`msg_...`). Thread URLs resolve through the root
-message, inherit that message's channel or DM visibility, and then open the
-thread panel in the parent conversation.
+Route IDs are separate from the internal IDs used by API mutations and event
+payloads. New copied links use `T...` for workspaces, `C...` for channels,
+`D...` for direct conversations, and `M...` for thread root messages.
+
+Old internal-ID links such as `/app/wsp_.../chn_...`, `/app/wsp_.../dm_...`,
+and `/app/wsp_.../msg_...` remain compatibility inputs. The app resolves them
+through `/api/routes/{workspace_route_id}/{target_route_id}` and replaces the
+URL with the canonical public route after permission checks.
+
+Thread URLs resolve through the root message, inherit that message's channel or
+DM visibility, and then open the thread panel in the parent conversation.
 
 ## Membership rules
 

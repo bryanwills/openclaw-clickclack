@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 
 	"github.com/openclaw/clickclack/apps/api/internal/store"
 )
@@ -25,8 +26,9 @@ func (s *Store) EnsureDefaultWorkspaceMember(ctx context.Context, userID string)
 	defer tx.Rollback()
 
 	var workspace store.Workspace
-	err = tx.QueryRowContext(ctx, `SELECT id, name, slug, created_at FROM workspaces ORDER BY created_at LIMIT 1`).Scan(
+	err = tx.QueryRowContext(ctx, `SELECT id, COALESCE(route_id, ''), name, slug, created_at FROM workspaces ORDER BY created_at LIMIT 1`).Scan(
 		&workspace.ID,
+		&workspace.RouteID,
 		&workspace.Name,
 		&workspace.Slug,
 		&workspace.CreatedAt,
@@ -36,11 +38,43 @@ func (s *Store) EnsureDefaultWorkspaceMember(ctx context.Context, userID string)
 	}
 	if err == sql.ErrNoRows {
 		workspace = store.Workspace{ID: newID("wsp"), Name: "ClickClack", Slug: "clickclack", CreatedAt: now()}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO workspaces (id, name, slug, created_at) VALUES (?, ?, ?, ?)`, workspace.ID, workspace.Name, workspace.Slug, workspace.CreatedAt); err != nil {
-			return store.Workspace{}, err
+		insertedWorkspace := false
+		for attempt := 0; attempt < routeIDInsertAttempts; attempt++ {
+			workspaceRouteID, err := newRouteID('T')
+			if err != nil {
+				return store.Workspace{}, err
+			}
+			workspace.RouteID = workspaceRouteID
+			if _, err := tx.ExecContext(ctx, `INSERT INTO workspaces (id, route_id, name, slug, created_at) VALUES (?, ?, ?, ?, ?)`, workspace.ID, workspace.RouteID, workspace.Name, workspace.Slug, workspace.CreatedAt); err != nil {
+				if isRouteIDConflict(err) {
+					continue
+				}
+				return store.Workspace{}, err
+			}
+			insertedWorkspace = true
+			break
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO channels (id, workspace_id, name, kind, created_at) VALUES (?, ?, 'general', 'public', ?)`, newID("chn"), workspace.ID, workspace.CreatedAt); err != nil {
-			return store.Workspace{}, err
+		if !insertedWorkspace {
+			return store.Workspace{}, errors.New("could not create workspace route_id after collision retries")
+		}
+		channelID := newID("chn")
+		insertedChannel := false
+		for attempt := 0; attempt < routeIDInsertAttempts; attempt++ {
+			channelRouteID, err := newRouteID('C')
+			if err != nil {
+				return store.Workspace{}, err
+			}
+			if _, err := tx.ExecContext(ctx, `INSERT INTO channels (id, route_id, workspace_id, name, kind, created_at) VALUES (?, ?, ?, 'general', 'public', ?)`, channelID, channelRouteID, workspace.ID, workspace.CreatedAt); err != nil {
+				if isRouteIDConflict(err) {
+					continue
+				}
+				return store.Workspace{}, err
+			}
+			insertedChannel = true
+			break
+		}
+		if !insertedChannel {
+			return store.Workspace{}, errors.New("could not create channel route_id after collision retries")
 		}
 	}
 	if _, err := tx.ExecContext(ctx, `
