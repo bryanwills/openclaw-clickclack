@@ -19,22 +19,27 @@ func (s *Store) ListDirectConversations(ctx context.Context, workspaceID, userID
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT dc.id, dc.workspace_id, dc.created_at,
 		       COALESCE((SELECT MAX(channel_seq) FROM messages WHERE direct_conversation_id = dc.id AND parent_message_id IS NULL), 0) AS last_seq,
-		       COALESCE((SELECT last_read_seq FROM direct_reads WHERE conversation_id = dc.id AND user_id = ?), 0) AS last_read_seq
+		       COALESCE((SELECT last_read_seq FROM direct_reads WHERE conversation_id = dc.id AND user_id = ?), 0) AS last_read_seq,
+		       COALESCE((
+		         SELECT COUNT(*)
+		         FROM messages m
+		         WHERE m.direct_conversation_id = dc.id
+		           AND m.parent_message_id IS NULL
+		           AND m.author_id <> ?
+		           AND m.channel_seq > COALESCE((SELECT last_read_seq FROM direct_reads WHERE conversation_id = dc.id AND user_id = ?), 0)
+		       ), 0) AS unread_count
 		FROM direct_conversations dc
 		JOIN direct_conversation_members dcm ON dcm.conversation_id = dc.id
 		WHERE dc.workspace_id = ? AND dcm.user_id = ?
-		ORDER BY dc.created_at`, userID, workspaceID, userID)
+		ORDER BY dc.created_at`, userID, userID, userID, workspaceID, userID)
 	if err != nil {
 		return nil, err
 	}
 	out := []store.DirectConversation{}
 	for rows.Next() {
 		var dm store.DirectConversation
-		if err := rows.Scan(&dm.ID, &dm.WorkspaceID, &dm.CreatedAt, &dm.LastSeq, &dm.LastReadSeq); err != nil {
+		if err := rows.Scan(&dm.ID, &dm.WorkspaceID, &dm.CreatedAt, &dm.LastSeq, &dm.LastReadSeq, &dm.UnreadCount); err != nil {
 			return nil, err
-		}
-		if dm.LastSeq > dm.LastReadSeq {
-			dm.UnreadCount = dm.LastSeq - dm.LastReadSeq
 		}
 		out = append(out, dm)
 	}
@@ -64,15 +69,20 @@ func (s *Store) GetDirectConversation(ctx context.Context, conversationID, userI
 	if err := s.db.QueryRowContext(ctx, `
 		SELECT dc.id, dc.workspace_id, dc.created_at,
 		       COALESCE((SELECT MAX(channel_seq) FROM messages WHERE direct_conversation_id = dc.id AND parent_message_id IS NULL), 0) AS last_seq,
-		       COALESCE((SELECT last_read_seq FROM direct_reads WHERE conversation_id = dc.id AND user_id = ?), 0) AS last_read_seq
+		       COALESCE((SELECT last_read_seq FROM direct_reads WHERE conversation_id = dc.id AND user_id = ?), 0) AS last_read_seq,
+		       COALESCE((
+		         SELECT COUNT(*)
+		         FROM messages m
+		         WHERE m.direct_conversation_id = dc.id
+		           AND m.parent_message_id IS NULL
+		           AND m.author_id <> ?
+		           AND m.channel_seq > COALESCE((SELECT last_read_seq FROM direct_reads WHERE conversation_id = dc.id AND user_id = ?), 0)
+		       ), 0) AS unread_count
 		FROM direct_conversations dc
 		JOIN direct_conversation_members dcm ON dcm.conversation_id = dc.id
-		WHERE dc.id = ? AND dcm.user_id = ?`, userID, conversationID, userID).
-		Scan(&dm.ID, &dm.WorkspaceID, &dm.CreatedAt, &dm.LastSeq, &dm.LastReadSeq); err != nil {
+		WHERE dc.id = ? AND dcm.user_id = ?`, userID, userID, userID, conversationID, userID).
+		Scan(&dm.ID, &dm.WorkspaceID, &dm.CreatedAt, &dm.LastSeq, &dm.LastReadSeq, &dm.UnreadCount); err != nil {
 		return store.DirectConversation{}, err
-	}
-	if dm.LastSeq > dm.LastReadSeq {
-		dm.UnreadCount = dm.LastSeq - dm.LastReadSeq
 	}
 	members, err := s.directConversationMembers(ctx, dm.ID)
 	if err != nil {

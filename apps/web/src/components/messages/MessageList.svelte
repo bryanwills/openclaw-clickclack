@@ -17,6 +17,7 @@
     scrollToDivider: (fallbackToAround?: boolean) => boolean;
     captureState: () => MessageListState | null;
     isAtBottom: () => boolean;
+    isNearBottom: (tolerancePx?: number) => boolean;
   };
 </script>
 
@@ -33,8 +34,7 @@
     | { kind: "loader"; id: string; direction: "older" | "newer"; rows: number }
     | { kind: "day"; id: string; label: string }
     | { kind: "group"; id: string; group: Group }
-    | { kind: "divider"; id: string }
-    | { kind: "bottom"; id: string };
+    | { kind: "divider"; id: string };
 
   type Props = {
     messages: Message[];
@@ -117,7 +117,6 @@
 
   let virtualizer: VirtualizerHandle | undefined = $state();
   let scrollEl: HTMLDivElement | undefined = $state();
-  let bottomAnchorEl: HTMLDivElement | undefined = $state();
   let historyLoaderEl: HTMLDivElement | undefined = $state();
   let historyLoaderHeight = $state(0);
   let viewportHeight = $state(0);
@@ -136,6 +135,7 @@
   let displayUnreadCount = $state(0);
   let unreadClearing = $state(false);
   let unreadExitTimer: number | undefined;
+  let dividerUnreadCount = $derived(targetUnreadCount > 0 ? targetUnreadCount : displayUnreadCount);
 
   function clearUnreadExitTimer() {
     if (!unreadExitTimer) return;
@@ -175,7 +175,7 @@
   onDestroy(clearUnreadExitTimer);
   let listSpansUnreadBoundary = $derived.by(() => {
     const targetSeq = unreadBoundarySeq + 1;
-    if (displayUnreadCount <= 0 || targetSeq <= 0) return false;
+    if (dividerUnreadCount <= 0 || targetSeq <= 0) return false;
     let oldestSeq = Number.POSITIVE_INFINITY;
     let newestSeq = 0;
     for (const message of messages) {
@@ -196,7 +196,7 @@
       if (!canUseUnreadDivider) return false;
       if (m.parent_message_id) return false;
       if (m.author?.id === currentUserID || m.author_id === currentUserID) return false;
-      return displayUnreadCount > 0 && (m.channel_seq || 0) > unreadBoundarySeq;
+      return dividerUnreadCount > 0 && (m.channel_seq || 0) > unreadBoundarySeq;
     };
     for (const group of groupMessages(messages)) {
       let splitIdx = -1;
@@ -237,7 +237,6 @@
       }
     }
     if (loadingNewer) out.push({ kind: "loader", id: "loader-newer", direction: "newer", rows: 3 });
-    out.push({ kind: "bottom", id: "bottom-anchor" });
     return out;
   });
 
@@ -287,28 +286,28 @@
     release(frames);
   }
 
-  function checkAtBottom(): boolean {
-    if (!scrollEl) return true;
-    if (!bottomAnchorEl) return messages.length === 0 && bottomDistance() <= ANCHOR_THRESHOLD_PX;
-    const viewport = scrollEl.getBoundingClientRect();
-    const rect = bottomAnchorEl.getBoundingClientRect();
-    return rect.top >= viewport.top - ANCHOR_THRESHOLD_PX && rect.bottom <= viewport.bottom + ANCHOR_THRESHOLD_PX;
+  function virtuaBottomDistance(): number {
+    if (!virtualizer) return 0;
+    const scrollSize = virtualizer.getScrollSize() + historyLoaderHeight;
+    return Math.max(0, scrollSize - virtualizer.getScrollOffset() - virtualizer.getViewportSize());
   }
 
-  function bottomDistance(): number {
-    if (!scrollEl) return 0;
-    if (!bottomAnchorEl) return Math.max(0, scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight);
-    const viewport = scrollEl.getBoundingClientRect();
-    const rect = bottomAnchorEl.getBoundingClientRect();
-    return Math.max(0, rect.bottom - viewport.bottom);
+  function checkAtBottom(): boolean {
+    if (!virtualizer) return true;
+    return virtuaBottomDistance() <= ANCHOR_THRESHOLD_PX;
+  }
+
+  function checkNearBottom(tolerancePx = ANCHOR_THRESHOLD_PX): boolean {
+    if (!virtualizer) return true;
+    return virtuaBottomDistance() <= tolerancePx;
   }
 
   function viewportState(): MessageListViewportState {
-    if (!scrollEl) return { atBottom: true, nearOlder: false, nearNewer: false };
-    const distance = bottomDistance();
+    if (!virtualizer) return { atBottom: true, nearOlder: false, nearNewer: false };
+    const distance = virtuaBottomDistance();
     return {
       atBottom: checkAtBottom(),
-      nearOlder: scrollEl.scrollTop - historyLoaderHeight <= OLDER_LOAD_THRESHOLD_PX,
+      nearOlder: virtualizer.getScrollOffset() - historyLoaderHeight <= OLDER_LOAD_THRESHOLD_PX,
       nearNewer: distance <= NEWER_LOAD_THRESHOLD_PX,
     };
   }
@@ -319,48 +318,27 @@
 
   function notifyReachedBottom() {
     if (hasNewer) return;
+    if (targetUnreadCount > 0) return;
     onReachedBottom?.();
   }
 
   async function scrollToBottom() {
-    if (!scrollEl || items.length === 0) return;
+    if (!virtualizer || items.length === 0) return;
     shouldStickToBottom = !hasNewer;
-    await pinToBottom(beginScrollCommand());
+    await scrollLastItemIntoView(beginScrollCommand());
   }
 
-  // Robust pin: write directly to scrollEl.scrollTop. The scroll container is
-  // ours (the wrapper div), not virtua's internal one — so the DOM is always
-  // ground truth even while virtua is mid-measurement. The ResizeObserver
-  // hook below catches late layout shifts (images loading, markdown expanding)
-  // and re-pins, which is what makes this work for variable-height items.
-  async function pinToBottom(generation = beginScrollCommand()) {
-    if (!scrollEl) return;
+  async function scrollLastItemIntoView(generation = beginScrollCommand()) {
+    if (!virtualizer || items.length === 0) return;
     const key = viewKey;
+    if (document.activeElement === scrollEl) scrollEl.blur();
     shouldStickToBottom = !hasNewer;
-    suppressProgrammaticPagination(12);
-    let stableFrames = 0;
-    for (let attempt = 0; attempt < 48; attempt++) {
-      if (!isCurrentScrollCommand(key, generation)) return;
-      if (!scrollEl) return;
-      const heightBefore = scrollEl.scrollHeight;
-      const lastIndex = items.length - 1;
-      if (virtualizer && lastIndex >= 0) {
-        virtualizer.scrollToIndex(lastIndex, { align: "end" });
-      }
-      scrollEl.scrollTop = scrollEl.scrollHeight;
-      bottomAnchorEl?.scrollIntoView({ block: "end" });
-      await new Promise((r) => requestAnimationFrame(r));
-      if (!isCurrentScrollCommand(key, generation)) return;
-      if (!scrollEl) return;
-      if (!revealed && attempt >= 1) revealed = true;
-      const heightStable = Math.abs(scrollEl.scrollHeight - heightBefore) < 1;
-      if (checkAtBottom() && heightStable) {
-        stableFrames++;
-        if (stableFrames >= 4 && attempt >= 8) break;
-      } else {
-        stableFrames = 0;
-      }
-    }
+    suppressProgrammaticPagination(2);
+    virtualizer.scrollToIndex(items.length - 1, { align: "end" });
+    await tick();
+    await nextFrame();
+    if (!isCurrentScrollCommand(key, generation)) return;
+    revealed = true;
     shouldStickToBottom = !hasNewer;
     if (checkAtBottom()) {
       atBottom = true;
@@ -372,47 +350,15 @@
   $effect(() => {
     if (!scrollEl) return;
     const el = scrollEl;
-    const onScroll = () => handleScroll(el.scrollTop);
     const onWheel = (event: WheelEvent) => {
       if (event.deltaY > 0 && !pendingRestore && !suppressPagination && hasNewer && checkAtBottom()) {
         newerEdgeConsumed = true;
         onLoadNewer?.("wheel");
       }
     };
-    el.addEventListener("scroll", onScroll, { passive: true });
     el.addEventListener("wheel", onWheel, { passive: true });
     return () => {
-      el.removeEventListener("scroll", onScroll);
       el.removeEventListener("wheel", onWheel);
-    };
-  });
-
-  // Watch the inner content for size changes. While stuck to bottom, every
-  // layout shift (item measured, image loaded, font swap) grows scrollHeight
-  // and would leave the user not-quite-at-bottom. We coalesce all observed
-  // shifts into a single rAF write so a burst of measurements (common during
-  // the initial render of a long history) costs one scrollTop write per frame.
-  $effect(() => {
-    if (!scrollEl) return;
-    let raf = 0;
-    const schedule = () => {
-      if (raf) return;
-      raf = requestAnimationFrame(() => {
-        raf = 0;
-        if (shouldStickToBottom && !hasNewer && !pendingRestore && scrollEl) {
-          scrollEl.scrollTop = scrollEl.scrollHeight;
-          bottomAnchorEl?.scrollIntoView({ block: "end" });
-        }
-      });
-    };
-    const observer = new ResizeObserver(schedule);
-    // Observe only the inner content (the Virtualizer's container). The outer
-    // scrollEl rarely resizes; observing it would just add noise.
-    const inner = scrollEl.lastElementChild as HTMLElement | null;
-    if (inner) observer.observe(inner);
-    return () => {
-      if (raf) cancelAnimationFrame(raf);
-      observer.disconnect();
     };
   });
 
@@ -422,25 +368,14 @@
     );
   }
 
-  // History scroll skeleton: when older history exists we render a
-  // skeleton block ABOVE the virtualizer (outside `items` so prepends always
-  // happen at index 0 — keeping virtua's cache aligned). Its height is fed
-  // back into virtua via `startMargin` so all scroll math accounts for it.
-  //
-  // Sizing: we scale row count to roughly fill the viewport while loading
-  // (so the user can keep dragging the scrollbar through "content" while a
-  // fetch is in flight) and shrink to a small idle hint between fetches.
-  //
-  // Critical: when the skeleton grows or shrinks (e.g., loading→idle), we
-  // adjust scrollTop by the delta so messages below stay at the same pixel.
-  // Without this, the user's view jumps every time the skeleton resizes.
+  // History loader: render it only while an older page is actively being
+  // fetched/settled. Keeping an idle block above the virtualizer changes the
+  // effective start offset after restore and can make bottom land short.
   const SKELETON_ROW_PX = 52;
-  const SKELETON_IDLE_ROWS = 3;
   let skeletonRows = $derived.by(() => {
-    if (!hasOlder || loading) return 0;
-    if (!prepending) return SKELETON_IDLE_ROWS;
+    if (!hasOlder || loading || !prepending) return 0;
     const target = Math.max(viewportHeight, 480);
-    return Math.max(SKELETON_IDLE_ROWS + 1, Math.ceil(target / SKELETON_ROW_PX));
+    return Math.max(4, Math.ceil(target / SKELETON_ROW_PX));
   });
 
   $effect(() => {
@@ -461,22 +396,16 @@
       prevSkeletonHeight = 0;
       return;
     }
-    const root = scrollEl;
     const el = historyLoaderEl;
     const apply = () => {
       const next = el.offsetHeight;
       const prev = prevSkeletonHeight;
       historyLoaderHeight = next;
       prevSkeletonHeight = next;
-      // Once the skeleton has been measured at least once, absorb any size
-      // delta into scrollTop so content below the skeleton stays put. Skip
-      // the very first measurement (that's the initial mount; scroll
-      // restoration handles initial position).
+      // Skip the first measurement; initial mount is handled by restoration.
       if (prev > 0 && next !== prev) {
         const delta = next - prev;
-        // If the user is at the absolute top, keep them at the top instead
-        // of dragging them into the freshly-grown skeleton.
-        if (root.scrollTop > 0) root.scrollTop += delta;
+        if (virtualizer && virtualizer.getScrollOffset() > 0) virtualizer.scrollBy(delta);
       }
     };
     apply();
@@ -489,113 +418,13 @@
     };
   });
 
-  // Bulletproof anchor pinning for prepends — Discord/GitHub/Slack pattern.
-  //
-  // The hard truth: virtua's shift={true} only approximately compensates
-  // scrollTop, and ResizeObserver remeasures keep firing for hundreds of ms
-  // after a prepend (real row heights replacing estimates, fonts settling,
-  // images, etc.). A one-shot fix is never enough — the anchor drifts later.
-  //
-  // Strategy:
-  //   1. On detected prepend, save `scrollHeight - scrollTop` (the user's
-  //      distance from the very bottom of loaded content). This invariant is
-  //      pixel-perfect regardless of where height changes happen above.
-  //   2. After commit, restore `scrollTop = scrollHeight - savedDistance`.
-  //   3. Keep restoring on every ResizeObserver fire AND every animation frame
-  //      for a short window (~800ms) so any late remeasure that grows/shrinks
-  //      content above the viewport is absorbed without moving the user.
-  //   4. If the user scrolls during the session, abort immediately.
-  //
-  // This makes scroll position invariant under content-size mutations above
-  // the viewport — exactly what Discord does.
-  let prevOldestMessageId = "";
-  let prevAnchorViewKey = "";
-  type PinSession = { savedBottomDistance: number; deadline: number; generation: number };
-  let pendingPin: PinSession | null = null;
-
-  $effect.pre(() => {
-    const oldestId = messages[0]?.id ?? "";
-    const sameView = viewKey === prevAnchorViewKey;
-    const isPrepend =
-      sameView &&
-      oldestId &&
-      prevOldestMessageId &&
-      oldestId !== prevOldestMessageId &&
-      messages.some((m) => m.id === prevOldestMessageId);
-    if (isPrepend && scrollEl) {
-      pendingPin = {
-        savedBottomDistance: scrollEl.scrollHeight - scrollEl.scrollTop,
-        deadline: performance.now() + 800,
-        generation: scrollCommandGeneration,
-      };
-    }
-    prevOldestMessageId = oldestId;
-    prevAnchorViewKey = viewKey;
-  });
-
-  $effect(() => {
-    void messages;
-    if (!pendingPin || !scrollEl) return;
-    const session = pendingPin;
-    pendingPin = null;
-    const root = scrollEl;
-    const inner = root.lastElementChild as HTMLElement | null;
-
-    let lastAppliedTop = -1;
-    let applying = false;
-
-    const apply = () => {
-      if (session.generation !== scrollCommandGeneration) {
-        cleanup();
-        return;
-      }
-      if (applying) return;
-      // User-initiated scroll detection: if scrollTop drifted from what we
-      // last applied (by more than rounding), the user took control. Stop.
-      if (lastAppliedTop >= 0 && Math.abs(root.scrollTop - lastAppliedTop) > 2) {
-        cleanup();
-        return;
-      }
-      const target = root.scrollHeight - session.savedBottomDistance;
-      if (Math.abs(root.scrollTop - target) > 0.5) {
-        applying = true;
-        root.scrollTop = target;
-        applying = false;
-      }
-      lastAppliedTop = root.scrollTop;
-    };
-
-    let raf = 0;
-    const tick = () => {
-      apply();
-      if (performance.now() < session.deadline) {
-        raf = requestAnimationFrame(tick);
-      } else {
-        cleanup();
-      }
-    };
-
-    const ro = inner ? new ResizeObserver(apply) : null;
-    if (ro && inner) ro.observe(inner);
-
-    function cleanup() {
-      if (raf) cancelAnimationFrame(raf);
-      ro?.disconnect();
-    }
-
-    apply();
-    raf = requestAnimationFrame(tick);
-
-    return cleanup;
-  });
-
   function findDividerIndex(): number {
     return items.findIndex((it) => it.kind === "divider");
   }
 
   function firstUnreadMessageID(): string {
     if (!canUseUnreadDivider) return "";
-    if (displayUnreadCount <= 0) return "";
+    if (dividerUnreadCount <= 0) return "";
     for (const message of messages) {
       if (message.parent_message_id) continue;
       if (message.author?.id === currentUserID || message.author_id === currentUserID) continue;
@@ -624,12 +453,12 @@
   }
 
   function alignRenderedTarget(selector: string): boolean {
-    if (!scrollEl) return false;
+    if (!scrollEl || !virtualizer) return false;
     const target = scrollEl.querySelector<HTMLElement>(selector);
     if (!target) return false;
     const delta = target.getBoundingClientRect().top - scrollEl.getBoundingClientRect().top;
     if (Math.abs(delta) <= ANCHOR_THRESHOLD_PX) return true;
-    scrollEl.scrollTop += delta;
+    virtualizer.scrollBy(delta);
     return false;
   }
 
@@ -651,16 +480,16 @@
   }
 
   function nudgeTowardMessage(messageID: string): boolean {
-    if (!scrollEl) return false;
+    if (!scrollEl || !virtualizer) return false;
     const targetIndex = messages.findIndex((message) => message.id === messageID);
     const visible = visibleMessageBounds();
     if (targetIndex < 0 || !visible) return false;
     if (visible.first > targetIndex) {
-      scrollEl.scrollTop -= Math.max(80, scrollEl.clientHeight * 0.85);
+      virtualizer.scrollBy(-Math.max(80, scrollEl.clientHeight * 0.85));
       return true;
     }
     if (visible.last < targetIndex) {
-      scrollEl.scrollTop += Math.max(80, scrollEl.clientHeight * 0.85);
+      virtualizer.scrollBy(Math.max(80, scrollEl.clientHeight * 0.85));
       return true;
     }
     return false;
@@ -685,7 +514,6 @@
       const idx = indexForTarget();
       if (idx < 0) return false;
       virtualizer.scrollToIndex(idx, { align: "start" });
-      virtualizer.scrollTo(Math.max(0, virtualizer.getItemOffset(idx)));
       await nextFrame();
       if (!isCurrentScrollCommand(key, generation)) return false;
       if (alignRenderedTarget(selector)) return true;
@@ -732,7 +560,6 @@
   }
 
   function jumpToUnreadBoundary() {
-    scrollEl?.focus({ preventScroll: true });
     if (canUseUnreadDivider && scrollToDivider(false)) return;
     if (onJumpToUnread) {
       onJumpToUnread();
@@ -746,6 +573,7 @@
     if (isAtBottom) return { atBottom: true };
     const offset = virtualizer.getScrollOffset();
     const idx = virtualizer.findItemIndex(offset);
+    const relativeOffset = Math.max(0, offset - historyLoaderHeight);
     for (let i = Math.max(0, idx); i < items.length; i++) {
       const it = items[i];
       if (it.kind !== "group") continue;
@@ -755,14 +583,21 @@
       return {
         atBottom: false,
         anchorMessageID,
-        anchorPixelOffset: Math.max(0, offset - itemTop),
+        anchorPixelOffset: Math.max(0, relativeOffset - itemTop),
       };
     }
     return { atBottom: false };
   }
 
   $effect(() => {
-    onListRef({ scrollToBottom, scrollToMessage, scrollToDivider, captureState, isAtBottom: () => checkAtBottom() });
+    onListRef({
+      scrollToBottom,
+      scrollToMessage,
+      scrollToDivider,
+      captureState,
+      isAtBottom: () => checkAtBottom(),
+      isNearBottom: (tolerancePx?: number) => checkNearBottom(tolerancePx),
+    });
     return () => onListRef(null);
   });
 
@@ -804,11 +639,7 @@
     }
 
     if (count !== lastItemCount && shouldStickToBottom && !hasNewer && !pendingRestore) {
-      // Match the chat pattern: when the user is intentionally stuck to bottom,
-      // preserve that position across appends, removals, and divider changes.
-      // pinToBottom handles the variable-height correction (scrollToIndex uses
-      // an estimated size before measurement; we re-scroll once measured).
-      void pinToBottom();
+      void scrollLastItemIntoView();
     } else if (count !== lastItemCount && !pendingRestore) {
       void emitSettledAfterFrames(key);
     }
@@ -823,6 +654,7 @@
 
   async function runRestore(key: string, target: MessageListState | undefined, fallbackToBottom: boolean) {
     const generation = beginScrollCommand(false);
+    let restoredToUnreadDivider = false;
     await tick();
     await new Promise((r) => requestAnimationFrame(r));
     if (!isCurrentScrollCommand(key, generation)) return;
@@ -834,11 +666,12 @@
         target.anchorPixelOffset ?? 0,
       );
       if (!isCurrentScrollCommand(key, generation)) return;
-      if (!restored && fallbackToBottom) await pinToBottom(generation);
+      if (!restored && fallbackToBottom) await scrollLastItemIntoView(generation);
       else shouldStickToBottom = false;
     } else {
       const dividerIdx = items.findIndex((it) => it.kind === "divider");
       if (dividerIdx >= 0 && virtualizer) {
+        restoredToUnreadDivider = true;
         await settleVirtualTarget(
           key,
           generation,
@@ -848,7 +681,7 @@
         );
         shouldStickToBottom = false;
       } else {
-        await pinToBottom(generation);
+        await scrollLastItemIntoView(generation);
       }
     }
     await new Promise((r) => requestAnimationFrame(r));
@@ -857,8 +690,10 @@
     revealed = true;
     atBottom = checkAtBottom();
     shouldStickToBottom = atBottom && !hasNewer;
-    if (atBottom) notifyReachedBottom();
-    if (scrollEl) handleScroll(scrollEl.scrollTop);
+    if (!restoredToUnreadDivider) {
+      if (atBottom) notifyReachedBottom();
+      if (virtualizer) handleScroll(virtualizer.getScrollOffset());
+    }
     emitHistorySettled();
   }
 
@@ -873,34 +708,32 @@
     if (idx < 0) return false;
     for (let attempt = 0; attempt < 8; attempt++) {
       if (!virtualizer || !isCurrentScrollCommand(key, generation)) return false;
-      const desired = virtualizer.getItemOffset(idx) + pixelOffset;
+      const desired = historyLoaderHeight + virtualizer.getItemOffset(idx) + pixelOffset;
       suppressProgrammaticPagination();
       virtualizer.scrollTo(desired);
       await new Promise((r) => requestAnimationFrame(r));
       if (!isCurrentScrollCommand(key, generation)) return false;
-      const recheck = virtualizer.getItemOffset(idx) + pixelOffset;
+      const recheck = historyLoaderHeight + virtualizer.getItemOffset(idx) + pixelOffset;
       const current = virtualizer.getScrollOffset();
       if (Math.abs(recheck - desired) < 1 && Math.abs(current - desired) < 1) break;
     }
     return true;
   }
 
-  // Synchronously update shouldStickToBottom on every scroll. We read the DOM
-  // directly so we're immune to virtua's measurement estimates.
-  function handleScroll(_offset: number) {
-    if (!scrollEl || (pendingRestore && !revealed)) return;
-    const distance = bottomDistance();
+  function handleScroll(offset: number) {
+    if (!virtualizer || (pendingRestore && !revealed)) return;
+    const distance = virtuaBottomDistance();
     const sticky = checkAtBottom();
     const nearNewer = sticky || distance <= NEWER_LOAD_THRESHOLD_PX;
     shouldStickToBottom = sticky && !hasNewer;
     atBottom = sticky;
     if (!hasNewer) newerEdgeConsumed = false;
-    if (!sticky && hasOlder && scrollEl.scrollTop - historyLoaderHeight <= OLDER_LOAD_THRESHOLD_PX) onLoadOlder?.();
+    if (!sticky && hasOlder && offset - historyLoaderHeight <= OLDER_LOAD_THRESHOLD_PX) onLoadOlder?.();
     if (!suppressPagination && hasNewer && nearNewer && !newerEdgeConsumed) {
       newerEdgeConsumed = true;
       onLoadNewer?.("scroll");
     }
-    if (sticky) notifyReachedBottom();
+    if (sticky && !suppressPagination) notifyReachedBottom();
   }
 </script>
 
@@ -931,7 +764,7 @@
   {:else if messages.length > 0}
     <div class="messages-scroll" bind:this={scrollEl} tabindex="-1">
       <div class="messages-spacer"></div>
-      {#if hasOlder && !loading}
+      {#if skeletonRows > 0}
         <div
           class="messages-history-pad"
           bind:this={historyLoaderEl}
@@ -947,6 +780,7 @@
         scrollRef={scrollEl}
         shift={prepending}
         startMargin={historyLoaderHeight}
+        onscroll={handleScroll}
       >
         {#snippet children(item: Item, _index: number)}
           {#if item.kind === "loader"}
@@ -976,8 +810,6 @@
               {onRetry}
               {onDiscard}
             />
-          {:else}
-            <div class="messages-bottom-anchor" bind:this={bottomAnchorEl} aria-hidden="true"></div>
           {/if}
         {/snippet}
       </Virtualizer>

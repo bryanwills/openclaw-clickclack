@@ -77,15 +77,30 @@ async function expectMessageNearScrollBottom(page: Page, text: string) {
     .toBeLessThanOrEqual(20);
 }
 
+async function expectMessageNearComposer(page: Page, text: string) {
+  await expect
+    .poll(() =>
+      page.locator(".timeline").evaluate((el, messageText) => {
+        const row = [...el.querySelectorAll<HTMLElement>("[data-message-id]")].find((item) =>
+          item.textContent?.includes(messageText),
+        );
+        const composer = el.querySelector<HTMLElement>(".composer-card");
+        if (!row || !composer) return Number.POSITIVE_INFINITY;
+        const group = row.closest<HTMLElement>(".message-group");
+        const messageRect = (group || row).getBoundingClientRect();
+        const composerRect = composer.getBoundingClientRect();
+        return composerRect.top - messageRect.bottom;
+      }, text),
+    )
+    .toBeLessThanOrEqual(24);
+}
+
 async function expectScrollAtMessageEnd(page: Page) {
   await expect
     .poll(() =>
       page.locator(".messages-scroll").evaluate((el) => {
-        const anchor = el.querySelector<HTMLElement>(".messages-bottom-anchor");
-        if (!anchor) return false;
-        const viewport = el.getBoundingClientRect();
-        const rect = anchor.getBoundingClientRect();
-        return rect.top >= viewport.top - 36 && rect.bottom <= viewport.bottom + 36;
+        const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+        return distance <= 36;
       }),
     )
     .toBe(true);
@@ -374,19 +389,24 @@ test("unread bar jumps to the new-message divider across repeated unread cycles"
 
   const jump = page.getByRole("button", { name: "Jump to 1 new message" });
   await expect(jump).toBeVisible();
-  await page.getByLabel("Message body").fill("local reply while unread");
-  await page.getByRole("button", { name: "Send", exact: true }).click();
-  await expect(jump).toBeVisible();
   await jump.click();
-
   await expect(page.getByRole("separator", { name: "New messages" })).toBeVisible();
   await expect(page.locator(".markdown").filter({ hasText: "unread after scroll" })).toBeVisible();
   await page.waitForTimeout(1400);
   await expect(page.getByRole("separator", { name: "New messages" })).toBeVisible();
   await expect.poll(async () => (await currentChannelState()).last_read_seq || 0).toBe(36);
-  await expect.poll(async () => (await currentChannelState()).unread_count || 0).toBeGreaterThan(0);
+  await expect.poll(async () => (await currentChannelState()).unread_count || 0).toBe(1);
 
-  await page.getByRole("button", { name: "Mark as read" }).click();
+  await page.getByLabel("Message body").fill("local reply while unread");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(
+    page.locator(".markdown").filter({ hasText: "local reply while unread" }),
+  ).toBeVisible();
+  await expectMessageNearComposer(page, "local reply while unread");
+  await expect
+    .poll(async () => (await currentChannelState()).last_read_seq || 0)
+    .toBeGreaterThan(36);
+  await expect.poll(async () => (await currentChannelState()).unread_count || 0).toBe(0);
   await expect(page.getByRole("separator", { name: "New messages" })).toHaveCount(0);
 
   await scrollport.evaluate((el) => {
@@ -411,6 +431,114 @@ test("unread bar jumps to the new-message divider across repeated unread cycles"
   await expect(
     page.locator(".markdown").filter({ hasText: "second unread after clear" }),
   ).toBeVisible();
+});
+
+test("remote messages keep a live channel pinned without unread UI", async ({ page }) => {
+  const workspacesResponse = await page.request.get("/api/workspaces");
+  const workspaces = (await workspacesResponse.json()) as { workspaces: { id: string }[] };
+  const workspaceId = workspaces.workspaces[0].id;
+  const channelName = `live-pinned-${Date.now()}`;
+  const channelResponse = await page.request.post(`/api/workspaces/${workspaceId}/channels`, {
+    data: { name: channelName, kind: "public" },
+  });
+  const channel = (await channelResponse.json()) as { channel: { id: string; name: string } };
+
+  for (let i = 0; i < 32; i++) {
+    const response = await page.request.post(`/api/channels/${channel.channel.id}/messages`, {
+      data: {
+        body: `live history ${i} ${"enough text to make the channel scroll ".repeat(3)}`,
+      },
+    });
+    expect(response.ok()).toBe(true);
+  }
+  const readResponse = await page.request.post(`/api/channels/${channel.channel.id}/read`, {
+    data: { seq: 32 },
+  });
+  expect(readResponse.ok()).toBe(true);
+
+  const senderID = clickclack([
+    "admin",
+    "user",
+    "create",
+    "--data",
+    "./data/e2e",
+    "--workspace",
+    workspaceId,
+    "--name",
+    "Live Sender",
+    "--email",
+    `${channelName}@example.com`,
+  ]);
+
+  async function currentChannelState(): Promise<{ last_read_seq?: number; unread_count?: number }> {
+    const response = await page.request.get(`/api/workspaces/${workspaceId}/channels`);
+    const data = (await response.json()) as {
+      channels: { id: string; last_read_seq?: number; unread_count?: number }[];
+    };
+    const current = data.channels.find((item) => item.id === channel.channel.id);
+    if (!current) throw new Error("channel missing from list");
+    return current;
+  }
+
+  await page.goto("/app");
+  await page.getByRole("link", { name: `# ${channel.channel.name}` }).click();
+  await expect(page.getByRole("heading", { name: `#${channel.channel.name}` })).toBeVisible();
+  await expect(page.locator(".markdown").filter({ hasText: "live history 31" })).toBeVisible();
+  await settleScrollFrames(page);
+  await expectScrollAtMessageEnd(page);
+
+  const remoteResponse = await page.request.post(`/api/channels/${channel.channel.id}/messages`, {
+    headers: { "X-ClickClack-User": senderID },
+    data: { body: "live remote while bottom" },
+  });
+  expect(remoteResponse.ok()).toBe(true);
+
+  await expect(
+    page.locator(".markdown").filter({ hasText: "live remote while bottom" }),
+  ).toBeVisible();
+  await expectMessageNearComposer(page, "live remote while bottom");
+  await expectScrollAtMessageEnd(page);
+  await expect(page.getByRole("separator", { name: "New messages" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /new messages?/ })).toHaveCount(0);
+  await expect
+    .poll(async () => (await currentChannelState()).last_read_seq || 0)
+    .toBeGreaterThanOrEqual(33);
+  await expect.poll(async () => (await currentChannelState()).unread_count || 0).toBe(0);
+});
+
+test("clicking the active conversation does not refetch its messages", async ({ page }) => {
+  const workspacesResponse = await page.request.get("/api/workspaces");
+  const workspaces = (await workspacesResponse.json()) as { workspaces: { id: string }[] };
+  const workspaceId = workspaces.workspaces[0].id;
+  const channelName = `active-nav-${Date.now()}`;
+  const channelResponse = await page.request.post(`/api/workspaces/${workspaceId}/channels`, {
+    data: { name: channelName, kind: "public" },
+  });
+  const channel = (await channelResponse.json()) as { channel: { id: string; name: string } };
+  const messageResponse = await page.request.post(`/api/channels/${channel.channel.id}/messages`, {
+    data: { body: "active nav baseline" },
+  });
+  expect(messageResponse.ok()).toBe(true);
+
+  await page.goto(`/app/${workspaceId}/${channel.channel.id}`);
+  await expect(page.getByRole("heading", { name: `#${channel.channel.name}` })).toBeVisible();
+  await expect(page.locator(".markdown").filter({ hasText: "active nav baseline" })).toBeVisible();
+  await settleScrollFrames(page);
+
+  const messageRequests: string[] = [];
+  page.on("request", (request) => {
+    const url = request.url();
+    if (
+      request.method() === "GET" &&
+      url.includes(`/api/channels/${channel.channel.id}/messages`)
+    ) {
+      messageRequests.push(url);
+    }
+  });
+
+  await page.getByRole("link", { name: `# ${channel.channel.name}` }).click();
+  await page.waitForTimeout(250);
+  expect(messageRequests).toEqual([]);
 });
 
 test("read history returns to latest with Escape when scrolled up", async ({ page }) => {
@@ -441,15 +569,18 @@ test("read history returns to latest with Escape when scrolled up", async ({ pag
   await expect(page.locator(".markdown").filter({ hasText: "read latest 35" })).toBeVisible();
   await settleScrollFrames(page);
   await expectMessageNearScrollBottom(page, "read latest 35");
+  await expectMessageNearComposer(page, "read latest 35");
   await page.reload();
   await expect(page.locator(".markdown").filter({ hasText: "read latest 35" })).toBeVisible();
   await settleScrollFrames(page);
   await expectMessageNearScrollBottom(page, "read latest 35");
+  await expectMessageNearComposer(page, "read latest 35");
   await page.getByLabel("Message body").fill("bottom after send");
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.locator(".markdown").filter({ hasText: "bottom after send" })).toBeVisible();
   await settleScrollFrames(page);
   await expectMessageNearScrollBottom(page, "bottom after send");
+  await expectMessageNearComposer(page, "bottom after send");
 
   const scrollport = page.locator(".messages-scroll");
   await expect
@@ -462,12 +593,24 @@ test("read history returns to latest with Escape when scrolled up", async ({ pag
 
   await expect(page.getByText("You're Viewing Older Messages")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /^Jump to latest$/ })).toHaveCount(0);
+  await page.getByLabel("Message body").fill("sent while reading older history");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(
+    page.locator(".markdown").filter({ hasText: "sent while reading older history" }),
+  ).toBeVisible();
+  await expectMessageNearComposer(page, "sent while reading older history");
+  await expectScrollAtMessageEnd(page);
+
+  await scrollport.evaluate((el) => {
+    el.scrollTop = 0;
+    el.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
   await page.keyboard.press("Escape");
   await expectScrollAtMessageEnd(page);
   await expect(page.getByRole("separator", { name: "New messages" })).toHaveCount(0);
 });
 
-test("stale unread state clears when refreshed at the latest loaded bottom", async ({ page }) => {
+test("refresh with unread messages opens at the divider without marking read", async ({ page }) => {
   const workspacesResponse = await page.request.get("/api/workspaces");
   const workspaces = (await workspacesResponse.json()) as { workspaces: { id: string }[] };
   const workspaceId = workspaces.workspaces[0].id;
@@ -508,13 +651,27 @@ test("stale unread state clears when refreshed at the latest loaded bottom", asy
     return current;
   }
 
-  await page.goto("/app");
-  await page.getByRole("link", { name: `# ${channel.channel.name}` }).click();
+  await page.goto(`/app/${workspaceId}/${channel.channel.id}`);
+  await expect(page.getByRole("heading", { name: `#${channel.channel.name}` })).toBeVisible();
   await expect(page.locator(".markdown").filter({ hasText: "refresh unread 5" })).toBeVisible();
-  await expectScrollAtMessageEnd(page);
+  await expect(page.getByRole("separator", { name: "New messages" })).toBeVisible();
+  const unreadJump = page.getByRole("button", { name: "Jump to 6 new messages" });
+  await expect(unreadJump).toBeVisible();
+  await expect.poll(async () => (await currentChannelState()).last_read_seq || 0).toBe(0);
+  await expect.poll(async () => (await currentChannelState()).unread_count || 0).toBe(6);
+
+  await page.reload();
+  await expect(page.getByRole("heading", { name: `#${channel.channel.name}` })).toBeVisible();
+  await expect(page.locator(".markdown").filter({ hasText: "refresh unread 5" })).toBeVisible();
+  await expect(page.getByRole("separator", { name: "New messages" })).toBeVisible();
+  await unreadJump.click();
+  await expect.poll(async () => (await currentChannelState()).last_read_seq || 0).toBe(0);
+  await expect.poll(async () => (await currentChannelState()).unread_count || 0).toBe(6);
+
+  await page.getByRole("button", { name: "Mark as read" }).click();
+  await expect(page.getByRole("separator", { name: "New messages" })).toHaveCount(0);
   await expect.poll(async () => (await currentChannelState()).last_read_seq || 0).toBe(6);
   await expect.poll(async () => (await currentChannelState()).unread_count || 0).toBe(0);
-  await expect(page.getByRole("button", { name: /Jump to \d+ new messages/ })).toHaveCount(0);
 });
 
 test("automatic read receipts do not clear unseen paged history", async ({ page }) => {

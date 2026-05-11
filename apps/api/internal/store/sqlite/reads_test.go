@@ -32,8 +32,15 @@ func TestMarkChannelReadAndUnreadCounts(t *testing.T) {
 		t.Fatalf("expected zeros for empty channel, got %#v", channel)
 	}
 
-	for i := 0; i < 3; i++ {
-		if _, _, err := st.CreateMessage(ctx, store.CreateMessageInput{ChannelID: channel.ID, AuthorID: owner.ID, Body: "m"}); err != nil {
+	other, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: "Other", Email: "other@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AddWorkspaceMember(ctx, workspace.ID, other.ID, "member"); err != nil {
+		t.Fatal(err)
+	}
+	for _, authorID := range []string{other.ID, owner.ID, other.ID} {
+		if _, _, err := st.CreateMessage(ctx, store.CreateMessageInput{ChannelID: channel.ID, AuthorID: authorID, Body: "m"}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -43,8 +50,8 @@ func TestMarkChannelReadAndUnreadCounts(t *testing.T) {
 		t.Fatal(err)
 	}
 	channel = channels[0]
-	if channel.LastSeq != 3 || channel.UnreadCount != 3 {
-		t.Fatalf("expected 3 unread, got %#v", channel)
+	if channel.LastSeq != 3 || channel.UnreadCount != 2 {
+		t.Fatalf("expected only other-authored messages to be unread, got %#v", channel)
 	}
 
 	// Mark first 2 as read.
@@ -59,6 +66,13 @@ func TestMarkChannelReadAndUnreadCounts(t *testing.T) {
 	channels, _ = st.ListChannels(ctx, workspace.ID, owner.ID)
 	if got := channels[0].UnreadCount; got != 1 {
 		t.Fatalf("expected 1 unread after marking, got %d", got)
+	}
+	if _, _, err := st.CreateMessage(ctx, store.CreateMessageInput{ChannelID: channel.ID, AuthorID: owner.ID, Body: "own after read"}); err != nil {
+		t.Fatal(err)
+	}
+	channels, _ = st.ListChannels(ctx, workspace.ID, owner.ID)
+	if got := channels[0].UnreadCount; got != 1 {
+		t.Fatalf("expected own message after read pointer not to count as unread, got %d", got)
 	}
 
 	// Idempotent / monotonic: sending a smaller seq must not regress.
@@ -75,8 +89,8 @@ func TestMarkChannelReadAndUnreadCounts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if receipt.LastReadSeq != 3 {
-		t.Fatalf("expected cap to 3, got %d", receipt.LastReadSeq)
+	if receipt.LastReadSeq != 4 {
+		t.Fatalf("expected cap to 4, got %d", receipt.LastReadSeq)
 	}
 
 	// Negative seq is rejected.
@@ -122,13 +136,16 @@ func TestMarkDirectReadAndUnreadCounts(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if _, _, err := st.CreateDirectMessage(ctx, store.CreateDirectMessageInput{ConversationID: dm.ID, AuthorID: owner.ID, Body: "own dm"}); err != nil {
+		t.Fatal(err)
+	}
 
 	dms, err := st.ListDirectConversations(ctx, workspace.ID, owner.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if dms[0].UnreadCount != 2 {
-		t.Fatalf("expected 2 unread, got %d", dms[0].UnreadCount)
+		t.Fatalf("expected only other-authored direct messages to be unread, got %d", dms[0].UnreadCount)
 	}
 	gotDM, err := st.GetDirectConversation(ctx, dm.ID, owner.ID)
 	if err != nil {
@@ -142,7 +159,7 @@ func TestMarkDirectReadAndUnreadCounts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if receipt.LastReadSeq != 2 || event.Type != "dm.read" {
+	if receipt.LastReadSeq != 3 || event.Type != "dm.read" {
 		t.Fatalf("expected capped direct read receipt, got %#v / %#v", receipt, event)
 	}
 	dms, _ = st.ListDirectConversations(ctx, workspace.ID, owner.ID)
@@ -153,14 +170,14 @@ func TestMarkDirectReadAndUnreadCounts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if gotDM.LastReadSeq != 2 || gotDM.UnreadCount != 0 {
+	if gotDM.LastReadSeq != 3 || gotDM.UnreadCount != 0 {
 		t.Fatalf("expected read direct conversation lookup, got %#v", gotDM)
 	}
 	receipt, event, err = st.MarkDirectRead(ctx, dm.ID, owner.ID, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if receipt.LastReadSeq != 2 || event.ID != "" {
+	if receipt.LastReadSeq != 3 || event.ID != "" {
 		t.Fatalf("expected no-op when direct seq regresses, got %#v / %#v", receipt, event)
 	}
 	if _, _, err := st.MarkDirectRead(ctx, dm.ID, owner.ID, -1); err == nil {

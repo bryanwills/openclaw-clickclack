@@ -6,6 +6,8 @@ type RedirectTypingOptions = {
   target: () => HTMLTextAreaElement | null;
 };
 
+let pointerFocusedControl: HTMLElement | null = null;
+
 const KEY_CONSUMING_ROLES = new Set([
   "button",
   "checkbox",
@@ -42,6 +44,12 @@ const KEY_CONSUMING_TAGS = new Set([
   "AUDIO",
 ]);
 
+export function rememberTypeToFocusPointer(event: PointerEvent) {
+  const target = event.target instanceof HTMLElement ? event.target : null;
+  pointerFocusedControl =
+    target?.closest<HTMLElement>("a, button, [role='button'], [role='link'], [tabindex]") || null;
+}
+
 function isEditableElement(el: HTMLElement | null): boolean {
   if (!el) return false;
   if (el.isContentEditable) return true;
@@ -63,6 +71,12 @@ function isEditableElement(el: HTMLElement | null): boolean {
 function consumesKeystrokes(el: HTMLElement | null): boolean {
   if (!el) return false;
   if (isChatSurfaceAction(el)) return false;
+  if (
+    pointerFocusedControl &&
+    (el === pointerFocusedControl || pointerFocusedControl.contains(el))
+  ) {
+    return false;
+  }
   if (KEY_CONSUMING_TAGS.has(el.tagName)) return true;
   const role = el.getAttribute("role");
   if (role && KEY_CONSUMING_ROLES.has(role)) return true;

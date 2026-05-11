@@ -13,7 +13,7 @@
     type MessageWindowDirection,
   } from "./lib/chat/messageWindow";
   import { collectRecentPeople, dmTitle } from "./lib/chat/people";
-  import { redirectTypingToComposer } from "./lib/chat/typeToFocus";
+  import { redirectTypingToComposer, rememberTypeToFocusPointer } from "./lib/chat/typeToFocus";
   import { connectRealtime, type RealtimeConnection } from "./lib/realtime.svelte";
   import { notifyTyping, stopTyping } from "./lib/typing";
   import ChatComposer from "./components/composer/ChatComposer.svelte";
@@ -35,6 +35,8 @@
   import ThreadPanel from "./components/thread/ThreadPanel.svelte";
   import Topbar from "./components/topbar/Topbar.svelte";
   import type { Channel, DirectConversation, Message, MessagePage, RealtimeEvent, SearchResult, ThreadState, Upload, User, Workspace } from "./lib/types";
+
+  const LIVE_EDGE_TOLERANCE_PX = 96;
 
   export let routeWorkspaceID = "";
   export let routeTargetID = "";
@@ -243,11 +245,17 @@
 
   async function navigateToApp(workspaceID = selectedWorkspaceID, targetID = "", replaceState = false) {
     const path = appHref(workspaceID, targetID);
-    if (window.location.pathname === path) {
-      await applyRoute(workspaceID, targetID);
-      return;
-    }
+    if (window.location.pathname === path) return;
     await goto(path, { replaceState, noScroll: true, keepFocus: true });
+  }
+
+  function clearRoutePanelState() {
+    selectedThread = null;
+    selectedThreadState = null;
+    selectedProfile = null;
+    activeComposerContext = "message";
+    replies = [];
+    mobileNavOpen = false;
   }
 
   function defaultTargetID(): string {
@@ -288,14 +296,16 @@
 
     const targetID = targetIDParam.trim();
     if (targetID.startsWith("chn_") && channels.some((channel) => channel.id === targetID)) {
+      const sameConversation =
+        !workspaceChanged && selectedChannelID === targetID && !selectedDirectID && viewKey === targetID;
       selectedChannelID = targetID;
       selectedDirectID = "";
-      selectedThread = null;
-      selectedThreadState = null;
-      selectedProfile = null;
-      activeComposerContext = "message";
-      replies = [];
-      mobileNavOpen = false;
+      clearRoutePanelState();
+      if (sameConversation) {
+        appliedRouteKey = requestedRouteKey;
+        updateActiveMessageWindowFlags(targetID);
+        return;
+      }
       await loadMessages();
       if (serial !== routeApplySerial) return;
       appliedRouteKey = requestedRouteKey;
@@ -303,14 +313,16 @@
     }
 
     if (targetID.startsWith("dm_") && directConversations.some((conversation) => conversation.id === targetID)) {
+      const sameConversation =
+        !workspaceChanged && selectedDirectID === targetID && !selectedChannelID && viewKey === targetID;
       selectedDirectID = targetID;
       selectedChannelID = "";
-      selectedThread = null;
-      selectedThreadState = null;
-      selectedProfile = null;
-      activeComposerContext = "message";
-      replies = [];
-      mobileNavOpen = false;
+      clearRoutePanelState();
+      if (sameConversation) {
+        appliedRouteKey = requestedRouteKey;
+        updateActiveMessageWindowFlags(targetID);
+        return;
+      }
       await loadMessages();
       if (serial !== routeApplySerial) return;
       appliedRouteKey = requestedRouteKey;
@@ -327,11 +339,7 @@
     }
 
     const fallbackTargetID = defaultTargetID();
-    selectedThread = null;
-    selectedThreadState = null;
-    selectedProfile = null;
-    activeComposerContext = "message";
-    replies = [];
+    clearRoutePanelState();
     if (!fallbackTargetID) {
       selectedChannelID = "";
       selectedDirectID = "";
@@ -425,6 +433,14 @@
 
   async function selectChannel(channelID: string) {
     mobileNavOpen = false;
+    const targetRouteKey = routeKey(selectedWorkspaceID, channelID);
+    if (
+      channelID === selectedChannelID &&
+      !selectedDirectID &&
+      routeKey(routeWorkspaceID, routeTargetID) === targetRouteKey
+    ) {
+      return;
+    }
     await navigateToApp(selectedWorkspaceID, channelID);
   }
 
@@ -784,12 +800,15 @@
     if (seq <= 0 || seq <= (channel.last_read_seq || 0)) return;
     channels = channels.map((c) =>
       c.id === channelID
-        ? {
-            ...c,
-            last_seq: Math.max(c.last_seq || 0, seq),
-            unread_count: Math.max(0, Math.max(c.last_seq || 0, seq) - seq),
-            last_read_seq: seq,
-          }
+        ? (() => {
+            const lastSeq = Math.max(c.last_seq || 0, seq);
+            return {
+              ...c,
+              last_seq: lastSeq,
+              unread_count: seq >= lastSeq ? 0 : c.unread_count || 0,
+              last_read_seq: seq,
+            };
+          })()
         : c,
     );
     try {
@@ -805,12 +824,15 @@
     if (seq <= 0 || seq <= (dm.last_read_seq || 0)) return;
     directConversations = directConversations.map((c) =>
       c.id === conversationID
-        ? {
-            ...c,
-            last_seq: Math.max(c.last_seq || 0, seq),
-            unread_count: Math.max(0, Math.max(c.last_seq || 0, seq) - seq),
-            last_read_seq: seq,
-          }
+        ? (() => {
+            const lastSeq = Math.max(c.last_seq || 0, seq);
+            return {
+              ...c,
+              last_seq: lastSeq,
+              unread_count: seq >= lastSeq ? 0 : c.unread_count || 0,
+              last_read_seq: seq,
+            };
+          })()
         : c,
     );
     try {
@@ -960,7 +982,7 @@
 
   function eventMessageSeq(event: RealtimeEvent): number {
     const payload = event.payload as Record<string, unknown>;
-    const seqRaw = event.seq ?? payload.channel_seq ?? payload.seq;
+    const seqRaw = payload.channel_seq ?? event.seq ?? payload.seq;
     return typeof seqRaw === "number" ? seqRaw : Number(seqRaw) || 0;
   }
 
@@ -1118,6 +1140,14 @@
     await messageList?.scrollToBottom();
   }
 
+  function isAtLiveEdge(): boolean {
+    return messageList?.isNearBottom(LIVE_EDGE_TOLERANCE_PX) !== false;
+  }
+
+  async function revealOwnSentMessage() {
+    await scrollMessagesToBottom();
+  }
+
   async function jumpToLiveChat() {
     try {
       if (activeHasNewer || activeUnreadCount > 0) await loadLatestMessages();
@@ -1197,14 +1227,15 @@
     const nonce = existingNonce ?? newNonce();
     const tmpID = `tmp_${nonce}`;
     const localID = existingMessageID ?? tmpID;
+    const shouldRevealSentMessage = !existingNonce && currentConversationKey() === draft.viewKey;
+    const shouldRefreshLatestAfterSend = shouldRevealSentMessage && activeHasNewer;
     pendingDrafts.set(nonce, draft);
     const placeholder = buildOptimisticMessage(nonce, draft, localID);
     if (existingNonce) {
       setActiveMessages(messages.map((m) => (m.id === localID ? placeholder : m)));
     } else if (currentConversationKey() === draft.viewKey) {
-      const wasAtBottom = messageList?.isAtBottom() !== false;
       setActiveMessages([...messages, placeholder]);
-      if (wasAtBottom) void scrollMessagesToBottom();
+      void revealOwnSentMessage();
     }
     const path = draft.directConversationID
       ? `/api/dms/${draft.directConversationID}/messages`
@@ -1252,6 +1283,13 @@
         !messages.some((m) => m.id === message.id)
       ) {
         setActiveMessages([...messages, message]);
+      }
+      if (currentConversationKey() === draft.viewKey && shouldRevealSentMessage) {
+        if (shouldRefreshLatestAfterSend) {
+          await loadLatestMessages();
+        }
+        await revealOwnSentMessage();
+        markActiveViewRead({ all: true, seq: message.channel_seq || 0 });
       }
     } catch (err) {
       console.warn("send failed", err);
@@ -1487,6 +1525,14 @@
 
   async function selectDirectConversation(conversationID: string) {
     mobileNavOpen = false;
+    const targetRouteKey = routeKey(selectedWorkspaceID, conversationID);
+    if (
+      conversationID === selectedDirectID &&
+      !selectedChannelID &&
+      routeKey(routeWorkspaceID, routeTargetID) === targetRouteKey
+    ) {
+      return;
+    }
     await navigateToApp(selectedWorkspaceID, conversationID);
   }
 
@@ -1554,8 +1600,8 @@
       // Snapshot stuck-to-bottom state BEFORE mutating messages. Once the
       // reload completes, virtua's scrollSize grows while offset is unchanged
       // and the cached atBottom flag flips to false — we'd lose the signal.
-      const wasAtBottom = messageList?.isAtBottom() !== false;
-      if (event.type === "message.created" && !wasAtBottom) {
+      const wasAtLiveEdge = isAtLiveEdge();
+      if (event.type === "message.created" && !wasAtLiveEdge) {
         suppressAutoReadUntil = Date.now() + 1200;
         markMessageWindowHasNewer(currentConversationKey());
       } else if (event.type === "message.created") {
@@ -1564,15 +1610,13 @@
         await loadMessages();
       }
       if (event.type === "message.created") {
-        handleUnreadBump(event, wasAtBottom);
+        handleUnreadBump(event, wasAtLiveEdge);
       }
       // Drive the scroll explicitly from here rather than relying on the
       // MessageList $effect: its cached atBottom may already have flipped.
-      if (event.type === "message.created" && wasAtBottom) {
-        void scrollMessagesToBottom();
-      }
-      if (event.type === "message.created" && wasAtBottom) {
-        markActiveViewRead();
+      if (event.type === "message.created" && wasAtLiveEdge) {
+        await scrollMessagesToBottom();
+        markActiveViewRead({ all: true, seq: eventMessageSeq(event) });
       }
     }
     const rootID = event.payload.root_message_id || event.payload.message_id;
@@ -1593,7 +1637,7 @@
       channels = channels.map((c) => {
         if (c.id !== channelID) return c;
         const next = Math.max(c.last_read_seq || 0, seq);
-        return { ...c, last_read_seq: next, unread_count: Math.max(0, (c.last_seq || 0) - next) };
+        return { ...c, last_read_seq: next, unread_count: next >= (c.last_seq || 0) ? 0 : c.unread_count || 0 };
       });
     } else {
       const dmID = typeof payload.direct_conversation_id === "string" ? payload.direct_conversation_id : "";
@@ -1601,7 +1645,7 @@
       directConversations = directConversations.map((c) => {
         if (c.id !== dmID) return c;
         const next = Math.max(c.last_read_seq || 0, seq);
-        return { ...c, last_read_seq: next, unread_count: Math.max(0, (c.last_seq || 0) - next) };
+        return { ...c, last_read_seq: next, unread_count: next >= (c.last_seq || 0) ? 0 : c.unread_count || 0 };
       });
     }
   }
@@ -1617,9 +1661,7 @@
     const { channelID, dmID } = messageEventScope(event);
     if (channelID) {
       const isActive = channelID === selectedChannelID && !selectedDirectID;
-      const activeAtBottom = isActive
-        ? activeWasAtBottom ?? messageList?.isAtBottom() !== false
-        : false;
+      const activeAtBottom = isActive ? activeWasAtBottom ?? isAtLiveEdge() : false;
       const channel = channels.find((c) => c.id === channelID);
       const incomingSeq = seq > 0 ? seq : (channel?.last_seq || 0) + 1;
       if (isActive && !activeAtBottom && (channel?.unread_count || 0) === 0) {
@@ -1632,14 +1674,12 @@
           isActive && !activeAtBottom && (c.unread_count || 0) === 0
             ? Math.max(c.last_read_seq || 0, incomingSeq - 1)
             : c.last_read_seq || 0;
-        const unread = isActive && activeAtBottom ? c.unread_count || 0 : Math.max(0, lastSeq - lastReadSeq);
+        const unread = activeAtBottom ? 0 : (c.unread_count || 0) + 1;
         return { ...c, last_seq: lastSeq, last_read_seq: lastReadSeq, unread_count: unread };
       });
     } else if (dmID) {
       const isActive = dmID === selectedDirectID;
-      const activeAtBottom = isActive
-        ? activeWasAtBottom ?? messageList?.isAtBottom() !== false
-        : false;
+      const activeAtBottom = isActive ? activeWasAtBottom ?? isAtLiveEdge() : false;
       const dm = directConversations.find((c) => c.id === dmID);
       const incomingSeq = seq > 0 ? seq : (dm?.last_seq || 0) + 1;
       if (isActive && !activeAtBottom && (dm?.unread_count || 0) === 0) {
@@ -1652,7 +1692,7 @@
           isActive && !activeAtBottom && (c.unread_count || 0) === 0
             ? Math.max(c.last_read_seq || 0, incomingSeq - 1)
             : c.last_read_seq || 0;
-        const unread = isActive && activeAtBottom ? c.unread_count || 0 : Math.max(0, lastSeq - lastReadSeq);
+        const unread = activeAtBottom ? 0 : (c.unread_count || 0) + 1;
         return { ...c, last_seq: lastSeq, last_read_seq: lastReadSeq, unread_count: unread };
       });
     }
@@ -1808,6 +1848,25 @@
         return;
       }
     }
+    if (
+      mobileNavOpen &&
+      event.key.length === 1 &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey &&
+      !event.isComposing
+    ) {
+      const active = document.activeElement;
+      if (
+        !(active instanceof HTMLInputElement) &&
+        !(active instanceof HTMLTextAreaElement) &&
+        !(active instanceof HTMLSelectElement) &&
+        !(active instanceof HTMLElement && active.isContentEditable)
+      ) {
+        event.preventDefault();
+        return;
+      }
+    }
     redirectTypingToComposer(event, {
       authRequired,
       isModalOpen: () => isModalOpen() || mobileNavOpen,
@@ -1833,7 +1892,7 @@
   <meta name="color-scheme" content="light dark" />
 </svelte:head>
 
-<svelte:window onkeydowncapture={handleWindowKeydown} />
+<svelte:window onkeydowncapture={handleWindowKeydown} onpointerdowncapture={rememberTypeToFocusPointer} />
 
 {#if authRequired}
   <main class="auth-shell">

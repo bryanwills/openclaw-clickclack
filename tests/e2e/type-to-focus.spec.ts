@@ -1,4 +1,13 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+async function clickThreadRootReplyButton(page: Page) {
+  const button = page.locator(".thread-root .reply-quote-btn");
+  await expect(button).toBeVisible();
+  await button.evaluate((node: HTMLButtonElement) => {
+    node.focus();
+    node.click();
+  });
+}
 
 test.describe("type-to-focus composer", () => {
   test.beforeEach(async ({ page }) => {
@@ -17,6 +26,21 @@ test.describe("type-to-focus composer", () => {
     await page.keyboard.type("hello world");
     await expect(composer).toBeFocused();
     await expect(composer).toHaveValue("hello world");
+  });
+
+  test("typing after clicking the active channel redirects to the composer", async ({ page }) => {
+    const composer = page.getByLabel("Message body");
+    const activeChannel = page.getByRole("link", { name: "# general" });
+
+    await activeChannel.click();
+    await expect(activeChannel).toBeFocused();
+    await expect
+      .poll(async () => activeChannel.evaluate((el) => getComputedStyle(el).outlineStyle))
+      .toBe("none");
+
+    await page.keyboard.type("nav draft");
+    await expect(composer).toBeFocused();
+    await expect(composer).toHaveValue("nav draft");
   });
 
   test("modifier-key combos are not redirected", async ({ page }) => {
@@ -91,7 +115,7 @@ test.describe("type-to-focus composer", () => {
     await expect(composer).toHaveValue("channel draft");
     await composer.fill("");
 
-    await page.locator(".thread-root .reply-quote-btn").click();
+    await clickThreadRootReplyButton(page);
     await expect(threadComposer).not.toBeFocused();
     await page.keyboard.type("thread draft");
     await expect(threadComposer).toBeFocused();
@@ -109,7 +133,7 @@ test.describe("type-to-focus composer", () => {
     const threadComposer = page.getByLabel("Reply body");
     await expect(threadComposer).toBeVisible();
 
-    await page.locator(".thread-root .reply-quote-btn").click();
+    await clickThreadRootReplyButton(page);
     await threadComposer.fill("quoted reply");
     await page
       .locator("form.reply-composer")

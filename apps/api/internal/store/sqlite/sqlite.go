@@ -250,10 +250,18 @@ func (s *Store) ListChannels(ctx context.Context, workspaceID, userID string) ([
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT c.id, c.workspace_id, c.name, c.kind, c.created_at, c.archived_at,
 		       COALESCE((SELECT MAX(channel_seq) FROM messages WHERE channel_id = c.id AND parent_message_id IS NULL), 0) AS last_seq,
-		       COALESCE((SELECT last_read_seq FROM channel_reads WHERE channel_id = c.id AND user_id = ?), 0) AS last_read_seq
+		       COALESCE((SELECT last_read_seq FROM channel_reads WHERE channel_id = c.id AND user_id = ?), 0) AS last_read_seq,
+		       COALESCE((
+		         SELECT COUNT(*)
+		         FROM messages m
+		         WHERE m.channel_id = c.id
+		           AND m.parent_message_id IS NULL
+		           AND m.author_id <> ?
+		           AND m.channel_seq > COALESCE((SELECT last_read_seq FROM channel_reads WHERE channel_id = c.id AND user_id = ?), 0)
+		       ), 0) AS unread_count
 		FROM channels c
 		WHERE c.workspace_id = ?
-		ORDER BY c.name`, userID, workspaceID)
+		ORDER BY c.name`, userID, userID, userID, workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -261,11 +269,8 @@ func (s *Store) ListChannels(ctx context.Context, workspaceID, userID string) ([
 	out := []store.Channel{}
 	for rows.Next() {
 		var ch store.Channel
-		if err := rows.Scan(&ch.ID, &ch.WorkspaceID, &ch.Name, &ch.Kind, &ch.CreatedAt, &ch.ArchivedAt, &ch.LastSeq, &ch.LastReadSeq); err != nil {
+		if err := rows.Scan(&ch.ID, &ch.WorkspaceID, &ch.Name, &ch.Kind, &ch.CreatedAt, &ch.ArchivedAt, &ch.LastSeq, &ch.LastReadSeq, &ch.UnreadCount); err != nil {
 			return nil, err
-		}
-		if ch.LastSeq > ch.LastReadSeq {
-			ch.UnreadCount = ch.LastSeq - ch.LastReadSeq
 		}
 		out = append(out, ch)
 	}
