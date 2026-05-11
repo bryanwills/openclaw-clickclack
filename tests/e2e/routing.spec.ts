@@ -138,3 +138,61 @@ test("app routes restore channels, DMs, threads, fallbacks, and history navigati
   await expect(page).toHaveURL(/\/app\/T[A-Z0-9]{16}\/[CD][A-Z0-9]{16}$/);
   await expect(page.getByText("Could not load ClickClack")).toHaveCount(0);
 });
+
+test("creating the first workspace enters the routed app state", async ({ page }) => {
+  const requestedPaths: string[] = [];
+  let workspaceCreated = false;
+  const workspace = {
+    id: "wsp_empty_flow",
+    route_id: "T01KR3EMPTYFLOW12",
+    name: "Fresh Workspace",
+    slug: "fresh-workspace",
+    created_at: "2026-05-11T00:00:00Z",
+  };
+
+  await page.route("**/api/workspaces", async (route) => {
+    requestedPaths.push(new URL(route.request().url()).pathname);
+    if (route.request().method() === "GET") {
+      await route.fulfill({ json: { workspaces: workspaceCreated ? [workspace] : [] } });
+      return;
+    }
+    if (route.request().method() === "POST") {
+      workspaceCreated = true;
+      await route.fulfill({
+        json: {
+          workspace,
+        },
+      });
+      return;
+    }
+    await route.fallback();
+  });
+  await page.route("**/api/workspaces/wsp_empty_flow/channels", async (route) => {
+    requestedPaths.push(new URL(route.request().url()).pathname);
+    await route.fulfill({ json: { channels: [] } });
+  });
+  await page.route("**/api/dms**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.get("workspace_id") !== "wsp_empty_flow") {
+      await route.fallback();
+      return;
+    }
+    requestedPaths.push(`${url.pathname}?workspace_id=${url.searchParams.get("workspace_id")}`);
+    await route.fulfill({ json: { conversations: [] } });
+  });
+
+  await page.goto("/app");
+  await page.getByRole("button", { name: "Create workspace" }).click();
+  await page.getByRole("textbox", { name: "Workspace name" }).fill("Fresh Workspace");
+  await page.getByRole("textbox", { name: "Workspace name" }).press("Enter");
+
+  await expect(page).toHaveURL(/\/app\/T01KR3EMPTYFLOW12$/);
+  await expect(page.getByText("Fresh Workspace").first()).toBeVisible();
+  await expect(page.getByPlaceholder("Pick a channel to start")).toBeVisible();
+  await expect
+    .poll(() => requestedPaths.includes("/api/workspaces/wsp_empty_flow/channels"))
+    .toBe(true);
+  await expect
+    .poll(() => requestedPaths.includes("/api/dms?workspace_id=wsp_empty_flow"))
+    .toBe(true);
+});

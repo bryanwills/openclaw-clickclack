@@ -459,7 +459,9 @@
     showWorkspaceCreate = false;
     workspaces = [...workspaces, data.workspace];
     mobileNavOpen = false;
+    await applyRoute(data.workspace.route_id || data.workspace.id, "");
     await navigateToApp(data.workspace.id);
+    status = "ready";
   }
 
   async function selectWorkspace(workspaceID: string) {
