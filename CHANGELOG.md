@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fixed `pnpm test` so it no longer rewrites embedded web assets, and made the release asset embedding step preserve the existing embedded app if the copy fails.
 - Remember the last visited channel per workspace in the web app so returning
   to a bare workspace route no longer jumps back to the first channel in the
   list. Thanks @shakkernerd.

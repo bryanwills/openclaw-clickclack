@@ -3,9 +3,11 @@
   "private": true,
   "license": "MIT",
   "scripts": {
-    "build": "pnpm --filter @clickclack/web build && node scripts/normalize-web-dist.mjs apps/web/dist && pnpm --filter @clickclack/sdk-ts build && rm -rf apps/api/internal/webassets/dist && cp -R apps/web/dist apps/api/internal/webassets/dist",
+    "build": "pnpm build:web && pnpm build:sdk && pnpm embed:webassets",
+    "build:sdk": "pnpm --filter @clickclack/sdk-ts build",
+    "build:web": "pnpm --filter @clickclack/web build && node scripts/normalize-web-dist.mjs apps/web/dist",
     "docs:site": "node scripts/build-docs-site.mjs",
-    "check": "go test ./... && pnpm typecheck && pnpm -r typecheck && pnpm lint && pnpm fmt:check",
+    "check": "pnpm test && pnpm typecheck && pnpm -r typecheck && pnpm lint && pnpm fmt:check",
     "coverage": "go test ./apps/api/internal/... -coverprofile=coverage.out && grep -v '/storedb/' coverage.out > coverage.filtered.out && go tool cover -func=coverage.filtered.out | tee coverage.txt && awk '/^total:/ { sub(/%/, \"\", $3); if ($3 + 0 < 90) exit 1 }' coverage.txt",
     "dev:web": "pnpm --filter @clickclack/web dev",
     "dev:api": "go run ./apps/api/cmd/clickclack serve",
@@ -18,7 +20,8 @@
     "lint": "oxlint apps/web/src packages/sdk-ts/src examples tests/e2e playwright.config.ts",
     "test:e2e": "playwright test",
     "typecheck": "tsgo --noEmit -p tsconfig.json",
-    "test": "go test ./... && pnpm build"
+    "test": "pnpm build:web && pnpm build:sdk && node scripts/go-test-with-web-dist.mjs",
+    "embed:webassets": "node scripts/embed-web-dist.mjs apps/web/dist apps/api/internal/webassets/dist"
   },
   "packageManager": "pnpm@11.0.7",
   "devDependencies": {

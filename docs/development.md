@@ -47,8 +47,10 @@ The Vite dev server proxies `/api` and `/api/realtime/ws` to `localhost:8080`.
 
 | Command                | What it does |
 |------------------------|--------------|
-| `pnpm build`           | Builds the Svelte app and the SDK, then copies `apps/web/dist` into `apps/api/internal/webassets/dist`. |
-| `pnpm check`           | Full local gate: `go test ./...`, root/workspace `tsgo`, `oxlint`, and format checks. |
+| `pnpm build`           | Builds the Svelte app and the SDK, then embeds `apps/web/dist` into `apps/api/internal/webassets/dist`. |
+| `pnpm build:web`       | Builds and normalizes the Svelte app without touching embedded Go assets. |
+| `pnpm build:sdk`       | Builds the TypeScript SDK. |
+| `pnpm check`           | Full local gate: `pnpm test`, root/workspace `tsgo`, `oxlint`, and format checks. |
 | `pnpm coverage`        | Go tests with coverage; fails under 90% line coverage. |
 | `pnpm dev:api`         | `go run ./apps/api/cmd/clickclack serve`. |
 | `pnpm dev:web`         | `vite dev` for the SPA. |
@@ -57,7 +59,7 @@ The Vite dev server proxies `/api` and `/api/realtime/ws` to `localhost:8080`.
 | `pnpm lint`            | `oxlint` over web, SDK, examples, and tests. |
 | `goreleaser release --snapshot --clean` | Local release smoke test for all configured OS/arch targets. |
 | `pnpm typecheck`       | `tsgo --noEmit -p tsconfig.json` for root Playwright config/tests. |
-| `pnpm test`            | `go test ./... && pnpm build`. |
+| `pnpm test`            | Builds the web app and SDK, then runs Go tests against those fresh web assets in a temp copy without rewriting tracked embedded assets. |
 | `pnpm test:e2e`        | Playwright suite in `tests/e2e`. |
 
 `pnpm build` uses `CLICKCLACK_WEB_VERSION=dev` by default. That keeps repeated
