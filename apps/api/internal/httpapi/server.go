@@ -636,11 +636,6 @@ func filterEventsForUser(events []store.Event, userID string) []store.Event {
 	return filtered
 }
 
-func (s *Server) currentUser(r *http.Request) (store.User, error) {
-	actor, err := s.currentActor(r)
-	return actor.user, err
-}
-
 func (s *Server) currentActor(r *http.Request) (actor, error) {
 	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
 		token := strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))

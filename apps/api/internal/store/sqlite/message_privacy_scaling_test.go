@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -36,6 +37,16 @@ func TestMessagePrivacyScalingPrivacyAndDMThreads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	quotedPublicID := publicMessage.ID
+	quotedPublicMessage, _, err := st.CreateMessage(ctx, store.CreateMessageInput{
+		ChannelID:       channel.ID,
+		AuthorID:        owner.ID,
+		Body:            "quotechannel visible text",
+		QuotedMessageID: &quotedPublicID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	otherChannel, _, err := st.CreateChannel(ctx, store.CreateChannelInput{WorkspaceID: workspace.ID, UserID: owner.ID, Name: "other-hardening"})
 	if err != nil {
 		t.Fatal(err)
@@ -60,6 +71,58 @@ func TestMessagePrivacyScalingPrivacyAndDMThreads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	dmNonceMessage, dmNonceEvent, err := st.CreateDirectMessage(ctx, store.CreateDirectMessageInput{
+		ConversationID: dm.ID,
+		AuthorID:       owner.ID,
+		Body:           "dm nonce message",
+		Nonce:          "dm-nonce-coverage",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dmNonceEvent.ID == "" {
+		t.Fatalf("expected direct nonce create event, got %#v", dmNonceEvent)
+	}
+	dmNonceReplay, dmReplayEvent, err := st.CreateDirectMessage(ctx, store.CreateDirectMessageInput{
+		ConversationID: dm.ID,
+		AuthorID:       owner.ID,
+		Body:           "dm nonce message",
+		Nonce:          "dm-nonce-coverage",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dmNonceReplay.ID != dmNonceMessage.ID || dmReplayEvent.ID != "" {
+		t.Fatalf("expected direct nonce replay without event, got %#v %#v", dmNonceReplay, dmReplayEvent)
+	}
+	if _, _, err := st.CreateDirectMessage(ctx, store.CreateDirectMessageInput{
+		ConversationID: dm.ID,
+		AuthorID:       owner.ID,
+		Body:           "dm nonce conflict",
+		Nonce:          "dm-nonce-coverage",
+	}); !errors.Is(err, store.ErrClientNonceConflict) {
+		t.Fatalf("expected direct nonce conflict, got %v", err)
+	}
+	quotedID := dmNonceMessage.ID
+	quotedDM, _, err := st.CreateDirectMessage(ctx, store.CreateDirectMessageInput{
+		ConversationID:  dm.ID,
+		AuthorID:        member.ID,
+		Body:            "dm quote message",
+		QuotedMessageID: &quotedID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if quotedDM.QuotedBodySnapshot != "dm nonce message" {
+		t.Fatalf("expected direct quote snapshot, got %#v", quotedDM)
+	}
+	legacyDMRoute, err := st.ResolveLegacyRouteTarget(ctx, member.ID, workspace.ID, dm.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacyDMRoute.TargetType != "direct" || legacyDMRoute.TargetID != dm.ID {
+		t.Fatalf("unexpected legacy DM route: %#v", legacyDMRoute)
+	}
 
 	results, err := st.SearchMessages(ctx, workspace.ID, "", owner.ID, "searchable", 10)
 	if err != nil {
@@ -74,6 +137,13 @@ func TestMessagePrivacyScalingPrivacyAndDMThreads(t *testing.T) {
 	}
 	if len(scopedResults) != 1 || scopedResults[0].Message.ID != publicMessage.ID {
 		t.Fatalf("expected channel search to stay in channel, got %#v; other=%s", scopedResults, otherChannelMessage.ID)
+	}
+	quotedResults, err := st.SearchMessages(ctx, workspace.ID, channel.ID, owner.ID, "quotechannel", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(quotedResults) != 1 || quotedResults[0].Message.ID != quotedPublicMessage.ID || quotedResults[0].Message.QuotedBodySnapshot != "public searchable channel text" {
+		t.Fatalf("expected quoted search result with snapshot, got %#v", quotedResults)
 	}
 	dmOnlyResults, err := st.SearchMessages(ctx, workspace.ID, "", owner.ID, "secret", 10)
 	if err != nil {
@@ -115,6 +185,9 @@ func TestMessagePrivacyScalingPrivacyAndDMThreads(t *testing.T) {
 	if _, err := st.GetUpload(ctx, upload.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := st.GetMessage(ctx, "msg_missing", owner.ID); err == nil {
+		t.Fatal("expected missing message read to fail")
+	}
 
 	reply, state, events, err := st.CreateThreadReply(ctx, store.CreateThreadReplyInput{
 		RootMessageID: dmMessage.ID,
@@ -127,18 +200,47 @@ func TestMessagePrivacyScalingPrivacyAndDMThreads(t *testing.T) {
 	if reply.DirectConversationID != dm.ID || reply.ChannelID != "" || state.ReplyCount != 1 || len(events) != 2 {
 		t.Fatalf("unexpected DM thread reply result: %#v %#v %#v", reply, state, events)
 	}
+	if _, _, _, err := st.GetThread(ctx, reply.ID, owner.ID, 10); err == nil {
+		t.Fatal("expected nested thread root read to be blocked")
+	}
+	if _, _, _, err := st.CreateThreadReply(ctx, store.CreateThreadReplyInput{
+		RootMessageID: reply.ID,
+		AuthorID:      owner.ID,
+		Body:          "nested reply",
+	}); err == nil {
+		t.Fatal("expected nested thread reply to be blocked")
+	}
+	if _, _, _, err := st.CreateThreadReply(ctx, store.CreateThreadReplyInput{
+		RootMessageID: dmMessage.ID,
+		AuthorID:      workspaceOnly.ID,
+		Body:          "blocked reply",
+	}); err == nil {
+		t.Fatal("expected non-DM member thread reply to be blocked")
+	}
+	if _, _, _, err := st.CreateThreadReply(ctx, store.CreateThreadReplyInput{
+		RootMessageID: dmMessage.ID,
+		AuthorID:      owner.ID,
+		Body:          "bad nonce",
+		Nonce:         strings.Repeat("x", 129),
+	}); err == nil {
+		t.Fatal("expected overlong thread nonce to be blocked")
+	}
 	page, err := st.ListDirectMessages(ctx, dm.ID, owner.ID, store.MessagePageRequest{Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(page.Messages) != 1 || page.Messages[0].ID != dmMessage.ID || page.NewestSeq != *dmMessage.ChannelSeq {
+	dmRootIDs := map[string]bool{}
+	for _, msg := range page.Messages {
+		dmRootIDs[msg.ID] = true
+	}
+	if len(page.Messages) != 3 || !dmRootIDs[dmMessage.ID] || !dmRootIDs[dmNonceMessage.ID] || !dmRootIDs[quotedDM.ID] || dmRootIDs[reply.ID] || page.NewestSeq != *quotedDM.ChannelSeq {
 		t.Fatalf("expected DM root timeline to exclude thread replies, got %#v", page)
 	}
 	receipt, readEvent, err := st.MarkDirectRead(ctx, dm.ID, owner.ID, 999)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if receipt.LastReadSeq != *dmMessage.ChannelSeq || len(readEvent.RecipientUserIDs) != 1 || readEvent.RecipientUserIDs[0] != owner.ID {
+	if receipt.LastReadSeq != *quotedDM.ChannelSeq || len(readEvent.RecipientUserIDs) != 1 || readEvent.RecipientUserIDs[0] != owner.ID {
 		t.Fatalf("expected DM read to cap to root sequence and target the reader, got %#v %#v", receipt, readEvent)
 	}
 	_, replies, _, err := st.GetThread(ctx, dmMessage.ID, owner.ID, 10)
@@ -236,6 +338,85 @@ func TestMessagePrivacyScalingMessageShapeAndSequenceGuards(t *testing.T) {
 		VALUES ('msg_valid_shape_reply', ?, ?, NULL, ?, ?, ?, NULL, 1, 'valid reply', 'markdown', ?)`,
 		workspace.ID, channel.ID, owner.ID, root.ID, root.ID, now()); err != nil {
 		t.Fatalf("expected valid root reply shape to be accepted: %v", err)
+	}
+}
+
+func TestMessagePrivacyScalingChannelAndUploadVisibilityCoverage(t *testing.T) {
+	t.Parallel()
+	ctx, st, owner, workspace, channel := seededStore(t)
+
+	gotChannel, err := st.GetChannel(ctx, channel.ID, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotChannel.ID != channel.ID || gotChannel.WorkspaceID != workspace.ID {
+		t.Fatalf("unexpected channel: %#v", gotChannel)
+	}
+	stranger, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: "Stranger", Email: "stranger-upload@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.GetChannel(ctx, channel.ID, stranger.ID); err == nil {
+		t.Fatal("expected non-member channel read to be blocked")
+	}
+	if _, err := st.GetChannel(ctx, "chn_missing", owner.ID); err == nil {
+		t.Fatal("expected missing channel read to fail")
+	}
+	if _, err := st.CreateDirectConversation(ctx, store.CreateDirectConversationInput{WorkspaceID: workspace.ID, UserID: owner.ID}); err == nil {
+		t.Fatal("expected single-member direct conversation to be blocked")
+	}
+	if _, err := st.CreateDirectConversation(ctx, store.CreateDirectConversationInput{WorkspaceID: workspace.ID, UserID: owner.ID, MemberIDs: []string{stranger.ID}}); err == nil {
+		t.Fatal("expected direct conversation with non-workspace member to be blocked")
+	}
+
+	member, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: "Member", Email: "member-upload@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AddWorkspaceMember(ctx, workspace.ID, member.ID, "member"); err != nil {
+		t.Fatal(err)
+	}
+	ownerMessage, _, err := st.CreateMessage(ctx, store.CreateMessageInput{ChannelID: channel.ID, AuthorID: owner.ID, Body: "owner upload message"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.CreateMessage(ctx, store.CreateMessageInput{ChannelID: channel.ID, AuthorID: owner.ID, Body: "bad nonce", Nonce: strings.Repeat("x", 129)}); err == nil {
+		t.Fatal("expected overlong message nonce to be blocked")
+	}
+	if _, _, _, err := st.GetThread(ctx, "msg_missing", owner.ID, 10); err == nil {
+		t.Fatal("expected missing thread read to fail")
+	}
+	memberMessage, _, err := st.CreateMessage(ctx, store.CreateMessageInput{ChannelID: channel.ID, AuthorID: member.ID, Body: "member upload message"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	upload, err := st.CreateUpload(ctx, store.CreateUploadInput{WorkspaceID: workspace.ID, OwnerID: owner.ID, Filename: "shared.txt", ContentType: "text/plain", ByteSize: 1, StoragePath: "/tmp/shared.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: ownerMessage.ID, UploadID: upload.ID, UserID: owner.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: ownerMessage.ID, UploadID: upload.ID, UserID: owner.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.GetUpload(ctx, upload.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: memberMessage.ID, UploadID: upload.ID, UserID: member.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	otherWorkspace, err := st.CreateWorkspace(ctx, store.CreateWorkspaceInput{Name: "Other Upload Workspace"}, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherUpload, err := st.CreateUpload(ctx, store.CreateUploadInput{WorkspaceID: otherWorkspace.ID, OwnerID: owner.ID, Filename: "other.txt", ContentType: "text/plain", ByteSize: 1, StoragePath: "/tmp/other.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: ownerMessage.ID, UploadID: otherUpload.ID, UserID: owner.ID}); err == nil {
+		t.Fatal("expected cross-workspace upload attach to be blocked")
 	}
 }
 

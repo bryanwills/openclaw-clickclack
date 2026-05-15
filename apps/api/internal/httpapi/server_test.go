@@ -1284,6 +1284,10 @@ func TestQueryHelpersParseValues(t *testing.T) {
 	if got := queryInt64(req, "after_seq", 10); got != 123 {
 		t.Fatalf("unexpected int64 query value %d", got)
 	}
+	req = httptest.NewRequest(http.MethodGet, "/?after_seq=bad", nil)
+	if got := queryInt64(req, "after_seq", 10); got != 10 {
+		t.Fatalf("unexpected fallback int64 query value %d", got)
+	}
 }
 
 func readEventType(t *testing.T, conn *websocket.Conn, eventType string) store.Event {

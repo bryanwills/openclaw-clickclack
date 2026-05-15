@@ -71,12 +71,3 @@ func truncateSnapshot(body string) string {
 	}
 	return string(runes[:maxQuoteSnapshotChars])
 }
-
-// nullableQuotedID returns the value to bind for the quoted_message_id column.
-// SQLite stores TEXT columns as NULL when the bound value is a typed nil.
-func nullableQuotedID(id string) any {
-	if id == "" {
-		return nil
-	}
-	return id
-}

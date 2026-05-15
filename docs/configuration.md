@@ -75,5 +75,5 @@ clickclack serve \
 ```
 
 Combine with real auth (magic links or GitHub OAuth) so the
-"first-user-in-DB" fallback in `currentUser` never kicks in. In containers,
+"first-user-in-DB" dev auth fallback never kicks in. In containers,
 `CLICKCLACK_DEV_BOOTSTRAP=false` is the easiest way to enforce the same mode.
