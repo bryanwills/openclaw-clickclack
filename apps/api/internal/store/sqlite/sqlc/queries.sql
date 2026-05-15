@@ -117,13 +117,47 @@ FROM workspaces
 ORDER BY created_at
 LIMIT 1;
 
+-- name: ListWorkspaces :many
+SELECT w.id, COALESCE(w.route_id, '') AS route_id, w.name, w.slug, w.created_at
+FROM workspaces w
+JOIN workspace_members wm ON wm.workspace_id = w.id
+WHERE wm.user_id = sqlc.arg(user_id)
+ORDER BY w.created_at;
+
 -- name: InsertWorkspace :exec
 INSERT INTO workspaces (id, route_id, name, slug, created_at)
 VALUES (sqlc.arg(id), sqlc.arg(route_id), sqlc.arg(name), sqlc.arg(slug), sqlc.arg(created_at));
 
+-- name: GetWorkspace :one
+SELECT w.id, COALESCE(w.route_id, '') AS route_id, w.name, w.slug, w.created_at
+FROM workspaces w
+JOIN workspace_members wm ON wm.workspace_id = w.id
+WHERE w.id = sqlc.arg(workspace_id)
+  AND wm.user_id = sqlc.arg(user_id);
+
 -- name: InsertDefaultChannel :exec
 INSERT INTO channels (id, route_id, workspace_id, name, kind, created_at)
 VALUES (sqlc.arg(id), sqlc.arg(route_id), sqlc.arg(workspace_id), 'general', 'public', sqlc.arg(created_at));
+
+-- name: InsertChannel :exec
+INSERT INTO channels (id, route_id, workspace_id, name, kind, created_at)
+VALUES (sqlc.arg(id), sqlc.arg(route_id), sqlc.arg(workspace_id), sqlc.arg(name), sqlc.arg(kind), sqlc.arg(created_at));
+
+-- name: ListChannels :many
+SELECT c.id, COALESCE(c.route_id, '') AS route_id, c.workspace_id, c.name, c.kind, c.created_at, c.archived_at,
+       CAST(COALESCE((SELECT MAX(channel_seq) FROM messages WHERE channel_id = c.id AND parent_message_id IS NULL), 0) AS INTEGER) AS last_seq,
+       CAST(COALESCE((SELECT cr.last_read_seq FROM channel_reads cr WHERE cr.channel_id = c.id AND cr.user_id = sqlc.arg(reader_user_id)), 0) AS INTEGER) AS last_read_seq,
+       CAST(COALESCE((
+         SELECT COUNT(*)
+         FROM messages m
+         WHERE m.channel_id = c.id
+           AND m.parent_message_id IS NULL
+           AND m.author_id <> sqlc.arg(reader_user_id)
+           AND m.channel_seq > COALESCE((SELECT cr2.last_read_seq FROM channel_reads cr2 WHERE cr2.channel_id = c.id AND cr2.user_id = sqlc.arg(reader_user_id)), 0)
+       ), 0) AS INTEGER) AS unread_count
+FROM channels c
+WHERE c.workspace_id = sqlc.arg(workspace_id)
+ORDER BY c.name;
 
 -- name: RequireMembership :one
 SELECT 1
@@ -186,6 +220,12 @@ FROM messages
 WHERE channel_id = CAST(sqlc.arg(channel_id) AS TEXT)
   AND parent_message_id IS NULL;
 
+-- name: ChannelNextSeq :one
+SELECT CAST(COALESCE(MAX(channel_seq), 0) + 1 AS INTEGER) AS next_seq
+FROM messages
+WHERE channel_id = CAST(sqlc.arg(channel_id) AS TEXT)
+  AND parent_message_id IS NULL;
+
 -- name: DirectLastSeq :one
 SELECT CAST(COALESCE(MAX(channel_seq), 0) AS INTEGER) AS last_seq
 FROM messages
@@ -218,6 +258,14 @@ ON CONFLICT(conversation_id, user_id) DO UPDATE SET
   last_read_seq = excluded.last_read_seq,
   last_read_at = excluded.last_read_at;
 
+-- name: InsertChannelMessage :exec
+INSERT INTO messages (id, workspace_id, channel_id, direct_conversation_id, author_id, parent_message_id, thread_root_id, channel_seq, thread_seq, body, body_format, created_at, quoted_message_id, quoted_body_snapshot, quoted_author_id, client_nonce)
+VALUES (sqlc.arg(id), sqlc.arg(workspace_id), sqlc.arg(channel_id), NULL, sqlc.arg(author_id), NULL, sqlc.arg(thread_root_id), sqlc.arg(channel_seq), NULL, sqlc.arg(body), 'markdown', sqlc.arg(created_at), sqlc.arg(quoted_message_id), sqlc.arg(quoted_body_snapshot), sqlc.arg(quoted_author_id), sqlc.arg(client_nonce));
+
+-- name: InsertThreadState :exec
+INSERT INTO thread_state (root_message_id)
+VALUES (sqlc.arg(root_message_id));
+
 -- name: GetChannel :one
 SELECT id, COALESCE(route_id, '') AS route_id, workspace_id, name, kind, created_at, archived_at
 FROM channels
@@ -241,6 +289,28 @@ UPDATE messages
 SET body = '',
     deleted_at = sqlc.arg(deleted_at)
 WHERE id = sqlc.arg(id);
+
+-- name: AddReaction :exec
+INSERT OR IGNORE INTO reactions (message_id, user_id, emoji, created_at)
+VALUES (sqlc.arg(message_id), sqlc.arg(user_id), sqlc.arg(emoji), sqlc.arg(created_at));
+
+-- name: RemoveReaction :exec
+DELETE FROM reactions
+WHERE message_id = sqlc.arg(message_id)
+  AND user_id = sqlc.arg(user_id)
+  AND emoji = sqlc.arg(emoji);
+
+-- name: ListEventsAfter :many
+SELECT e.id, e.cursor, e.workspace_id, COALESCE(e.channel_id, '') AS channel_id, e.type, e.seq, e.payload_json, e.created_at
+FROM events e
+WHERE e.workspace_id = sqlc.arg(workspace_id)
+  AND e.cursor > sqlc.arg(cursor)
+  AND (
+    e.is_private = 0
+    OR EXISTS (SELECT 1 FROM event_recipients er WHERE er.event_id = e.id AND er.user_id = sqlc.arg(user_id))
+  )
+ORDER BY e.cursor
+LIMIT sqlc.arg(limit_count);
 
 -- name: PruneEvents :execrows
 DELETE FROM events AS e

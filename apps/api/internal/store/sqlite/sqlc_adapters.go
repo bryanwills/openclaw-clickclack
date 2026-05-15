@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"database/sql"
+	"encoding/json"
 
 	"github.com/openclaw/clickclack/apps/api/internal/store"
 	"github.com/openclaw/clickclack/apps/api/internal/store/sqlite/storedb"
@@ -34,6 +35,10 @@ func nullFromPtr(value *string) sql.NullString {
 		return sql.NullString{}
 	}
 	return sqlText(*value)
+}
+
+func sqlInt64(value int64) sql.NullInt64 {
+	return sql.NullInt64{Int64: value, Valid: true}
 }
 
 func storeUserFromDB(id, kind string, ownerUserID sql.NullString, displayName, handle, avatarURL, createdAt string) store.User {
@@ -90,6 +95,26 @@ func storeWorkspaceFromFirstWorkspace(row storedb.FirstWorkspaceRow) store.Works
 	}
 }
 
+func storeWorkspaceFromListWorkspaces(row storedb.ListWorkspacesRow) store.Workspace {
+	return store.Workspace{
+		ID:        row.ID,
+		RouteID:   row.RouteID,
+		Name:      row.Name,
+		Slug:      row.Slug,
+		CreatedAt: row.CreatedAt,
+	}
+}
+
+func storeWorkspaceFromGetWorkspace(row storedb.GetWorkspaceRow) store.Workspace {
+	return store.Workspace{
+		ID:        row.ID,
+		RouteID:   row.RouteID,
+		Name:      row.Name,
+		Slug:      row.Slug,
+		CreatedAt: row.CreatedAt,
+	}
+}
+
 func storeUploadFromGetUpload(row storedb.GetUploadRow) store.Upload {
 	return store.Upload{
 		ID:          row.ID,
@@ -118,6 +143,21 @@ func storeChannelFromGetChannel(row storedb.GetChannelRow) store.Channel {
 	}
 }
 
+func storeChannelFromListChannels(row storedb.ListChannelsRow) store.Channel {
+	return store.Channel{
+		ID:          row.ID,
+		RouteID:     row.RouteID,
+		WorkspaceID: row.WorkspaceID,
+		Name:        row.Name,
+		Kind:        row.Kind,
+		CreatedAt:   row.CreatedAt,
+		ArchivedAt:  ptrFromNull(row.ArchivedAt),
+		LastSeq:     row.LastSeq,
+		LastReadSeq: row.LastReadSeq,
+		UnreadCount: row.UnreadCount,
+	}
+}
+
 func storeNotificationSettingsFromDB(row storedb.GetNotificationSettingsRow) store.NotificationSettings {
 	return store.NotificationSettings{
 		PushoverEnabled: row.PushoverEnabled == 1,
@@ -139,4 +179,23 @@ func storeBotTokenAuthFromDB(row storedb.GetBotTokenAuthRow) store.BotTokenAuth 
 		TokenID:     row.TokenID,
 		WorkspaceID: row.WorkspaceID,
 	}
+}
+
+func storeEventFromListEventsAfter(row storedb.ListEventsAfterRow) store.Event {
+	event := store.Event{
+		ID:          row.ID,
+		Cursor:      row.Cursor,
+		WorkspaceID: row.WorkspaceID,
+		ChannelID:   row.ChannelID,
+		Type:        row.Type,
+		PayloadJSON: row.PayloadJson,
+		CreatedAt:   row.CreatedAt,
+	}
+	if row.Seq.Valid {
+		event.Seq = &row.Seq.Int64
+	}
+	var payload any
+	_ = json.Unmarshal([]byte(event.PayloadJSON), &payload)
+	event.Payload = payload
+	return event
 }

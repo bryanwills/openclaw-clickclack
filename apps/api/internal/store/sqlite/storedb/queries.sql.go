@@ -10,6 +10,28 @@ import (
 	"database/sql"
 )
 
+const addReaction = `-- name: AddReaction :exec
+INSERT OR IGNORE INTO reactions (message_id, user_id, emoji, created_at)
+VALUES (?1, ?2, ?3, ?4)
+`
+
+type AddReactionParams struct {
+	MessageID string `json:"message_id"`
+	UserID    string `json:"user_id"`
+	Emoji     string `json:"emoji"`
+	CreatedAt string `json:"created_at"`
+}
+
+func (q *Queries) AddReaction(ctx context.Context, arg AddReactionParams) error {
+	_, err := q.db.ExecContext(ctx, addReaction,
+		arg.MessageID,
+		arg.UserID,
+		arg.Emoji,
+		arg.CreatedAt,
+	)
+	return err
+}
+
 const attachUpload = `-- name: AttachUpload :exec
 INSERT OR IGNORE INTO message_attachments (message_id, upload_id, created_at)
 VALUES (?1, ?2, ?3)
@@ -38,6 +60,20 @@ func (q *Queries) ChannelLastSeq(ctx context.Context, channelID string) (int64, 
 	var last_seq int64
 	err := row.Scan(&last_seq)
 	return last_seq, err
+}
+
+const channelNextSeq = `-- name: ChannelNextSeq :one
+SELECT CAST(COALESCE(MAX(channel_seq), 0) + 1 AS INTEGER) AS next_seq
+FROM messages
+WHERE channel_id = CAST(?1 AS TEXT)
+  AND parent_message_id IS NULL
+`
+
+func (q *Queries) ChannelNextSeq(ctx context.Context, channelID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, channelNextSeq, channelID)
+	var next_seq int64
+	err := row.Scan(&next_seq)
+	return next_seq, err
 }
 
 const deleteMessageBody = `-- name: DeleteMessageBody :exec
@@ -461,6 +497,40 @@ func (q *Queries) GetUserByIdentityProviderSubject(ctx context.Context, arg GetU
 	return i, err
 }
 
+const getWorkspace = `-- name: GetWorkspace :one
+SELECT w.id, COALESCE(w.route_id, '') AS route_id, w.name, w.slug, w.created_at
+FROM workspaces w
+JOIN workspace_members wm ON wm.workspace_id = w.id
+WHERE w.id = ?1
+  AND wm.user_id = ?2
+`
+
+type GetWorkspaceParams struct {
+	WorkspaceID string `json:"workspace_id"`
+	UserID      string `json:"user_id"`
+}
+
+type GetWorkspaceRow struct {
+	ID        string `json:"id"`
+	RouteID   string `json:"route_id"`
+	Name      string `json:"name"`
+	Slug      string `json:"slug"`
+	CreatedAt string `json:"created_at"`
+}
+
+func (q *Queries) GetWorkspace(ctx context.Context, arg GetWorkspaceParams) (GetWorkspaceRow, error) {
+	row := q.db.QueryRowContext(ctx, getWorkspace, arg.WorkspaceID, arg.UserID)
+	var i GetWorkspaceRow
+	err := row.Scan(
+		&i.ID,
+		&i.RouteID,
+		&i.Name,
+		&i.Slug,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const insertBotToken = `-- name: InsertBotToken :exec
 INSERT INTO bot_tokens (id, token_hash, bot_user_id, workspace_id, owner_user_id, name, scopes_json, created_by, created_at)
 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
@@ -515,6 +585,70 @@ func (q *Queries) InsertBotUser(ctx context.Context, arg InsertBotUserParams) er
 		arg.Handle,
 		arg.AvatarUrl,
 		arg.CreatedAt,
+	)
+	return err
+}
+
+const insertChannel = `-- name: InsertChannel :exec
+INSERT INTO channels (id, route_id, workspace_id, name, kind, created_at)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+`
+
+type InsertChannelParams struct {
+	ID          string         `json:"id"`
+	RouteID     sql.NullString `json:"route_id"`
+	WorkspaceID string         `json:"workspace_id"`
+	Name        string         `json:"name"`
+	Kind        string         `json:"kind"`
+	CreatedAt   string         `json:"created_at"`
+}
+
+func (q *Queries) InsertChannel(ctx context.Context, arg InsertChannelParams) error {
+	_, err := q.db.ExecContext(ctx, insertChannel,
+		arg.ID,
+		arg.RouteID,
+		arg.WorkspaceID,
+		arg.Name,
+		arg.Kind,
+		arg.CreatedAt,
+	)
+	return err
+}
+
+const insertChannelMessage = `-- name: InsertChannelMessage :exec
+INSERT INTO messages (id, workspace_id, channel_id, direct_conversation_id, author_id, parent_message_id, thread_root_id, channel_seq, thread_seq, body, body_format, created_at, quoted_message_id, quoted_body_snapshot, quoted_author_id, client_nonce)
+VALUES (?1, ?2, ?3, NULL, ?4, NULL, ?5, ?6, NULL, ?7, 'markdown', ?8, ?9, ?10, ?11, ?12)
+`
+
+type InsertChannelMessageParams struct {
+	ID                 string         `json:"id"`
+	WorkspaceID        string         `json:"workspace_id"`
+	ChannelID          sql.NullString `json:"channel_id"`
+	AuthorID           string         `json:"author_id"`
+	ThreadRootID       string         `json:"thread_root_id"`
+	ChannelSeq         sql.NullInt64  `json:"channel_seq"`
+	Body               string         `json:"body"`
+	CreatedAt          string         `json:"created_at"`
+	QuotedMessageID    sql.NullString `json:"quoted_message_id"`
+	QuotedBodySnapshot string         `json:"quoted_body_snapshot"`
+	QuotedAuthorID     sql.NullString `json:"quoted_author_id"`
+	ClientNonce        string         `json:"client_nonce"`
+}
+
+func (q *Queries) InsertChannelMessage(ctx context.Context, arg InsertChannelMessageParams) error {
+	_, err := q.db.ExecContext(ctx, insertChannelMessage,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.ChannelID,
+		arg.AuthorID,
+		arg.ThreadRootID,
+		arg.ChannelSeq,
+		arg.Body,
+		arg.CreatedAt,
+		arg.QuotedMessageID,
+		arg.QuotedBodySnapshot,
+		arg.QuotedAuthorID,
+		arg.ClientNonce,
 	)
 	return err
 }
@@ -679,6 +813,16 @@ func (q *Queries) InsertSession(ctx context.Context, arg InsertSessionParams) er
 	return err
 }
 
+const insertThreadState = `-- name: InsertThreadState :exec
+INSERT INTO thread_state (root_message_id)
+VALUES (?1)
+`
+
+func (q *Queries) InsertThreadState(ctx context.Context, rootMessageID string) error {
+	_, err := q.db.ExecContext(ctx, insertThreadState, rootMessageID)
+	return err
+}
+
 const insertUpload = `-- name: InsertUpload :exec
 INSERT INTO uploads (id, workspace_id, owner_id, filename, content_type, byte_size, width, height, duration_ms, storage_path, created_at)
 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
@@ -761,6 +905,75 @@ func (q *Queries) InsertWorkspaceMember(ctx context.Context, arg InsertWorkspace
 	return err
 }
 
+const listChannels = `-- name: ListChannels :many
+SELECT c.id, COALESCE(c.route_id, '') AS route_id, c.workspace_id, c.name, c.kind, c.created_at, c.archived_at,
+       CAST(COALESCE((SELECT MAX(channel_seq) FROM messages WHERE channel_id = c.id AND parent_message_id IS NULL), 0) AS INTEGER) AS last_seq,
+       CAST(COALESCE((SELECT cr.last_read_seq FROM channel_reads cr WHERE cr.channel_id = c.id AND cr.user_id = ?1), 0) AS INTEGER) AS last_read_seq,
+       CAST(COALESCE((
+         SELECT COUNT(*)
+         FROM messages m
+         WHERE m.channel_id = c.id
+           AND m.parent_message_id IS NULL
+           AND m.author_id <> ?1
+           AND m.channel_seq > COALESCE((SELECT cr2.last_read_seq FROM channel_reads cr2 WHERE cr2.channel_id = c.id AND cr2.user_id = ?1), 0)
+       ), 0) AS INTEGER) AS unread_count
+FROM channels c
+WHERE c.workspace_id = ?2
+ORDER BY c.name
+`
+
+type ListChannelsParams struct {
+	ReaderUserID string `json:"reader_user_id"`
+	WorkspaceID  string `json:"workspace_id"`
+}
+
+type ListChannelsRow struct {
+	ID          string         `json:"id"`
+	RouteID     string         `json:"route_id"`
+	WorkspaceID string         `json:"workspace_id"`
+	Name        string         `json:"name"`
+	Kind        string         `json:"kind"`
+	CreatedAt   string         `json:"created_at"`
+	ArchivedAt  sql.NullString `json:"archived_at"`
+	LastSeq     int64          `json:"last_seq"`
+	LastReadSeq int64          `json:"last_read_seq"`
+	UnreadCount int64          `json:"unread_count"`
+}
+
+func (q *Queries) ListChannels(ctx context.Context, arg ListChannelsParams) ([]ListChannelsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listChannels, arg.ReaderUserID, arg.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListChannelsRow
+	for rows.Next() {
+		var i ListChannelsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RouteID,
+			&i.WorkspaceID,
+			&i.Name,
+			&i.Kind,
+			&i.CreatedAt,
+			&i.ArchivedAt,
+			&i.LastSeq,
+			&i.LastReadSeq,
+			&i.UnreadCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDirectPushNotificationRecipients = `-- name: ListDirectPushNotificationRecipients :many
 SELECT u.id AS user_id, u.display_name, uns.pushover_user_key
 FROM direct_conversation_members dcm
@@ -807,6 +1020,74 @@ func (q *Queries) ListDirectPushNotificationRecipients(ctx context.Context, arg 
 	return items, nil
 }
 
+const listEventsAfter = `-- name: ListEventsAfter :many
+SELECT e.id, e.cursor, e.workspace_id, COALESCE(e.channel_id, '') AS channel_id, e.type, e.seq, e.payload_json, e.created_at
+FROM events e
+WHERE e.workspace_id = ?1
+  AND e.cursor > ?2
+  AND (
+    e.is_private = 0
+    OR EXISTS (SELECT 1 FROM event_recipients er WHERE er.event_id = e.id AND er.user_id = ?3)
+  )
+ORDER BY e.cursor
+LIMIT ?4
+`
+
+type ListEventsAfterParams struct {
+	WorkspaceID string `json:"workspace_id"`
+	Cursor      string `json:"cursor"`
+	UserID      string `json:"user_id"`
+	LimitCount  int64  `json:"limit_count"`
+}
+
+type ListEventsAfterRow struct {
+	ID          string        `json:"id"`
+	Cursor      string        `json:"cursor"`
+	WorkspaceID string        `json:"workspace_id"`
+	ChannelID   string        `json:"channel_id"`
+	Type        string        `json:"type"`
+	Seq         sql.NullInt64 `json:"seq"`
+	PayloadJson string        `json:"payload_json"`
+	CreatedAt   string        `json:"created_at"`
+}
+
+func (q *Queries) ListEventsAfter(ctx context.Context, arg ListEventsAfterParams) ([]ListEventsAfterRow, error) {
+	rows, err := q.db.QueryContext(ctx, listEventsAfter,
+		arg.WorkspaceID,
+		arg.Cursor,
+		arg.UserID,
+		arg.LimitCount,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEventsAfterRow
+	for rows.Next() {
+		var i ListEventsAfterRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Cursor,
+			&i.WorkspaceID,
+			&i.ChannelID,
+			&i.Type,
+			&i.Seq,
+			&i.PayloadJson,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listWorkspacePushNotificationRecipients = `-- name: ListWorkspacePushNotificationRecipients :many
 SELECT u.id AS user_id, u.display_name, uns.pushover_user_key
 FROM workspace_members wm
@@ -840,6 +1121,51 @@ func (q *Queries) ListWorkspacePushNotificationRecipients(ctx context.Context, a
 	for rows.Next() {
 		var i ListWorkspacePushNotificationRecipientsRow
 		if err := rows.Scan(&i.UserID, &i.DisplayName, &i.PushoverUserKey); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listWorkspaces = `-- name: ListWorkspaces :many
+SELECT w.id, COALESCE(w.route_id, '') AS route_id, w.name, w.slug, w.created_at
+FROM workspaces w
+JOIN workspace_members wm ON wm.workspace_id = w.id
+WHERE wm.user_id = ?1
+ORDER BY w.created_at
+`
+
+type ListWorkspacesRow struct {
+	ID        string `json:"id"`
+	RouteID   string `json:"route_id"`
+	Name      string `json:"name"`
+	Slug      string `json:"slug"`
+	CreatedAt string `json:"created_at"`
+}
+
+func (q *Queries) ListWorkspaces(ctx context.Context, userID string) ([]ListWorkspacesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listWorkspaces, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListWorkspacesRow
+	for rows.Next() {
+		var i ListWorkspacesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RouteID,
+			&i.Name,
+			&i.Slug,
+			&i.CreatedAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -942,6 +1268,24 @@ func (q *Queries) ReadDirectRead(ctx context.Context, arg ReadDirectReadParams) 
 	var i ReadDirectReadRow
 	err := row.Scan(&i.LastReadSeq, &i.LastReadAt)
 	return i, err
+}
+
+const removeReaction = `-- name: RemoveReaction :exec
+DELETE FROM reactions
+WHERE message_id = ?1
+  AND user_id = ?2
+  AND emoji = ?3
+`
+
+type RemoveReactionParams struct {
+	MessageID string `json:"message_id"`
+	UserID    string `json:"user_id"`
+	Emoji     string `json:"emoji"`
+}
+
+func (q *Queries) RemoveReaction(ctx context.Context, arg RemoveReactionParams) error {
+	_, err := q.db.ExecContext(ctx, removeReaction, arg.MessageID, arg.UserID, arg.Emoji)
+	return err
 }
 
 const requireMembership = `-- name: RequireMembership :one
