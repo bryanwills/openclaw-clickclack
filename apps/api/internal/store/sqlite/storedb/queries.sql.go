@@ -482,6 +482,24 @@ func (q *Queries) GetSessionUser(ctx context.Context, arg GetSessionUserParams) 
 	return i, err
 }
 
+const getThreadState = `-- name: GetThreadState :one
+SELECT root_message_id, reply_count, last_reply_at, last_reply_author_ids_json
+FROM thread_state
+WHERE root_message_id = ?1
+`
+
+func (q *Queries) GetThreadState(ctx context.Context, rootMessageID string) (ThreadState, error) {
+	row := q.db.QueryRowContext(ctx, getThreadState, rootMessageID)
+	var i ThreadState
+	err := row.Scan(
+		&i.RootMessageID,
+		&i.ReplyCount,
+		&i.LastReplyAt,
+		&i.LastReplyAuthorIdsJson,
+	)
+	return i, err
+}
+
 const getUpload = `-- name: GetUpload :one
 SELECT id, workspace_id, owner_id, filename, content_type, byte_size, width, height, duration_ms, storage_path, created_at
 FROM uploads
@@ -907,6 +925,53 @@ func (q *Queries) InsertDirectMessage(ctx context.Context, arg InsertDirectMessa
 	return err
 }
 
+const insertEvent = `-- name: InsertEvent :exec
+INSERT INTO events (id, cursor, workspace_id, channel_id, type, seq, payload_json, created_at, is_private)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+`
+
+type InsertEventParams struct {
+	ID          string         `json:"id"`
+	Cursor      string         `json:"cursor"`
+	WorkspaceID string         `json:"workspace_id"`
+	ChannelID   sql.NullString `json:"channel_id"`
+	Type        string         `json:"type"`
+	Seq         sql.NullInt64  `json:"seq"`
+	PayloadJson string         `json:"payload_json"`
+	CreatedAt   string         `json:"created_at"`
+	IsPrivate   int64          `json:"is_private"`
+}
+
+func (q *Queries) InsertEvent(ctx context.Context, arg InsertEventParams) error {
+	_, err := q.db.ExecContext(ctx, insertEvent,
+		arg.ID,
+		arg.Cursor,
+		arg.WorkspaceID,
+		arg.ChannelID,
+		arg.Type,
+		arg.Seq,
+		arg.PayloadJson,
+		arg.CreatedAt,
+		arg.IsPrivate,
+	)
+	return err
+}
+
+const insertEventRecipient = `-- name: InsertEventRecipient :exec
+INSERT INTO event_recipients (event_id, user_id)
+VALUES (?1, ?2)
+`
+
+type InsertEventRecipientParams struct {
+	EventID string `json:"event_id"`
+	UserID  string `json:"user_id"`
+}
+
+func (q *Queries) InsertEventRecipient(ctx context.Context, arg InsertEventRecipientParams) error {
+	_, err := q.db.ExecContext(ctx, insertEventRecipient, arg.EventID, arg.UserID)
+	return err
+}
+
 const insertHumanUser = `-- name: InsertHumanUser :exec
 INSERT INTO users (id, display_name, avatar_url, created_at)
 VALUES (?1, ?2, ?3, ?4)
@@ -1025,6 +1090,46 @@ func (q *Queries) InsertSession(ctx context.Context, arg InsertSessionParams) er
 		arg.UserID,
 		arg.CreatedAt,
 		arg.ExpiresAt,
+	)
+	return err
+}
+
+const insertThreadReply = `-- name: InsertThreadReply :exec
+INSERT INTO messages (id, workspace_id, channel_id, direct_conversation_id, author_id, parent_message_id, thread_root_id, channel_seq, thread_seq, body, body_format, created_at, quoted_message_id, quoted_body_snapshot, quoted_author_id)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, ?8, ?9, 'markdown', ?10, ?11, ?12, ?13)
+`
+
+type InsertThreadReplyParams struct {
+	ID                   string         `json:"id"`
+	WorkspaceID          string         `json:"workspace_id"`
+	ChannelID            sql.NullString `json:"channel_id"`
+	DirectConversationID sql.NullString `json:"direct_conversation_id"`
+	AuthorID             string         `json:"author_id"`
+	ParentMessageID      sql.NullString `json:"parent_message_id"`
+	ThreadRootID         string         `json:"thread_root_id"`
+	ThreadSeq            sql.NullInt64  `json:"thread_seq"`
+	Body                 string         `json:"body"`
+	CreatedAt            string         `json:"created_at"`
+	QuotedMessageID      sql.NullString `json:"quoted_message_id"`
+	QuotedBodySnapshot   string         `json:"quoted_body_snapshot"`
+	QuotedAuthorID       sql.NullString `json:"quoted_author_id"`
+}
+
+func (q *Queries) InsertThreadReply(ctx context.Context, arg InsertThreadReplyParams) error {
+	_, err := q.db.ExecContext(ctx, insertThreadReply,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.ChannelID,
+		arg.DirectConversationID,
+		arg.AuthorID,
+		arg.ParentMessageID,
+		arg.ThreadRootID,
+		arg.ThreadSeq,
+		arg.Body,
+		arg.CreatedAt,
+		arg.QuotedMessageID,
+		arg.QuotedBodySnapshot,
+		arg.QuotedAuthorID,
 	)
 	return err
 }
@@ -1607,6 +1712,25 @@ func (q *Queries) RequireMembership(ctx context.Context, arg RequireMembershipPa
 	return column_1, err
 }
 
+const threadNextSeq = `-- name: ThreadNextSeq :one
+SELECT CAST(COALESCE(MAX(thread_seq), 0) + 1 AS INTEGER) AS next_seq
+FROM messages
+WHERE thread_root_id = ?1
+  AND parent_message_id = ?2
+`
+
+type ThreadNextSeqParams struct {
+	ThreadRootID    string         `json:"thread_root_id"`
+	ParentMessageID sql.NullString `json:"parent_message_id"`
+}
+
+func (q *Queries) ThreadNextSeq(ctx context.Context, arg ThreadNextSeqParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, threadNextSeq, arg.ThreadRootID, arg.ParentMessageID)
+	var next_seq int64
+	err := row.Scan(&next_seq)
+	return next_seq, err
+}
+
 const touchBotToken = `-- name: TouchBotToken :exec
 UPDATE bot_tokens
 SET last_used_at = ?1
@@ -1663,6 +1787,25 @@ type UpdateMessageBodyParams struct {
 
 func (q *Queries) UpdateMessageBody(ctx context.Context, arg UpdateMessageBodyParams) error {
 	_, err := q.db.ExecContext(ctx, updateMessageBody, arg.Body, arg.EditedAt, arg.ID)
+	return err
+}
+
+const updateThreadState = `-- name: UpdateThreadState :exec
+UPDATE thread_state
+SET reply_count = reply_count + 1,
+    last_reply_at = ?1,
+    last_reply_author_ids_json = ?2
+WHERE root_message_id = ?3
+`
+
+type UpdateThreadStateParams struct {
+	LastReplyAt            sql.NullString `json:"last_reply_at"`
+	LastReplyAuthorIdsJson string         `json:"last_reply_author_ids_json"`
+	RootMessageID          string         `json:"root_message_id"`
+}
+
+func (q *Queries) UpdateThreadState(ctx context.Context, arg UpdateThreadStateParams) error {
+	_, err := q.db.ExecContext(ctx, updateThreadState, arg.LastReplyAt, arg.LastReplyAuthorIdsJson, arg.RootMessageID)
 	return err
 }
 

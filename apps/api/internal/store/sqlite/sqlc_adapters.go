@@ -41,6 +41,13 @@ func sqlInt64(value int64) sql.NullInt64 {
 	return sql.NullInt64{Int64: value, Valid: true}
 }
 
+func nullInt64FromPtr(value *int64) sql.NullInt64 {
+	if value == nil {
+		return sql.NullInt64{}
+	}
+	return sqlInt64(*value)
+}
+
 func storeUserFromDB(id, kind string, ownerUserID sql.NullString, displayName, handle, avatarURL, createdAt string) store.User {
 	return store.User{
 		ID:          id,
@@ -226,4 +233,15 @@ func storeDirectConversationFromGet(row storedb.GetDirectConversationRow) store.
 		LastReadSeq: row.LastReadSeq,
 		UnreadCount: row.UnreadCount,
 	}
+}
+
+func storeThreadStateFromDB(row storedb.ThreadState) store.ThreadState {
+	state := store.ThreadState{
+		RootMessageID:          row.RootMessageID,
+		ReplyCount:             row.ReplyCount,
+		LastReplyAt:            ptrFromNull(row.LastReplyAt),
+		LastReplyAuthorIDsJSON: row.LastReplyAuthorIdsJson,
+	}
+	_ = json.Unmarshal([]byte(state.LastReplyAuthorIDsJSON), &state.LastReplyAuthorIDs)
+	return state
 }

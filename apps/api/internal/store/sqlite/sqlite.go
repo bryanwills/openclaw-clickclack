@@ -514,6 +514,7 @@ func (s *Store) CreateThreadReply(ctx context.Context, input store.CreateThreadR
 		return store.Message{}, store.ThreadState{}, nil, err
 	}
 	defer tx.Rollback()
+	qtx := s.q.WithTx(tx)
 	root, err := getMessageTx(ctx, tx, input.RootMessageID)
 	if err != nil {
 		return store.Message{}, store.ThreadState{}, nil, err
@@ -528,8 +529,8 @@ func (s *Store) CreateThreadReply(ctx context.Context, input store.CreateThreadR
 	if err != nil {
 		return store.Message{}, store.ThreadState{}, nil, err
 	}
-	var seq int64
-	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(thread_seq), 0) + 1 FROM messages WHERE thread_root_id = ? AND parent_message_id = ?`, root.ID, root.ID).Scan(&seq); err != nil {
+	seq, err := qtx.ThreadNextSeq(ctx, storedb.ThreadNextSeqParams{ThreadRootID: root.ID, ParentMessageID: sqlText(root.ID)})
+	if err != nil {
 		return store.Message{}, store.ThreadState{}, nil, err
 	}
 	id := newID("msg")
@@ -548,16 +549,28 @@ func (s *Store) CreateThreadReply(ctx context.Context, input store.CreateThreadR
 		quotedSnapshot = snap
 		quotedAuthorID = authorID
 	}
-	var channelID any
-	var directConversationID any
+	var channelID sql.NullString
+	var directConversationID sql.NullString
 	if root.DirectConversationID != "" {
-		directConversationID = root.DirectConversationID
+		directConversationID = sqlText(root.DirectConversationID)
 	} else {
-		channelID = root.ChannelID
+		channelID = sqlText(root.ChannelID)
 	}
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO messages (id, workspace_id, channel_id, direct_conversation_id, author_id, parent_message_id, thread_root_id, channel_seq, thread_seq, body, body_format, created_at, quoted_message_id, quoted_body_snapshot, quoted_author_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 'markdown', ?, ?, ?, ?)`, id, root.WorkspaceID, channelID, directConversationID, input.AuthorID, root.ID, root.ID, seq, body, createdAt, nullableQuotedID(quotedID), quotedSnapshot, nullableQuotedID(quotedAuthorID)); err != nil {
+	if err := qtx.InsertThreadReply(ctx, storedb.InsertThreadReplyParams{
+		ID:                   id,
+		WorkspaceID:          root.WorkspaceID,
+		ChannelID:            channelID,
+		DirectConversationID: directConversationID,
+		AuthorID:             input.AuthorID,
+		ParentMessageID:      sqlText(root.ID),
+		ThreadRootID:         root.ID,
+		ThreadSeq:            sqlInt64(seq),
+		Body:                 body,
+		CreatedAt:            createdAt,
+		QuotedMessageID:      sqlOptionalText(quotedID),
+		QuotedBodySnapshot:   quotedSnapshot,
+		QuotedAuthorID:       sqlOptionalText(quotedAuthorID),
+	}); err != nil {
 		return store.Message{}, store.ThreadState{}, nil, err
 	}
 	state, err := updateThreadState(ctx, tx, root.ID, input.AuthorID, createdAt)

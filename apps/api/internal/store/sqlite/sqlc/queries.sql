@@ -337,6 +337,28 @@ VALUES (sqlc.arg(id), sqlc.arg(workspace_id), NULL, sqlc.arg(direct_conversation
 INSERT INTO thread_state (root_message_id)
 VALUES (sqlc.arg(root_message_id));
 
+-- name: GetThreadState :one
+SELECT root_message_id, reply_count, last_reply_at, last_reply_author_ids_json
+FROM thread_state
+WHERE root_message_id = sqlc.arg(root_message_id);
+
+-- name: ThreadNextSeq :one
+SELECT CAST(COALESCE(MAX(thread_seq), 0) + 1 AS INTEGER) AS next_seq
+FROM messages
+WHERE thread_root_id = sqlc.arg(thread_root_id)
+  AND parent_message_id = sqlc.arg(parent_message_id);
+
+-- name: UpdateThreadState :exec
+UPDATE thread_state
+SET reply_count = reply_count + 1,
+    last_reply_at = sqlc.arg(last_reply_at),
+    last_reply_author_ids_json = sqlc.arg(last_reply_author_ids_json)
+WHERE root_message_id = sqlc.arg(root_message_id);
+
+-- name: InsertThreadReply :exec
+INSERT INTO messages (id, workspace_id, channel_id, direct_conversation_id, author_id, parent_message_id, thread_root_id, channel_seq, thread_seq, body, body_format, created_at, quoted_message_id, quoted_body_snapshot, quoted_author_id)
+VALUES (sqlc.arg(id), sqlc.arg(workspace_id), sqlc.arg(channel_id), sqlc.arg(direct_conversation_id), sqlc.arg(author_id), sqlc.arg(parent_message_id), sqlc.arg(thread_root_id), NULL, sqlc.arg(thread_seq), sqlc.arg(body), 'markdown', sqlc.arg(created_at), sqlc.arg(quoted_message_id), sqlc.arg(quoted_body_snapshot), sqlc.arg(quoted_author_id));
+
 -- name: GetChannel :one
 SELECT id, COALESCE(route_id, '') AS route_id, workspace_id, name, kind, created_at, archived_at
 FROM channels
@@ -382,6 +404,14 @@ WHERE e.workspace_id = sqlc.arg(workspace_id)
   )
 ORDER BY e.cursor
 LIMIT sqlc.arg(limit_count);
+
+-- name: InsertEvent :exec
+INSERT INTO events (id, cursor, workspace_id, channel_id, type, seq, payload_json, created_at, is_private)
+VALUES (sqlc.arg(id), sqlc.arg(cursor), sqlc.arg(workspace_id), sqlc.arg(channel_id), sqlc.arg(type), sqlc.arg(seq), sqlc.arg(payload_json), sqlc.arg(created_at), sqlc.arg(is_private));
+
+-- name: InsertEventRecipient :exec
+INSERT INTO event_recipients (event_id, user_id)
+VALUES (sqlc.arg(event_id), sqlc.arg(user_id));
 
 -- name: PruneEvents :execrows
 DELETE FROM events AS e
