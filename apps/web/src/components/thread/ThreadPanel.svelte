@@ -1,5 +1,6 @@
 <script lang="ts">
   import Avatar from "../avatar/Avatar.svelte";
+  import { enhanceMarkdownGifs } from "../../lib/actions/markdownGifs";
   import { handleLabel } from "../../lib/chat/people";
   import { markdown, time } from "../../lib/format";
   import { uploadURL } from "../../lib/uploads";
@@ -88,7 +89,7 @@
           onclick={() => onSetReplyTarget(root, "thread")}
         >↩</button>
       </header>
-      <div class="markdown">{@html markdown(root.body)}</div>
+      <div class="markdown" use:enhanceMarkdownGifs>{@html markdown(root.body)}</div>
       {#if root.attachments?.length}
         <div class="attachment-grid compact" aria-label="Attachments">
           {#each root.attachments as attachment (attachment.id)}
@@ -127,7 +128,7 @@
             >↩</button>
           </header>
           <QuoteBlock message={reply} onJump={onJumpToQuote} />
-          <div class="markdown">{@html markdown(reply.body)}</div>
+          <div class="markdown" use:enhanceMarkdownGifs>{@html markdown(reply.body)}</div>
           {#if reply.attachments?.length}
             <div class="attachment-grid compact" aria-label="Attachments">
               {#each reply.attachments as attachment (attachment.id)}

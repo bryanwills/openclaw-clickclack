@@ -89,6 +89,8 @@
 - Added Slack-style user profile side panes, automatic People shortcuts in the
   sidebar, inline video playback, tighter message spacing, and an image viewer
   modal for inline images.
+- Added controlled Markdown GIF playback: GIFs play briefly, pause on a still
+  preview, and expose a lower-right replay button.
 - Added a public product website at the web root while keeping the chat app at
   `/app` locally and on `app.clickclack.chat` when served from that host.
 - Added an agent-friendly ClickClack client mode to the Go binary with

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { threadSummary } from "../../lib/chat/messages";
+  import { enhanceMarkdownGifs } from "../../lib/actions/markdownGifs";
   import { time, markdown } from "../../lib/format";
   import { uploadURL } from "../../lib/uploads";
   import type { Message } from "../../lib/types";
@@ -48,7 +49,7 @@
   <span class="row-stamp" aria-hidden="true">{index === 0 ? "" : time(message.created_at)}</span>
   <div class="message-content">
     <QuoteBlock {message} onJump={onJumpToQuote} />
-    <div class="markdown">{@html markdown(message.body)}</div>
+    <div class="markdown" use:enhanceMarkdownGifs>{@html markdown(message.body)}</div>
     {#if message.attachments?.length}
       <div class="attachment-grid" aria-label="Attachments">
         {#each message.attachments as attachment (attachment.id)}

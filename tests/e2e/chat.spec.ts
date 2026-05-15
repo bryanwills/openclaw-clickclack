@@ -284,10 +284,21 @@ test("sends messages, searches, uploads, opens a thread, and creates a DM", asyn
   await expect(videoDownload).toHaveAttribute("href", /\/api\/uploads\//);
   await expect(inlineVideo).not.toHaveAttribute("controls", "");
 
+  await page.route("https://media.giphy.com/**", async (route) => {
+    await route.fulfill({
+      contentType: "image/gif",
+      body: Buffer.from("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==", "base64"),
+    });
+  });
   await page.getByRole("button", { name: "GIF picker" }).click();
   await page.getByLabel("Search GIFs").fill("ship");
   await page.getByRole("button", { name: /Ship it/ }).click();
   await expect(page.getByLabel("Message body")).toHaveValue(/!\[Ship it\]/);
+  await page.getByRole("button", { name: "Send" }).click();
+  const replayGif = page.getByRole("button", { name: "Replay GIF Ship it" });
+  await expect(replayGif).toBeVisible({ timeout: 7_000 });
+  await replayGif.click();
+  await expect(replayGif).toBeVisible({ timeout: 7_000 });
 
   await page.getByRole("button", { name: "Open thread" }).first().click();
   await expect(page.getByText("Thread", { exact: true })).toBeVisible();

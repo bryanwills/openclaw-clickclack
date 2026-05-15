@@ -779,6 +779,82 @@
   cursor: zoom-in;
 }
 
+.gif-player {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: top;
+}
+
+.gif-player img {
+  display: block;
+}
+
+.gif-badge,
+.gif-replay {
+  position: absolute;
+  z-index: 1;
+  border: 0;
+  color: white;
+  backdrop-filter: blur(10px);
+}
+
+.gif-badge {
+  left: 9px;
+  bottom: 9px;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.54);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+}
+
+.gif-replay {
+  right: 9px;
+  bottom: 9px;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(10, 12, 18, 0.72);
+  font-size: 16px;
+  line-height: 1;
+  opacity: 0;
+  transform: scale(0.88);
+  pointer-events: none;
+  transition:
+    opacity 130ms ease,
+    transform 130ms ease,
+    background 120ms ease;
+}
+
+.gif-replay:hover {
+  background: var(--accent);
+}
+
+.gif-player.paused .gif-replay {
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+}
+
+.gif-player.playing .gif-badge {
+  animation: gif-breathe 900ms ease-in-out infinite;
+}
+
+@keyframes gif-breathe {
+  0%,
+  100% {
+    opacity: 0.85;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
 .attachment-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));

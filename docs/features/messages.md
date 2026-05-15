@@ -86,6 +86,11 @@ inside rendered Markdown, opens an in-app image viewer with an Open original
 link. Markdown image URLs, including animated GIF URLs, render inline through
 the same sanitized Markdown path.
 
+Giphy-backed Markdown GIF images play briefly, then swap to a still preview
+with a small replay button in the lower-right corner. Pressing replay reloads
+the animated GIF and repeats the same play-once behavior. Other GIF URLs render
+normally when no still preview is available.
+
 ## Author hydration
 
 `ListMessages` and `GetThread` join `users` and populate `Message.author` so

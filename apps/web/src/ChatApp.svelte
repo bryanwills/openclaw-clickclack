@@ -4,6 +4,7 @@
   import { APIError, api } from "./lib/api";
   import { probeMediaDimensions } from "./lib/media";
   import { gifLibrary } from "./lib/gifs";
+  import { markdownImageViewerURL } from "./lib/actions/markdownGifs";
   import {
     INITIAL_MESSAGE_LIMIT,
     MAX_RETAINED_MESSAGE_WINDOWS,
@@ -1926,7 +1927,7 @@
     if (!(target instanceof HTMLImageElement)) return;
     if (!target.closest(".markdown")) return;
     event.preventDefault();
-    openImageViewer(target.currentSrc || target.src, target.alt || "Image");
+    openImageViewer(markdownImageViewerURL(target), target.alt || "Image");
   }
 
   function appendToComposer(snippet: string) {
