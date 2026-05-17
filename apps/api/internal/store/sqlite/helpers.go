@@ -327,3 +327,7 @@ func slug(value string) string {
 	value = slugRE.ReplaceAllString(value, "-")
 	return strings.Trim(value, "-")
 }
+
+func isReservedWorkspaceSlug(value string) bool {
+	return value == "clickclack" || value == "guests"
+}

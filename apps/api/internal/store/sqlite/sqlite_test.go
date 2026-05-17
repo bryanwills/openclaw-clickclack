@@ -47,6 +47,9 @@ func TestStoreValidationAndAdminHelpers(t *testing.T) {
 	if _, err := st.CreateWorkspace(ctx, store.CreateWorkspaceInput{Name: "ClickClack", Slug: workspace.Slug}, owner.ID); err == nil {
 		t.Fatal("expected duplicate workspace slug error")
 	}
+	if _, err := st.CreateWorkspace(ctx, store.CreateWorkspaceInput{Name: "Guests", Slug: "guests"}, owner.ID); err == nil {
+		t.Fatal("expected reserved workspace slug error")
+	}
 	if _, _, err := st.CreateMessage(ctx, store.CreateMessageInput{ChannelID: channel.ID, AuthorID: owner.ID}); err == nil {
 		t.Fatal("expected empty message error")
 	}

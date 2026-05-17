@@ -116,11 +116,7 @@ func (s *Store) EnsureBootstrap(ctx context.Context, name, email string) (store.
 	if err != nil {
 		return store.User{}, err
 	}
-	ws, err := s.CreateWorkspace(ctx, store.CreateWorkspaceInput{Name: "ClickClack", Slug: "clickclack"}, user.ID)
-	if err != nil {
-		return store.User{}, err
-	}
-	_, _, err = s.CreateChannel(ctx, store.CreateChannelInput{WorkspaceID: ws.ID, Name: "general", Kind: "public", UserID: user.ID})
+	_, err = s.EnsureDefaultWorkspaceMember(ctx, user.ID)
 	return user, err
 }
 
@@ -294,6 +290,9 @@ func (s *Store) CreateWorkspace(ctx context.Context, input store.CreateWorkspace
 	}
 	if w.Slug == "" {
 		w.Slug = slug(w.Name)
+	}
+	if isReservedWorkspaceSlug(w.Slug) {
+		return store.Workspace{}, errors.New("workspace slug is reserved")
 	}
 	qtx := s.q.WithTx(tx)
 	inserted := false
@@ -511,6 +510,9 @@ func (s *Store) CreateMessage(ctx context.Context, input store.CreateMessageInpu
 		if existing.ChannelID != input.ChannelID || existing.DirectConversationID != "" || existing.ParentMessageID != nil || existing.Body != body || !sameQuotedMessageID(existing, quotedID) {
 			return store.Message{}, store.Event{}, store.ErrClientNonceConflict
 		}
+		if err := requireMessageAccessTx(ctx, tx, existing, input.AuthorID); err != nil {
+			return store.Message{}, store.Event{}, err
+		}
 		return existing, store.Event{}, nil
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return store.Message{}, store.Event{}, err
@@ -542,6 +544,9 @@ func (s *Store) CreateMessage(ctx context.Context, input store.CreateMessageInpu
 	}); err != nil {
 		if existing, lookupErr := getMessageByClientNonceTx(ctx, tx, input.AuthorID, nonce); lookupErr == nil {
 			if existing.ChannelID == input.ChannelID && existing.DirectConversationID == "" && existing.ParentMessageID == nil && existing.Body == body && sameQuotedMessageID(existing, quotedID) {
+				if err := requireMessageAccessTx(ctx, tx, existing, input.AuthorID); err != nil {
+					return store.Message{}, store.Event{}, err
+				}
 				return existing, store.Event{}, nil
 			}
 			return store.Message{}, store.Event{}, store.ErrClientNonceConflict

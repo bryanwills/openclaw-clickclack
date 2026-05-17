@@ -369,6 +369,50 @@ func TestGuestPostBudgetIgnoresPreDemotionMemberPosts(t *testing.T) {
 	}
 }
 
+func TestDemotedGuestCannotReplayHiddenChannelNonce(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	st := newTestStore(t)
+
+	moderator, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: "Moderator", Email: "nonce-mod@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace, err := st.EnsureDefaultGuestWorkspaceMember(ctx, moderator.ID, store.WorkspaceRoleModerator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	member, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: "Member", Email: "nonce-member@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.EnsureDefaultGuestWorkspaceMember(ctx, member.ID, store.WorkspaceRoleMember); err != nil {
+		t.Fatal(err)
+	}
+	channels, err := st.ListChannels(ctx, workspace.ID, moderator.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var generalChannelID string
+	for _, channel := range channels {
+		if channel.Name == "general" {
+			generalChannelID = channel.ID
+		}
+	}
+	if generalChannelID == "" {
+		t.Fatalf("expected general channel, got %#v", channels)
+	}
+	if _, _, err := st.CreateMessage(ctx, store.CreateMessageInput{ChannelID: generalChannelID, AuthorID: member.ID, Body: "before demotion", Nonce: "nonce-replay"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.UpdateMemberModeration(ctx, store.UpdateMemberModerationInput{WorkspaceID: workspace.ID, ActorUserID: moderator.ID, TargetUserID: member.ID, Role: store.WorkspaceRoleGuest}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.CreateMessage(ctx, store.CreateMessageInput{ChannelID: generalChannelID, AuthorID: member.ID, Body: "before demotion", Nonce: "nonce-replay"}); !errors.Is(err, store.ErrModerationRestricted) {
+		t.Fatalf("expected replayed hidden channel nonce to be blocked, got %v", err)
+	}
+}
+
 func TestDemotedGuestCannotUseExistingDirectConversation(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
