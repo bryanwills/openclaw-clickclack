@@ -445,6 +445,7 @@ type Store interface {
 	ListWorkspaces(ctx context.Context, userID string) ([]Workspace, error)
 	CreateWorkspace(ctx context.Context, input CreateWorkspaceInput, ownerID string) (Workspace, error)
 	GetWorkspace(ctx context.Context, workspaceID, userID string) (Workspace, error)
+	CanPublishEphemeral(ctx context.Context, workspaceID, channelID, directConversationID, userID string) error
 	ResolveRouteTarget(ctx context.Context, userID, workspaceRouteID, targetRouteID string) (RouteTarget, error)
 	ResolveLegacyRouteTarget(ctx context.Context, userID, workspaceID, targetID string) (RouteTarget, error)
 	ListChannels(ctx context.Context, workspaceID, userID string) ([]Channel, error)

@@ -181,6 +181,10 @@ func (s *Server) publishEphemeral(w http.ResponseWriter, r *http.Request) {
 		delete(body.Payload, "channel_id")
 		delete(body.Payload, "direct_conversation_id")
 	}
+	if err := s.store.CanPublishEphemeral(r.Context(), body.WorkspaceID, channelID, directConversationID, act.user.ID); err != nil {
+		writeStoreError(w, err)
+		return
+	}
 	body.Payload["user_id"] = act.user.ID
 	event := store.Event{
 		ID:               "eph_" + time.Now().UTC().Format("20060102150405.000000000"),

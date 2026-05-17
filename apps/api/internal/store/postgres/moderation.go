@@ -101,6 +101,24 @@ func (s *Store) requireGuestChannelAccess(ctx context.Context, workspaceID, chan
 	return requireGuestChannelAccessTx(ctx, tx, workspaceID, channelID, userID)
 }
 
+func (s *Store) CanPublishEphemeral(ctx context.Context, workspaceID, channelID, directConversationID, userID string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if directConversationID != "" {
+		return requireCanSendDirectTx(ctx, tx, workspaceID, userID)
+	}
+	if channelID != "" {
+		return requireCanPostTx(ctx, tx, workspaceID, channelID, userID)
+	}
+	if err := requireMembershipTx(ctx, tx, workspaceID, userID); err != nil {
+		return err
+	}
+	return requireNoModerationBlockTx(ctx, tx, workspaceID, userID)
+}
+
 func requireNoModerationBlockTx(ctx context.Context, tx *sql.Tx, workspaceID, userID string) error {
 	var timeoutUntil, blockedAt sql.NullString
 	row, err := storedb.New(tx).GetMemberModerationState(ctx, storedb.GetMemberModerationStateParams{WorkspaceID: workspaceID, UserID: userID})
