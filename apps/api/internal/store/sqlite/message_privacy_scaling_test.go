@@ -491,6 +491,19 @@ func TestMessagePrivacyScalingChannelAndUploadVisibilityCoverage(t *testing.T) {
 	if _, err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: memberMessage.ID, UploadID: upload.ID, UserID: member.ID}); err != nil {
 		t.Fatal(err)
 	}
+	demotedUpload, err := st.CreateUpload(ctx, store.CreateUploadInput{WorkspaceID: workspace.ID, OwnerID: member.ID, Filename: "demoted.txt", ContentType: "text/plain", ByteSize: 1, StoragePath: "/tmp/demoted.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: memberMessage.ID, UploadID: demotedUpload.ID, UserID: member.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.UpdateMemberModeration(ctx, store.UpdateMemberModerationInput{WorkspaceID: workspace.ID, ActorUserID: owner.ID, TargetUserID: member.ID, Role: store.WorkspaceRoleGuest}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.GetUpload(ctx, demotedUpload.ID, member.ID); err == nil {
+		t.Fatal("expected demoted upload owner to lose attached upload visibility")
+	}
 
 	otherWorkspace, err := st.CreateWorkspace(ctx, store.CreateWorkspaceInput{Name: "Other Upload Workspace"}, owner.ID)
 	if err != nil {
@@ -641,6 +654,12 @@ func TestMessagePrivacyScalingHotPathQueryPlans(t *testing.T) {
 			query:     `EXPLAIN QUERY PLAN SELECT u.id FROM message_attachments ma JOIN uploads u ON u.id = ma.upload_id WHERE ma.message_id = ? ORDER BY ma.created_at`,
 			args:      []any{"msg_x"},
 			wantIndex: "idx_message_attachments_message_created",
+		},
+		{
+			name:      "upload attachment visibility",
+			query:     `EXPLAIN QUERY PLAN SELECT ma.message_id FROM message_attachments ma WHERE ma.upload_id = ? LIMIT 1`,
+			args:      []any{"upl_x"},
+			wantIndex: "idx_message_attachments_upload_message",
 		},
 		{
 			name: "event replay",

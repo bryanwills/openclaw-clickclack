@@ -128,38 +128,21 @@ func (s *Store) GetUpload(ctx context.Context, uploadID, userID string) (store.U
 	if err := s.requireMembership(ctx, upload.WorkspaceID, userID); err != nil {
 		return store.Upload{}, err
 	}
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT ma.message_id
-		FROM message_attachments ma
-		JOIN messages m ON m.id = ma.message_id
-		WHERE ma.upload_id = $1 AND m.deleted_at IS NULL`, uploadID)
+	hasLiveAttachments, err := uploadHasLiveAttachmentsTx(ctx, s.db, uploadID)
 	if err != nil {
 		return store.Upload{}, err
 	}
-	defer rows.Close()
-	messageIDs := []string{}
-	for rows.Next() {
-		var messageID string
-		if err := rows.Scan(&messageID); err != nil {
-			return store.Upload{}, err
-		}
-		messageIDs = append(messageIDs, messageID)
-	}
-	if err := rows.Err(); err != nil {
-		return store.Upload{}, err
-	}
-	if err := rows.Close(); err != nil {
-		return store.Upload{}, err
-	}
-	for _, messageID := range messageIDs {
-		if _, err := s.GetMessage(ctx, messageID, userID); err == nil {
+	if !hasLiveAttachments {
+		if upload.OwnerID == userID {
 			return upload, nil
 		}
-	}
-	if len(messageIDs) > 0 {
 		return store.Upload{}, errors.New("upload is not visible")
 	}
-	if upload.OwnerID != userID {
+	visible, err := uploadVisibleToUserTx(ctx, s.db, uploadID, userID)
+	if err != nil {
+		return store.Upload{}, err
+	}
+	if !visible {
 		return store.Upload{}, errors.New("upload is not visible")
 	}
 	return upload, nil
@@ -204,37 +187,9 @@ func (s *Store) AttachUpload(ctx context.Context, input store.AttachUploadInput)
 	}
 	upload := storeUploadFromGetUpload(uploadRow)
 	if upload.OwnerID != input.UserID {
-		rows, err := tx.QueryContext(ctx, `
-			SELECT ma.message_id
-			FROM message_attachments ma
-			JOIN messages m ON m.id = ma.message_id
-			WHERE ma.upload_id = $1 AND m.deleted_at IS NULL`, input.UploadID)
+		visible, err := uploadVisibleToUserTx(ctx, tx, input.UploadID, input.UserID)
 		if err != nil {
 			return store.Event{}, err
-		}
-		messageIDs := []string{}
-		for rows.Next() {
-			var messageID string
-			if err := rows.Scan(&messageID); err != nil {
-				rows.Close()
-				return store.Event{}, err
-			}
-			messageIDs = append(messageIDs, messageID)
-		}
-		if err := rows.Err(); err != nil {
-			rows.Close()
-			return store.Event{}, err
-		}
-		if err := rows.Close(); err != nil {
-			return store.Event{}, err
-		}
-		visible := false
-		for _, messageID := range messageIDs {
-			attachedMessage, err := getMessageTx(ctx, tx, messageID)
-			if err == nil && attachedMessage.DeletedAt == nil && requireMessageAccessTx(ctx, tx, attachedMessage, input.UserID) == nil {
-				visible = true
-				break
-			}
 		}
 		if !visible {
 			return store.Event{}, errors.New("upload is not visible")
@@ -260,6 +215,48 @@ func (s *Store) AttachUpload(ctx context.Context, input store.AttachUploadInput)
 		return store.Event{}, err
 	}
 	return event, tx.Commit()
+}
+
+type uploadVisibilityQueryer interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+func uploadHasLiveAttachmentsTx(ctx context.Context, q uploadVisibilityQueryer, uploadID string) (bool, error) {
+	var one int
+	err := q.QueryRowContext(ctx, `
+		SELECT 1
+		FROM message_attachments ma
+		JOIN messages m ON m.id = ma.message_id
+		WHERE ma.upload_id = $1 AND m.deleted_at IS NULL
+		LIMIT 1`, uploadID).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+func uploadVisibleToUserTx(ctx context.Context, q uploadVisibilityQueryer, uploadID, userID string) (bool, error) {
+	var one int
+	err := q.QueryRowContext(ctx, `
+		SELECT 1
+		FROM message_attachments ma
+		JOIN messages m ON m.id = ma.message_id
+		JOIN workspace_members wm ON wm.workspace_id = m.workspace_id AND wm.user_id = $1
+		LEFT JOIN channels c ON c.id = m.channel_id AND c.workspace_id = m.workspace_id
+		LEFT JOIN direct_conversation_members dcm ON dcm.conversation_id = m.direct_conversation_id AND dcm.user_id = $2
+		WHERE ma.upload_id = $3
+		  AND m.deleted_at IS NULL
+		  AND (
+		    (m.channel_id IS NOT NULL AND (wm.role <> $4 OR c.name = 'guest'))
+		    OR (m.direct_conversation_id IS NOT NULL AND wm.role <> $5 AND dcm.user_id IS NOT NULL)
+		  )
+		LIMIT 1`,
+		userID, userID, uploadID, store.WorkspaceRoleGuest, store.WorkspaceRoleGuest,
+	).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 func (s *Store) hydrateAttachments(ctx context.Context, messages []store.Message) ([]store.Message, error) {
