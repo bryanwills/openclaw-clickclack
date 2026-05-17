@@ -307,6 +307,13 @@ func TestBlockedModeratorCannotModerate(t *testing.T) {
 	if _, err := st.EnsureDefaultGuestWorkspaceMember(ctx, moderator.ID, store.WorkspaceRoleModerator); err != nil {
 		t.Fatal(err)
 	}
+	timedModerator, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: "Timed Moderator", Email: "timed-mod@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.EnsureDefaultGuestWorkspaceMember(ctx, timedModerator.ID, store.WorkspaceRoleModerator); err != nil {
+		t.Fatal(err)
+	}
 	guest, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: "Guest", Email: "blocked-mod-guest@example.com"})
 	if err != nil {
 		t.Fatal(err)
@@ -324,6 +331,34 @@ func TestBlockedModeratorCannotModerate(t *testing.T) {
 	}
 	if _, _, err := st.UpdateMemberModeration(ctx, store.UpdateMemberModerationInput{WorkspaceID: workspace.ID, ActorUserID: moderator.ID, TargetUserID: guest.ID, Role: store.WorkspaceRoleMember}); !errors.Is(err, store.ErrModerationRestricted) {
 		t.Fatalf("expected blocked moderator to lose moderation powers, got %v", err)
+	}
+	blockEventNote := "blocked moderator should not see this"
+	_, blockEvent, err := st.UpdateMemberModeration(ctx, store.UpdateMemberModerationInput{WorkspaceID: workspace.ID, ActorUserID: owner.ID, TargetUserID: guest.ID, Role: store.WorkspaceRoleMember, ModerationNote: &blockEventNote})
+	if err != nil {
+		t.Fatal(err)
+	}
+	blockedModeratorEvents, err := st.ListEventsAfter(ctx, workspace.ID, moderator.ID, "", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if eventListContains(blockedModeratorEvents, blockEvent.ID) {
+		t.Fatalf("blocked moderator received private moderation event: %#v", blockedModeratorEvents)
+	}
+	timeoutUntil := time.Now().Add(time.Hour).UTC().Format(time.RFC3339Nano)
+	if _, _, err := st.UpdateMemberModeration(ctx, store.UpdateMemberModerationInput{WorkspaceID: workspace.ID, ActorUserID: owner.ID, TargetUserID: timedModerator.ID, TimeoutUntil: &timeoutUntil}); err != nil {
+		t.Fatal(err)
+	}
+	timeoutEventNote := "timed moderator should not see this"
+	_, timeoutEvent, err := st.UpdateMemberModeration(ctx, store.UpdateMemberModerationInput{WorkspaceID: workspace.ID, ActorUserID: owner.ID, TargetUserID: guest.ID, ModerationNote: &timeoutEventNote})
+	if err != nil {
+		t.Fatal(err)
+	}
+	timedModeratorEvents, err := st.ListEventsAfter(ctx, workspace.ID, timedModerator.ID, "", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if eventListContains(timedModeratorEvents, timeoutEvent.ID) {
+		t.Fatalf("timed-out moderator received private moderation event: %#v", timedModeratorEvents)
 	}
 }
 

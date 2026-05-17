@@ -405,8 +405,16 @@ func moderationEventRecipientsTx(ctx context.Context, tx *sql.Tx, workspaceID, t
 	}
 	seen := map[string]struct{}{targetUserID: {}}
 	recipients := []string{targetUserID}
+	now := time.Now().UTC()
 	for _, row := range rows {
 		if row.Role != store.WorkspaceRoleOwner && row.Role != store.WorkspaceRoleModerator {
+			continue
+		}
+		active, err := isActiveModerationRecipient(row.TimeoutUntil, row.BlockedAt, now)
+		if err != nil {
+			return nil, err
+		}
+		if !active {
 			continue
 		}
 		if _, ok := seen[row.ID]; ok {
@@ -416,6 +424,20 @@ func moderationEventRecipientsTx(ctx context.Context, tx *sql.Tx, workspaceID, t
 		recipients = append(recipients, row.ID)
 	}
 	return recipients, nil
+}
+
+func isActiveModerationRecipient(timeoutUntil, blockedAt string, now time.Time) (bool, error) {
+	if blockedAt != "" {
+		return false, nil
+	}
+	if timeoutUntil == "" {
+		return true, nil
+	}
+	timeoutAt, err := time.Parse(time.RFC3339Nano, timeoutUntil)
+	if err != nil {
+		return false, err
+	}
+	return !timeoutAt.After(now), nil
 }
 
 func (s *Store) UserHasNonGuestMembership(ctx context.Context, userID string) (bool, error) {

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Stopped blocked or timed-out moderators from receiving private member-moderation events.
 - Prevented workspace moderators from moderating privileged bot members.
 - Reserved the `guest` channel name, locked Postgres moderation role checks during member updates, and bounded direct-conversation member sets after DeepSec review.
 - Hardened JSON request body limits, realtime typing scope validation, and upload attachment authorization after DeepSec review.
