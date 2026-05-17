@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Added thumbnail previews for PDF/text uploads and inline audio controls in chat messages.
+- Added first-page thumbnail previews for PDF uploads, thumbnail cards for text uploads, inline audio controls in chat messages, and open GitHub guest-room sign-in.
 - Redacted stored token hashes and upload storage paths from JSON exports, and constrained local upload serving/deletion to the configured upload directory.
 - Bounded outbound upload and GitHub OAuth HTTP calls with default timeouts, streamed R2 upload saves without full in-memory buffering, and constrained R2 object access to the configured prefix.
 - Allowed upload clients to pass `workspace_id` as a query parameter so multipart file parts no longer depend on form field ordering.

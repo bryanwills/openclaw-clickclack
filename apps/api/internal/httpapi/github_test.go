@@ -145,9 +145,55 @@ func TestGitHubOAuthFlow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
 		t.Fatalf("expected session auth, got %s", resp.Status)
+	}
+	resp.Body.Close()
+
+	req, err = http.NewRequest(http.MethodGet, server.URL+"/api/workspaces", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.AddCookie(sessionCookie)
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var openWorkspaces struct {
+		Workspaces []struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+			Slug string `json:"slug"`
+		} `json:"workspaces"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&openWorkspaces); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || len(openWorkspaces.Workspaces) != 1 || openWorkspaces.Workspaces[0].Name != "Guests" || openWorkspaces.Workspaces[0].Slug != "guests" {
+		t.Fatalf("expected open github login to join guest workspace, got %s %#v", resp.Status, openWorkspaces.Workspaces)
+	}
+	req, err = http.NewRequest(http.MethodGet, server.URL+"/api/workspaces/"+openWorkspaces.Workspaces[0].ID+"/channels", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.AddCookie(sessionCookie)
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var guestChannels struct {
+		Channels []struct {
+			Name string `json:"name"`
+		} `json:"channels"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&guestChannels); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || len(guestChannels.Channels) != 1 || guestChannels.Channels[0].Name != "guest" {
+		t.Fatalf("expected open github login to land in guest channel, got %s %#v", resp.Status, guestChannels.Channels)
 	}
 
 	for _, tc := range []struct {

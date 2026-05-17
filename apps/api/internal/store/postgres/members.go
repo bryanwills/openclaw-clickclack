@@ -95,3 +95,104 @@ func (s *Store) EnsureDefaultWorkspaceMember(ctx context.Context, userID string)
 	}
 	return workspace, tx.Commit()
 }
+
+func (s *Store) EnsureDefaultGuestWorkspaceMember(ctx context.Context, userID string) (store.Workspace, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return store.Workspace{}, err
+	}
+	defer tx.Rollback()
+	qtx := s.q.WithTx(tx)
+
+	workspace, err := postgresWorkspaceBySlugTx(ctx, tx, "guests")
+	if err != nil && err != sql.ErrNoRows {
+		return store.Workspace{}, err
+	}
+	if err == sql.ErrNoRows {
+		workspace = store.Workspace{ID: newID("wsp"), Name: "Guests", Slug: "guests", CreatedAt: now()}
+		insertedWorkspace := false
+		for attempt := 0; attempt < routeIDInsertAttempts; attempt++ {
+			workspaceRouteID, err := newRouteID('T')
+			if err != nil {
+				return store.Workspace{}, err
+			}
+			workspace.RouteID = workspaceRouteID
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO workspaces (id, route_id, name, slug, created_at)
+				VALUES ($1, $2, $3, $4, $5)
+				ON CONFLICT DO NOTHING`,
+				workspace.ID, sqlText(workspace.RouteID), workspace.Name, workspace.Slug, workspace.CreatedAt,
+			); err != nil {
+				return store.Workspace{}, err
+			}
+			workspace, err = postgresWorkspaceBySlugTx(ctx, tx, "guests")
+			if err == sql.ErrNoRows {
+				continue
+			}
+			if err != nil {
+				return store.Workspace{}, err
+			}
+			insertedWorkspace = true
+			break
+		}
+		if !insertedWorkspace {
+			return store.Workspace{}, errors.New("could not create guest workspace route_id after collision retries")
+		}
+	}
+	if err := postgresEnsureNamedChannelTx(ctx, tx, workspace.ID, "guest", "public"); err != nil {
+		return store.Workspace{}, err
+	}
+	if err := qtx.InsertWorkspaceMember(ctx, storedb.InsertWorkspaceMemberParams{
+		WorkspaceID: workspace.ID,
+		UserID:      userID,
+		Role:        "member",
+		CreatedAt:   now(),
+	}); err != nil {
+		return store.Workspace{}, err
+	}
+	return workspace, tx.Commit()
+}
+
+func postgresWorkspaceBySlugTx(ctx context.Context, tx *sql.Tx, slug string) (store.Workspace, error) {
+	var workspace store.Workspace
+	err := tx.QueryRowContext(ctx, `SELECT id, COALESCE(route_id, ''), name, slug, created_at FROM workspaces WHERE slug = $1`, slug).Scan(
+		&workspace.ID, &workspace.RouteID, &workspace.Name, &workspace.Slug, &workspace.CreatedAt,
+	)
+	return workspace, err
+}
+
+func postgresEnsureNamedChannelTx(ctx context.Context, tx *sql.Tx, workspaceID, name, kind string) error {
+	var existingID string
+	err := tx.QueryRowContext(ctx, `SELECT id FROM channels WHERE workspace_id = $1 AND name = $2`, workspaceID, name).Scan(&existingID)
+	if err == nil {
+		return nil
+	}
+	if err != sql.ErrNoRows {
+		return err
+	}
+	for attempt := 0; attempt < routeIDInsertAttempts; attempt++ {
+		routeID, err := newRouteID('C')
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO channels (id, route_id, workspace_id, name, kind, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6)
+			ON CONFLICT DO NOTHING`,
+			newID("chn"), sqlText(routeID), workspaceID, name, kind, now(),
+		); err != nil {
+			if isRouteIDConflict(err) {
+				continue
+			}
+			return err
+		}
+		err = tx.QueryRowContext(ctx, `SELECT id FROM channels WHERE workspace_id = $1 AND name = $2`, workspaceID, name).Scan(&existingID)
+		if err == nil {
+			return nil
+		}
+		if err != sql.ErrNoRows {
+			return err
+		}
+	}
+	return errors.New("could not create guest channel route_id after collision retries")
+}

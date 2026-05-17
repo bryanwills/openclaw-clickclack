@@ -116,11 +116,9 @@ func (s *Server) githubCallback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	if strings.TrimSpace(s.githubOAuth.AllowedOrg) != "" {
-		if _, err := s.store.EnsureDefaultWorkspaceMember(r.Context(), user.ID); err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
+	if _, err := s.ensureGitHubWorkspace(r.Context(), user.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
 	}
 	session, err := s.store.CreateSession(r.Context(), user.ID)
 	if err != nil {
@@ -142,6 +140,13 @@ func (s *Server) clearGitHubStateCookie(w http.ResponseWriter, r *http.Request) 
 		Secure:   s.secureCookies(r),
 		SameSite: http.SameSiteLaxMode,
 	})
+}
+
+func (s *Server) ensureGitHubWorkspace(ctx context.Context, userID string) (store.Workspace, error) {
+	if strings.TrimSpace(s.githubOAuth.AllowedOrg) != "" {
+		return s.store.EnsureDefaultWorkspaceMember(ctx, userID)
+	}
+	return s.store.EnsureDefaultGuestWorkspaceMember(ctx, userID)
 }
 
 func (s *Server) exchangeGitHubCode(ctx context.Context, r *http.Request, code string) (string, error) {

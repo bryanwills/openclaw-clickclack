@@ -1,4 +1,11 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
+  import type {
+    PDFDocumentLoadingTask,
+    PDFDocumentProxy,
+    PDFPageProxy,
+    RenderTask,
+  } from "pdfjs-dist";
   import type { Upload } from "../lib/types";
 
   type Props = {
@@ -13,9 +20,13 @@
   const MIN_MEDIA_HEIGHT = 120;
 
   let videoEl: HTMLVideoElement | null = $state(null);
+  let pdfCanvasEl: HTMLCanvasElement | null = $state(null);
   let started = $state(false);
+  let pdfThumbnailReady = $state(false);
+  let pdfThumbnailFailed = $state(false);
   let loadedDurationLabel = $state("");
   let durationLabel = $derived(loadedDurationLabel || formatDuration(upload.duration_ms ?? 0));
+  let cleanupPDFThumbnail: (() => void) | null = null;
 
   let contentType = $derived((upload.content_type || "").split(";")[0].trim().toLowerCase());
   let isImage = $derived(contentType.startsWith("image/"));
@@ -63,6 +74,70 @@
     if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
     return `${(size / (1024 * 1024)).toFixed(1)} MB`;
   }
+
+  $effect(() => {
+    if (!isPDF || !pdfCanvasEl) {
+      pdfThumbnailReady = false;
+      pdfThumbnailFailed = false;
+      return;
+    }
+
+    cleanupPDFThumbnail?.();
+
+    let cancelled = false;
+    let renderTask: RenderTask | null = null;
+    let loadingTask: PDFDocumentLoadingTask | null = null;
+    let pdfDoc: PDFDocumentProxy | null = null;
+
+    pdfThumbnailReady = false;
+    pdfThumbnailFailed = false;
+
+    const render = async () => {
+      try {
+        const [pdfjs, worker] = await Promise.all([
+          import("pdfjs-dist"),
+          import("pdfjs-dist/build/pdf.worker.mjs?url"),
+        ]);
+        pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
+        loadingTask = pdfjs.getDocument({ url, withCredentials: true }) as typeof loadingTask;
+        pdfDoc = await loadingTask.promise;
+        const page: PDFPageProxy = await pdfDoc.getPage(1);
+        if (cancelled) return;
+
+        const baseViewport = page.getViewport({ scale: 1 });
+        const scale = 128 / baseViewport.width;
+        const viewport = page.getViewport({ scale });
+        const canvas = pdfCanvasEl;
+        const context = canvas?.getContext("2d");
+        if (!canvas || !context) throw new Error("pdf thumbnail canvas unavailable");
+
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        canvas.width = Math.max(1, Math.floor(viewport.width * dpr));
+        canvas.height = Math.max(1, Math.floor(viewport.height * dpr));
+        context.setTransform(dpr, 0, 0, dpr, 0, 0);
+        renderTask = page.render({ canvasContext: context, viewport });
+        await renderTask.promise;
+        if (!cancelled) pdfThumbnailReady = true;
+      } catch (error) {
+        if (!cancelled && !(error instanceof Error && error.name === "RenderingCancelledException")) {
+          pdfThumbnailFailed = true;
+        }
+      }
+    };
+
+    void render();
+    cleanupPDFThumbnail = () => {
+      cancelled = true;
+      renderTask?.cancel();
+      void pdfDoc?.destroy();
+      void loadingTask?.destroy();
+      cleanupPDFThumbnail = null;
+    };
+
+    return () => cleanupPDFThumbnail?.();
+  });
+
+  onDestroy(() => cleanupPDFThumbnail?.());
 </script>
 
 {#if isImage}
@@ -178,11 +253,20 @@
   <div class="document-attachment">
     <a
       class="document-attachment__thumbnail"
+      class:has-preview={pdfThumbnailReady}
+      class:thumbnail-failed={pdfThumbnailFailed}
       href={url}
       target="_blank"
       rel="noreferrer"
       aria-label={`Open ${upload.filename}`}
     >
+      {#if isPDF}
+        <canvas
+          bind:this={pdfCanvasEl}
+          class="document-attachment__preview-canvas"
+          aria-hidden="true"
+        ></canvas>
+      {/if}
       <span>{documentLabel}</span>
     </a>
     <div class="document-attachment__meta">

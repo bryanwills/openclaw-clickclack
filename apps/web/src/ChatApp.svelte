@@ -281,7 +281,11 @@
   }
 
   function defaultTargetID(workspaceID = selectedWorkspaceID): string {
-    return storedLastChannelID(workspaceID) || channels[0]?.id || directConversations[0]?.id || "";
+    return storedLastChannelID(workspaceID) ||
+      channels.find((channel) => channel.name.toLowerCase() === "guest")?.id ||
+      channels[0]?.id ||
+      directConversations[0]?.id ||
+      "";
   }
 
   function workspaceForID(workspaceID = selectedWorkspaceID): Workspace | undefined {
@@ -2040,8 +2044,8 @@
         </div>
       </div>
       <div class="auth-copy">
-        <h1>Welcome back.</h1>
-        <p>Workspace chat for the OpenClaw crew. Sign in with the GitHub account that's a member of the org.</p>
+        <h1>Welcome.</h1>
+        <p>Sign in with GitHub to join the guest room.</p>
       </div>
       <a class="github-login" href="/api/auth/github/start">
         <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
@@ -2049,7 +2053,7 @@
         </svg>
         Continue with GitHub
       </a>
-      <p class="auth-foot">Limited to active members of the OpenClaw org.</p>
+      <p class="auth-foot">Any GitHub account can join.</p>
     </section>
   </main>
 {:else}

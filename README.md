@@ -140,8 +140,12 @@ HTTP endpoint also exists. GitHub OAuth is opt-in via:
 CLICKCLACK_PUBLIC_URL=https://chat.example.com
 CLICKCLACK_GITHUB_CLIENT_ID=...
 CLICKCLACK_GITHUB_CLIENT_SECRET=...
-CLICKCLACK_GITHUB_ALLOWED_ORG=openclaw
+# Optional org gate:
+# CLICKCLACK_GITHUB_ALLOWED_ORG=openclaw
 ```
+
+Without the org gate, GitHub users land in an isolated `Guests` workspace with
+the `guest` channel.
 
 Details and trade-offs in [docs/features/auth.md](docs/features/auth.md).
 For the CLI, stored session tokens, workspace defaults, and channel defaults

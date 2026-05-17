@@ -356,6 +356,7 @@ type Store interface {
 	ListPushNotificationRecipients(ctx context.Context, messageID string) ([]PushNotificationRecipient, error)
 	AddWorkspaceMember(ctx context.Context, workspaceID, userID, role string) error
 	EnsureDefaultWorkspaceMember(ctx context.Context, userID string) (Workspace, error)
+	EnsureDefaultGuestWorkspaceMember(ctx context.Context, userID string) (Workspace, error)
 	FirstUser(ctx context.Context) (User, error)
 	GetUser(ctx context.Context, id string) (User, error)
 	ListWorkspaces(ctx context.Context, userID string) ([]Workspace, error)
