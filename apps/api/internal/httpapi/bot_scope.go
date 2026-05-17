@@ -19,6 +19,49 @@ func (s *Server) requireBotMessageWorkspace(w http.ResponseWriter, r *http.Reque
 	return message, s.requireBotWorkspace(w, act, message.WorkspaceID, err)
 }
 
+func (s *Server) requireBotMessageResource(w http.ResponseWriter, r *http.Request, act actor, messageID, directScope string) (store.Message, bool) {
+	message, ok := s.requireBotMessageWorkspace(w, r, act, messageID)
+	if !ok {
+		return store.Message{}, false
+	}
+	if act.botTokenID != "" && message.DirectConversationID != "" {
+		if err := act.requireScope(directScope); err != nil {
+			writeError(w, http.StatusForbidden, err)
+			return store.Message{}, false
+		}
+	}
+	return message, true
+}
+
+func (s *Server) requireBotUploadResource(w http.ResponseWriter, r *http.Request, act actor, upload store.Upload, sameMessageID string) bool {
+	if !s.requireBotWorkspace(w, act, upload.WorkspaceID, nil) {
+		return false
+	}
+	if act.botTokenID == "" {
+		return true
+	}
+	var (
+		hasDirectAttachment bool
+		err                 error
+	)
+	if sameMessageID != "" {
+		hasDirectAttachment, err = s.store.UploadHasOtherDirectMessageAttachment(r.Context(), upload.ID, sameMessageID)
+	} else {
+		hasDirectAttachment, err = s.store.UploadHasDirectMessageAttachment(r.Context(), upload.ID)
+	}
+	if err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return false
+	}
+	if hasDirectAttachment {
+		if err := act.requireScope("dms:read"); err != nil {
+			writeError(w, http.StatusForbidden, err)
+			return false
+		}
+	}
+	return true
+}
+
 func (s *Server) requireBotDirectWorkspace(w http.ResponseWriter, r *http.Request, act actor, conversationID string) bool {
 	if act.botTokenID == "" {
 		return true

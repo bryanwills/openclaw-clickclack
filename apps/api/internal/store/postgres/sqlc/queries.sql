@@ -342,6 +342,29 @@ SELECT workspace_id
 FROM uploads
 WHERE id = sqlc.arg(id);
 
+-- name: UploadHasDirectMessageAttachment :one
+SELECT EXISTS (
+  SELECT 1
+  FROM message_attachments ma
+  JOIN messages m ON m.id = ma.message_id
+  WHERE ma.upload_id = sqlc.arg(upload_id)
+    AND m.deleted_at IS NULL
+    AND m.direct_conversation_id IS NOT NULL
+    AND m.direct_conversation_id <> ''
+) AS has_direct_message_attachment;
+
+-- name: UploadHasOtherDirectMessageAttachment :one
+SELECT EXISTS (
+  SELECT 1
+  FROM message_attachments ma
+  JOIN messages m ON m.id = ma.message_id
+  WHERE ma.upload_id = sqlc.arg(upload_id)
+    AND ma.message_id <> sqlc.arg(message_id)
+    AND m.deleted_at IS NULL
+    AND m.direct_conversation_id IS NOT NULL
+    AND m.direct_conversation_id <> ''
+) AS has_other_direct_message_attachment;
+
 -- name: InsertUploadQuotaReservation :exec
 INSERT INTO upload_quota_reservations (id, workspace_id, owner_id, byte_size, created_at, expires_at)
 VALUES (sqlc.arg(id), sqlc.arg(workspace_id), sqlc.arg(owner_id), sqlc.arg(byte_size), sqlc.arg(created_at), sqlc.arg(expires_at));

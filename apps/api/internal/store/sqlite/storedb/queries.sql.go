@@ -2476,6 +2476,50 @@ func (q *Queries) UpdateWorkspaceMemberRole(ctx context.Context, arg UpdateWorks
 	return err
 }
 
+const uploadHasDirectMessageAttachment = `-- name: UploadHasDirectMessageAttachment :one
+SELECT EXISTS (
+  SELECT 1
+  FROM message_attachments ma
+  JOIN messages m ON m.id = ma.message_id
+  WHERE ma.upload_id = ?1
+    AND m.deleted_at IS NULL
+    AND m.direct_conversation_id IS NOT NULL
+    AND m.direct_conversation_id <> ''
+) AS has_direct_message_attachment
+`
+
+func (q *Queries) UploadHasDirectMessageAttachment(ctx context.Context, uploadID string) (bool, error) {
+	row := q.db.QueryRowContext(ctx, uploadHasDirectMessageAttachment, uploadID)
+	var has_direct_message_attachment bool
+	err := row.Scan(&has_direct_message_attachment)
+	return has_direct_message_attachment, err
+}
+
+const uploadHasOtherDirectMessageAttachment = `-- name: UploadHasOtherDirectMessageAttachment :one
+SELECT EXISTS (
+  SELECT 1
+  FROM message_attachments ma
+  JOIN messages m ON m.id = ma.message_id
+  WHERE ma.upload_id = ?1
+    AND ma.message_id <> ?2
+    AND m.deleted_at IS NULL
+    AND m.direct_conversation_id IS NOT NULL
+    AND m.direct_conversation_id <> ''
+) AS has_other_direct_message_attachment
+`
+
+type UploadHasOtherDirectMessageAttachmentParams struct {
+	UploadID  string `json:"upload_id"`
+	MessageID string `json:"message_id"`
+}
+
+func (q *Queries) UploadHasOtherDirectMessageAttachment(ctx context.Context, arg UploadHasOtherDirectMessageAttachmentParams) (bool, error) {
+	row := q.db.QueryRowContext(ctx, uploadHasOtherDirectMessageAttachment, arg.UploadID, arg.MessageID)
+	var has_other_direct_message_attachment bool
+	err := row.Scan(&has_other_direct_message_attachment)
+	return has_other_direct_message_attachment, err
+}
+
 const upsertChannelRead = `-- name: UpsertChannelRead :execrows
 INSERT INTO channel_reads (channel_id, user_id, last_read_seq, last_read_at)
 VALUES (?1, ?2, ?3, ?4)

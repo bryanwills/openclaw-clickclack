@@ -268,6 +268,14 @@ func (s *Store) GetUpload(ctx context.Context, uploadID, userID string) (store.U
 	return upload, nil
 }
 
+func (s *Store) UploadHasDirectMessageAttachment(ctx context.Context, uploadID string) (bool, error) {
+	return s.q.UploadHasDirectMessageAttachment(ctx, uploadID)
+}
+
+func (s *Store) UploadHasOtherDirectMessageAttachment(ctx context.Context, uploadID, messageID string) (bool, error) {
+	return s.q.UploadHasOtherDirectMessageAttachment(ctx, storedb.UploadHasOtherDirectMessageAttachmentParams{UploadID: uploadID, MessageID: messageID})
+}
+
 func (s *Store) AttachUpload(ctx context.Context, input store.AttachUploadInput) (store.Event, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

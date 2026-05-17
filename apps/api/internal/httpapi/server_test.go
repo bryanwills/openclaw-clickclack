@@ -1858,6 +1858,165 @@ func TestUploadReservesQuotaBeforeObjectStorage(t *testing.T) {
 	}
 }
 
+func TestBotGenericRoutesRequireDMScopeForDirectMessages(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dataDir := t.TempDir()
+	st, err := sqlitestore.Open("sqlite://" + filepath.Join(dataDir, "clickclack.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := st.EnsureBootstrap(ctx, "Owner", "owner@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaces, err := st.ListWorkspaces(ctx, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace := workspaces[0]
+	bot, token, err := st.CreateBot(ctx, store.CreateBotInput{
+		WorkspaceID: workspace.ID,
+		OwnerUserID: owner.ID,
+		DisplayName: "No DM Scope Bot",
+		Scopes:      []string{"messages:read", "messages:write", "threads:read", "threads:write", "uploads:write"},
+		CreatedBy:   owner.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dm, err := st.CreateDirectConversation(ctx, store.CreateDirectConversationInput{WorkspaceID: workspace.ID, UserID: owner.ID, MemberIDs: []string{bot.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, _, err := st.CreateDirectMessage(ctx, store.CreateDirectMessageInput{ConversationID: dm.ID, AuthorID: bot.ID, Body: "bot dm"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	upload, err := st.CreateUpload(ctx, store.CreateUploadInput{
+		WorkspaceID: workspace.ID,
+		OwnerID:     bot.ID,
+		Filename:    "dm.txt",
+		ContentType: "text/plain",
+		ByteSize:    7,
+		StoragePath: filepath.Join(dataDir, "uploads", "dm.txt"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: message.ID, UploadID: upload.ID, UserID: bot.ID}); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(New(st, realtime.NewHub(), Options{UploadDir: filepath.Join(dataDir, "uploads")}).Handler())
+	t.Cleanup(server.Close)
+
+	cases := []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{http.MethodGet, "/api/messages/" + message.ID, ""},
+		{http.MethodPatch, "/api/messages/" + message.ID, `{"body":"blocked"}`},
+		{http.MethodDelete, "/api/messages/" + message.ID, ""},
+		{http.MethodGet, "/api/messages/" + message.ID + "/thread", ""},
+		{http.MethodPost, "/api/messages/" + message.ID + "/thread/replies", `{"body":"blocked"}`},
+		{http.MethodPost, "/api/messages/" + message.ID + "/reactions", `{"emoji":"ok"}`},
+		{http.MethodDelete, "/api/messages/" + message.ID + "/reactions/" + url.PathEscape("ok"), ""},
+		{http.MethodPost, "/api/messages/" + message.ID + "/attachments", `{"upload_id":"` + upload.ID + `"}`},
+		{http.MethodGet, "/api/uploads/" + upload.ID, ""},
+		{http.MethodPost, "/api/realtime/ephemeral", `{"workspace_id":"` + workspace.ID + `","direct_conversation_id":"` + dm.ID + `","type":"typing.started"}`},
+	}
+	for _, tc := range cases {
+		var body io.Reader
+		if tc.body != "" {
+			body = strings.NewReader(tc.body)
+		}
+		expectStatusWithBearer(t, token.Token, tc.method, server.URL+tc.path, body, http.StatusForbidden)
+	}
+
+	readBot, readToken, err := st.CreateBot(ctx, store.CreateBotInput{
+		WorkspaceID: workspace.ID,
+		OwnerUserID: owner.ID,
+		DisplayName: "DM Read Bot",
+		Scopes:      []string{"messages:read", "dms:read"},
+		CreatedBy:   owner.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	readDM, err := st.CreateDirectConversation(ctx, store.CreateDirectConversationInput{WorkspaceID: workspace.ID, UserID: owner.ID, MemberIDs: []string{readBot.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	readMessage, _, err := st.CreateDirectMessage(ctx, store.CreateDirectMessageInput{ConversationID: readDM.ID, AuthorID: owner.ID, Body: "visible dm"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectStatusWithBearer(t, readToken.Token, http.MethodGet, server.URL+"/api/messages/"+readMessage.ID, nil, http.StatusOK)
+
+	writeBot, writeToken, err := st.CreateBot(ctx, store.CreateBotInput{
+		WorkspaceID: workspace.ID,
+		OwnerUserID: owner.ID,
+		DisplayName: "DM Write Bot",
+		Scopes:      []string{"uploads:write", "messages:write", "dms:write"},
+		CreatedBy:   owner.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeDM, err := st.CreateDirectConversation(ctx, store.CreateDirectConversationInput{WorkspaceID: workspace.ID, UserID: owner.ID, MemberIDs: []string{writeBot.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeMessage, _, err := st.CreateDirectMessage(ctx, store.CreateDirectMessageInput{ConversationID: writeDM.ID, AuthorID: writeBot.ID, Body: "attach here"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeUpload, err := st.CreateUpload(ctx, store.CreateUploadInput{
+		WorkspaceID: workspace.ID,
+		OwnerID:     writeBot.ID,
+		Filename:    "retry.txt",
+		ContentType: "text/plain",
+		ByteSize:    5,
+		StoragePath: filepath.Join(dataDir, "uploads", "retry.txt"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	attachBody := `{"upload_id":"` + writeUpload.ID + `"}`
+	expectStatusWithBearer(t, writeToken.Token, http.MethodPost, server.URL+"/api/messages/"+writeMessage.ID+"/attachments", strings.NewReader(attachBody), http.StatusOK)
+	expectStatusWithBearer(t, writeToken.Token, http.MethodPost, server.URL+"/api/messages/"+writeMessage.ID+"/attachments", strings.NewReader(attachBody), http.StatusOK)
+
+	otherWriteDM, err := st.CreateDirectConversation(ctx, store.CreateDirectConversationInput{WorkspaceID: workspace.ID, UserID: owner.ID, MemberIDs: []string{writeBot.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherWriteMessage, _, err := st.CreateDirectMessage(ctx, store.CreateDirectMessageInput{ConversationID: otherWriteDM.ID, AuthorID: writeBot.ID, Body: "other dm"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherDMUpload, err := st.CreateUpload(ctx, store.CreateUploadInput{
+		WorkspaceID: workspace.ID,
+		OwnerID:     writeBot.ID,
+		Filename:    "other-dm.txt",
+		ContentType: "text/plain",
+		ByteSize:    8,
+		StoragePath: filepath.Join(dataDir, "uploads", "other-dm.txt"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: otherWriteMessage.ID, UploadID: otherDMUpload.ID, UserID: writeBot.ID}); err != nil {
+		t.Fatal(err)
+	}
+	reuseBody := `{"upload_id":"` + otherDMUpload.ID + `"}`
+	expectStatusWithBearer(t, writeToken.Token, http.MethodPost, server.URL+"/api/messages/"+writeMessage.ID+"/attachments", strings.NewReader(reuseBody), http.StatusForbidden)
+}
+
 type quotaObservingUploadStore struct {
 	store       store.Store
 	workspaceID string

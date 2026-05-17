@@ -56,7 +56,7 @@ func (s *Server) updateMessage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	if _, ok := s.requireBotMessageWorkspace(w, r, act, chi.URLParam(r, "message_id")); !ok {
+	if _, ok := s.requireBotMessageResource(w, r, act, chi.URLParam(r, "message_id"), "dms:write"); !ok {
 		return
 	}
 	message, event, err := s.store.UpdateMessage(r.Context(), store.UpdateMessageInput{MessageID: chi.URLParam(r, "message_id"), UserID: act.user.ID, Body: body.Body})
@@ -76,7 +76,7 @@ func (s *Server) deleteMessage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, err)
 		return
 	}
-	if _, ok := s.requireBotMessageWorkspace(w, r, act, chi.URLParam(r, "message_id")); !ok {
+	if _, ok := s.requireBotMessageResource(w, r, act, chi.URLParam(r, "message_id"), "dms:write"); !ok {
 		return
 	}
 	message, event, err := s.store.DeleteMessage(r.Context(), store.DeleteMessageInput{MessageID: chi.URLParam(r, "message_id"), UserID: act.user.ID})
@@ -141,6 +141,12 @@ func (s *Server) publishEphemeral(w http.ResponseWriter, r *http.Request) {
 			}
 			writeError(w, http.StatusForbidden, err)
 			return
+		}
+		if act.botTokenID != "" {
+			if err := act.requireScope("dms:write"); err != nil {
+				writeError(w, http.StatusForbidden, err)
+				return
+			}
 		}
 		recipientUserIDs = make([]string, 0, len(dm.Members))
 		for _, member := range dm.Members {

@@ -315,7 +315,7 @@ func (s *Server) getUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, err)
 		return
 	}
-	if !s.requireBotWorkspace(w, act, upload.WorkspaceID, nil) {
+	if !s.requireBotUploadResource(w, r, act, upload, "") {
 		return
 	}
 	setUploadResponseHeaders(w, upload)
@@ -384,20 +384,20 @@ func (s *Server) attachUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, err)
 		return
 	}
-	upload, err := s.store.GetUpload(r.Context(), body.UploadID, act.user.ID)
-	if err != nil {
-		writeError(w, http.StatusForbidden, err)
-		return
-	}
-	if !s.requireBotWorkspace(w, act, upload.WorkspaceID, nil) {
-		return
-	}
-	message, ok := s.requireBotMessageWorkspace(w, r, act, chi.URLParam(r, "message_id"))
+	message, ok := s.requireBotMessageResource(w, r, act, chi.URLParam(r, "message_id"), "dms:write")
 	if !ok {
 		return
 	}
 	if message.AuthorID != act.user.ID {
 		writeError(w, http.StatusForbidden, errors.New("message attachments can only be changed by the message author"))
+		return
+	}
+	upload, err := s.store.GetUpload(r.Context(), body.UploadID, act.user.ID)
+	if err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	if !s.requireBotUploadResource(w, r, act, upload, message.ID) {
 		return
 	}
 	event, err := s.store.AttachUpload(r.Context(), store.AttachUploadInput{MessageID: chi.URLParam(r, "message_id"), UploadID: body.UploadID, UserID: act.user.ID})
