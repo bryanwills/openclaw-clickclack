@@ -1787,7 +1787,22 @@ WHERE e.workspace_id = ?2
     OR event_channel.name = 'guest'
   )
   AND (
-    COALESCE(json_extract(e.payload_json, '$.direct_conversation_id'), '') = ''
+    COALESCE(
+      json_extract(e.payload_json, '$.direct_conversation_id'),
+      (
+        SELECT m.direct_conversation_id
+        FROM messages m
+        WHERE m.workspace_id = e.workspace_id
+          AND m.id IN (
+            COALESCE(json_extract(e.payload_json, '$.message_id'), ''),
+            COALESCE(json_extract(e.payload_json, '$.root_message_id'), '')
+          )
+          AND m.direct_conversation_id IS NOT NULL
+          AND m.direct_conversation_id <> ''
+        LIMIT 1
+      ),
+      ''
+    ) = ''
     OR (
       viewer.role <> 'guest'
       AND EXISTS (
@@ -1795,7 +1810,21 @@ WHERE e.workspace_id = ?2
         FROM direct_conversation_members dcm
         JOIN direct_conversations dc ON dc.id = dcm.conversation_id
         WHERE dc.workspace_id = e.workspace_id
-          AND dcm.conversation_id = json_extract(e.payload_json, '$.direct_conversation_id')
+          AND dcm.conversation_id = COALESCE(
+            json_extract(e.payload_json, '$.direct_conversation_id'),
+            (
+              SELECT m.direct_conversation_id
+              FROM messages m
+              WHERE m.workspace_id = e.workspace_id
+                AND m.id IN (
+                  COALESCE(json_extract(e.payload_json, '$.message_id'), ''),
+                  COALESCE(json_extract(e.payload_json, '$.root_message_id'), '')
+                )
+                AND m.direct_conversation_id IS NOT NULL
+                AND m.direct_conversation_id <> ''
+              LIMIT 1
+            )
+          )
           AND dcm.user_id = ?1
       )
     )

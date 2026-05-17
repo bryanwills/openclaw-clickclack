@@ -400,6 +400,8 @@ func TestDemotedGuestCannotUseExistingDirectConversation(t *testing.T) {
 	if _, _, err := st.UpdateMemberModeration(ctx, store.UpdateMemberModerationInput{WorkspaceID: workspace.ID, ActorUserID: moderator.ID, TargetUserID: member.ID, Role: store.WorkspaceRoleGuest}); err != nil {
 		t.Fatal(err)
 	}
+	mustExecSQL(t, ctx, st, `INSERT INTO events (id, cursor, workspace_id, channel_id, type, seq, payload_json, created_at, is_private) VALUES ('evt_legacy_dm_message', 'cur_legacy_dm_message', ?, NULL, 'message.updated', NULL, ?, '2026-01-01T00:00:00Z', 1)`, workspace.ID, `{"message_id":"`+message.ID+`","author_id":"`+moderator.ID+`"}`)
+	mustExecSQL(t, ctx, st, `INSERT INTO event_recipients (event_id, user_id) VALUES ('evt_legacy_dm_message', ?)`, member.ID)
 	if _, err := st.ResolveRouteTarget(ctx, member.ID, workspace.RouteID, dm.RouteID); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("expected demoted guest direct route to be hidden, got %v", err)
 	}
@@ -418,7 +420,7 @@ func TestDemotedGuestCannotUseExistingDirectConversation(t *testing.T) {
 	}
 	for _, event := range events {
 		payload, _ := event.Payload.(map[string]any)
-		if payload["direct_conversation_id"] == dm.ID {
+		if payload["direct_conversation_id"] == dm.ID || event.ID == "evt_legacy_dm_message" {
 			t.Fatalf("direct event leaked to demoted guest: %#v", event)
 		}
 	}
