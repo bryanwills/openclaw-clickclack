@@ -188,6 +188,11 @@ func TestHTTPBotTokenWorkspaceIsolation(t *testing.T) {
 	if len(workspaceList.Workspaces) != 1 || workspaceList.Workspaces[0].ID != workspace.ID {
 		t.Fatalf("bot token listed workspaces outside token scope: %#v", workspaceList.Workspaces)
 	}
+	channels, err := st.ListChannels(ctx, workspace.ID, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectStatusWithBearer(t, token.Token, http.MethodPatch, server.URL+"/api/channels/"+channels[0].ID, strings.NewReader(`{"name":"bot-updated"}`), http.StatusOK)
 	expectStatusWithBearer(t, token.Token, http.MethodPatch, server.URL+"/api/me", strings.NewReader(`{"display_name":"Bot"}`), http.StatusForbidden)
 	expectStatusWithBearer(t, token.Token, http.MethodPost, server.URL+"/api/workspaces", strings.NewReader(`{"name":"Nope"}`), http.StatusForbidden)
 	expectStatusWithBearer(t, token.Token, http.MethodGet, server.URL+"/api/workspaces/"+otherWorkspace.ID, nil, http.StatusForbidden)

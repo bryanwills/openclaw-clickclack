@@ -836,3 +836,8 @@ func requireMembershipTx(ctx context.Context, tx *sql.Tx, workspaceID, userID st
 	_, err := storedb.New(tx).RequireMembership(ctx, storedb.RequireMembershipParams{WorkspaceID: workspaceID, UserID: userID})
 	return err
 }
+
+func requireChannelAdminTx(ctx context.Context, tx *sql.Tx, workspaceID, userID string) error {
+	_, err := storedb.New(tx).RequireChannelAdmin(ctx, storedb.RequireChannelAdminParams{WorkspaceID: workspaceID, UserID: userID})
+	return err
+}

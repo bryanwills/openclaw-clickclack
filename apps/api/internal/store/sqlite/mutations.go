@@ -22,7 +22,7 @@ func (s *Store) UpdateChannel(ctx context.Context, input store.UpdateChannelInpu
 		return store.Channel{}, store.Event{}, err
 	}
 	ch := storeChannelFromGetChannel(chRow)
-	if err := requireNonGuestTx(ctx, tx, ch.WorkspaceID, input.UserID); err != nil {
+	if err := requireChannelAdminTx(ctx, tx, ch.WorkspaceID, input.UserID); err != nil {
 		return store.Channel{}, store.Event{}, err
 	}
 	if err := requireNoModerationBlockTx(ctx, tx, ch.WorkspaceID, input.UserID); err != nil {

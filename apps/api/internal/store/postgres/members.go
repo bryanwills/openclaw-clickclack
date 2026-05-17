@@ -31,11 +31,13 @@ func (s *Store) EnsureDefaultWorkspaceMember(ctx context.Context, userID string)
 
 	row, err := qtx.FirstWorkspace(ctx)
 	workspace := storeWorkspaceFromFirstWorkspace(row)
+	memberRole := "member"
 	if err != nil && err != sql.ErrNoRows {
 		return store.Workspace{}, err
 	}
 	if err == sql.ErrNoRows {
 		workspace = store.Workspace{ID: newID("wsp"), Name: "ClickClack", Slug: "clickclack", CreatedAt: now()}
+		memberRole = "owner"
 		insertedWorkspace := false
 		for attempt := 0; attempt < routeIDInsertAttempts; attempt++ {
 			workspaceRouteID, err := newRouteID('T')
@@ -89,6 +91,7 @@ func (s *Store) EnsureDefaultWorkspaceMember(ctx context.Context, userID string)
 	if err := qtx.InsertDefaultWorkspaceMember(ctx, storedb.InsertDefaultWorkspaceMemberParams{
 		WorkspaceID: workspace.ID,
 		UserID:      userID,
+		Role:        memberRole,
 		CreatedAt:   now(),
 	}); err != nil {
 		return store.Workspace{}, err

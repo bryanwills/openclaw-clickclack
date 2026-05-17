@@ -158,6 +158,9 @@ func TestMutationsRejectInvalidInput(t *testing.T) {
 	if err := st.AddWorkspaceMember(ctx, workspaces[0].ID, member.ID, "member"); err != nil {
 		t.Fatal(err)
 	}
+	if _, _, err := st.UpdateChannel(ctx, store.UpdateChannelInput{ChannelID: channels[0].ID, UserID: member.ID, Name: "member-edit"}); err == nil {
+		t.Fatal("expected non-owner member channel update error")
+	}
 	if _, _, err := st.UpdateMessage(ctx, store.UpdateMessageInput{MessageID: message.ID, UserID: member.ID, Body: "nope"}); err == nil {
 		t.Fatal("expected non-author member message update error")
 	}

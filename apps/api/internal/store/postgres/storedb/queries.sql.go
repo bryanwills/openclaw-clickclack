@@ -1177,18 +1177,24 @@ func (q *Queries) InsertDefaultChannel(ctx context.Context, arg InsertDefaultCha
 
 const insertDefaultWorkspaceMember = `-- name: InsertDefaultWorkspaceMember :exec
 INSERT INTO workspace_members (workspace_id, user_id, role, created_at)
-VALUES ($1, $2, 'member', $3)
+VALUES ($1, $2, $3, $4)
 ON CONFLICT DO NOTHING
 `
 
 type InsertDefaultWorkspaceMemberParams struct {
 	WorkspaceID string `json:"workspace_id"`
 	UserID      string `json:"user_id"`
+	Role        string `json:"role"`
 	CreatedAt   string `json:"created_at"`
 }
 
 func (q *Queries) InsertDefaultWorkspaceMember(ctx context.Context, arg InsertDefaultWorkspaceMemberParams) error {
-	_, err := q.db.ExecContext(ctx, insertDefaultWorkspaceMember, arg.WorkspaceID, arg.UserID, arg.CreatedAt)
+	_, err := q.db.ExecContext(ctx, insertDefaultWorkspaceMember,
+		arg.WorkspaceID,
+		arg.UserID,
+		arg.Role,
+		arg.CreatedAt,
+	)
 	return err
 }
 
@@ -2122,6 +2128,26 @@ func (q *Queries) RemoveReaction(ctx context.Context, arg RemoveReactionParams) 
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const requireChannelAdmin = `-- name: RequireChannelAdmin :one
+SELECT 1
+FROM workspace_members
+WHERE workspace_id = $1
+  AND user_id = $2
+  AND role IN ('owner', 'bot')
+`
+
+type RequireChannelAdminParams struct {
+	WorkspaceID string `json:"workspace_id"`
+	UserID      string `json:"user_id"`
+}
+
+func (q *Queries) RequireChannelAdmin(ctx context.Context, arg RequireChannelAdminParams) (int32, error) {
+	row := q.db.QueryRowContext(ctx, requireChannelAdmin, arg.WorkspaceID, arg.UserID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const requireDirectMembership = `-- name: RequireDirectMembership :one

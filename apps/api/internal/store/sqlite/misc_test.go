@@ -283,6 +283,9 @@ func TestEnsureDefaultWorkspaceMemberCreatesWorkspace(t *testing.T) {
 	if len(channels) != 1 || channels[0].Name != "general" {
 		t.Fatalf("expected general channel, got %#v", channels)
 	}
+	if updated, _, err := st.UpdateChannel(ctx, store.UpdateChannelInput{ChannelID: channels[0].ID, UserID: user.ID, Name: "renamed"}); err != nil || updated.Name != "renamed" {
+		t.Fatalf("expected first default workspace member to administer channels, got %#v %v", updated, err)
+	}
 	if again, err := st.EnsureDefaultWorkspaceMember(ctx, user.ID); err != nil || again.ID != workspace.ID {
 		t.Fatalf("expected idempotent default membership, got %#v %v", again, err)
 	}

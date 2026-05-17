@@ -126,7 +126,7 @@ ON CONFLICT(workspace_id, user_id) DO UPDATE SET
 
 -- name: InsertDefaultWorkspaceMember :exec
 INSERT OR IGNORE INTO workspace_members (workspace_id, user_id, role, created_at)
-VALUES (sqlc.arg(workspace_id), sqlc.arg(user_id), 'member', sqlc.arg(created_at));
+VALUES (sqlc.arg(workspace_id), sqlc.arg(user_id), sqlc.arg(role), sqlc.arg(created_at));
 
 -- name: FirstWorkspace :one
 SELECT id, COALESCE(route_id, '') AS route_id, name, slug, created_at
@@ -205,6 +205,13 @@ SELECT name
 FROM channels
 WHERE id = sqlc.arg(id)
   AND workspace_id = sqlc.arg(workspace_id);
+
+-- name: RequireChannelAdmin :one
+SELECT 1
+FROM workspace_members
+WHERE workspace_id = sqlc.arg(workspace_id)
+  AND user_id = sqlc.arg(user_id)
+  AND role IN ('owner', 'bot');
 
 -- name: InsertBotUser :exec
 INSERT INTO users (id, kind, owner_user_id, display_name, handle, avatar_url, created_at)
