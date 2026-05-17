@@ -177,18 +177,7 @@ func (s *Store) GetUser(ctx context.Context, id string) (store.User, error) {
 }
 
 func (s *Store) UpdateUserProfile(ctx context.Context, input store.UpdateUserProfileInput) (store.User, error) {
-	displayName := strings.TrimSpace(input.DisplayName)
-	if displayName == "" {
-		return store.User{}, errors.New("display_name is required")
-	}
-	if len(displayName) > 80 {
-		return store.User{}, errors.New("display_name is too long")
-	}
-	handle, err := normalizeHandle(input.Handle)
-	if err != nil {
-		return store.User{}, err
-	}
-	avatarURL, err := normalizeAvatarURL(input.AvatarURL)
+	displayName, handle, avatarURL, err := normalizeUserProfile(input.DisplayName, input.Handle, input.AvatarURL)
 	if err != nil {
 		return store.User{}, err
 	}
@@ -198,12 +187,82 @@ func (s *Store) UpdateUserProfile(ctx context.Context, input store.UpdateUserPro
 		AvatarUrl:   avatarURL,
 		ID:          input.UserID,
 	}); err != nil {
-		if strings.Contains(err.Error(), "idx_users_handle") || strings.Contains(err.Error(), "users.handle") {
-			return store.User{}, errors.New("handle is already taken")
+		return store.User{}, profileUpdateError(err)
+	}
+	return s.GetUser(ctx, input.UserID)
+}
+
+func (s *Store) UpdateUserProfileAndNotificationSettings(ctx context.Context, input store.UpdateUserProfileAndNotificationSettingsInput) (store.User, error) {
+	displayName, handle, avatarURL, err := normalizeUserProfile(input.DisplayName, input.Handle, input.AvatarURL)
+	if err != nil {
+		return store.User{}, err
+	}
+	var settings store.NotificationSettings
+	var settingsEnabled int64
+	if input.NotificationSettings != nil {
+		settingsInput := store.UpdateNotificationSettingsInput{
+			UserID:          input.UserID,
+			PushoverEnabled: input.NotificationSettings.PushoverEnabled,
+			PushoverUserKey: input.NotificationSettings.PushoverUserKey,
 		}
+		settings, settingsEnabled, err = normalizeNotificationSettings(settingsInput)
+		if err != nil {
+			return store.User{}, err
+		}
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return store.User{}, err
+	}
+	defer tx.Rollback()
+	qtx := s.q.WithTx(tx)
+	if err := qtx.UpdateUserProfile(ctx, storedb.UpdateUserProfileParams{
+		DisplayName: displayName,
+		Handle:      handle,
+		AvatarUrl:   avatarURL,
+		ID:          input.UserID,
+	}); err != nil {
+		return store.User{}, profileUpdateError(err)
+	}
+	if input.NotificationSettings != nil {
+		if err := qtx.UpsertNotificationSettings(ctx, storedb.UpsertNotificationSettingsParams{
+			UserID:          input.UserID,
+			PushoverEnabled: settingsEnabled,
+			PushoverUserKey: settings.PushoverUserKey,
+		}); err != nil {
+			return store.User{}, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
 		return store.User{}, err
 	}
 	return s.GetUser(ctx, input.UserID)
+}
+
+func normalizeUserProfile(displayNameInput, handleInput, avatarURLInput string) (string, string, string, error) {
+	displayName := strings.TrimSpace(displayNameInput)
+	if displayName == "" {
+		return "", "", "", errors.New("display_name is required")
+	}
+	if len(displayName) > 80 {
+		return "", "", "", errors.New("display_name is too long")
+	}
+	handle, err := normalizeHandle(handleInput)
+	if err != nil {
+		return "", "", "", err
+	}
+	avatarURL, err := normalizeAvatarURL(avatarURLInput)
+	if err != nil {
+		return "", "", "", err
+	}
+	return displayName, handle, avatarURL, nil
+}
+
+func profileUpdateError(err error) error {
+	if strings.Contains(err.Error(), "idx_users_handle") || strings.Contains(err.Error(), "users.handle") {
+		return errors.New("handle is already taken")
+	}
+	return err
 }
 
 func (s *Store) ListWorkspaces(ctx context.Context, userID string) ([]store.Workspace, error) {

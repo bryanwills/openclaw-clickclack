@@ -118,6 +118,18 @@ func TestMutationAndEphemeralEndpoints(t *testing.T) {
 	if updatedMe.User.NotificationSettings == nil || !updatedMe.User.NotificationSettings.PushoverEnabled || updatedMe.User.NotificationSettings.PushoverUserKey == "" {
 		t.Fatalf("expected profile notification settings, got %#v", updatedMe.User)
 	}
+	beforeFailedProfile, err := st.GetUser(ctx, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectStatus(t, http.MethodPatch, server.URL+"/api/me", strings.NewReader(`{"display_name":"Leaky","notification_settings":{"pushover_enabled":true,"pushover_user_key":"bad"}}`), http.StatusBadRequest)
+	afterFailedProfile, err := st.GetUser(ctx, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterFailedProfile.DisplayName != beforeFailedProfile.DisplayName || afterFailedProfile.NotificationSettings == nil || beforeFailedProfile.NotificationSettings == nil || afterFailedProfile.NotificationSettings.PushoverUserKey != beforeFailedProfile.NotificationSettings.PushoverUserKey {
+		t.Fatalf("failed profile update partially applied: before=%#v after=%#v", beforeFailedProfile, afterFailedProfile)
+	}
 	expectStatus(t, http.MethodPatch, server.URL+"/api/channels/"+channels[0].ID, bytes.NewReader([]byte(`{`)), http.StatusBadRequest)
 	expectStatus(t, http.MethodPatch, server.URL+"/api/channels/missing", bytes.NewReader([]byte(`{"name":"missing"}`)), http.StatusBadRequest)
 	expectStatus(t, http.MethodPatch, server.URL+"/api/messages/"+message.ID, bytes.NewReader([]byte(`{`)), http.StatusBadRequest)

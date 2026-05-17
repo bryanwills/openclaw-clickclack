@@ -267,22 +267,13 @@ func (s *Server) updateMe(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	updated, err := s.store.UpdateUserProfile(r.Context(), store.UpdateUserProfileInput{
-		UserID:      act.user.ID,
-		DisplayName: body.DisplayName,
-		Handle:      body.Handle,
-		AvatarURL:   body.AvatarURL,
+	updated, err := s.store.UpdateUserProfileAndNotificationSettings(r.Context(), store.UpdateUserProfileAndNotificationSettingsInput{
+		UserID:               act.user.ID,
+		DisplayName:          body.DisplayName,
+		Handle:               body.Handle,
+		AvatarURL:            body.AvatarURL,
+		NotificationSettings: body.NotificationSettings,
 	})
-	if err == nil && body.NotificationSettings != nil {
-		_, err = s.store.UpdateNotificationSettings(r.Context(), store.UpdateNotificationSettingsInput{
-			UserID:          act.user.ID,
-			PushoverEnabled: body.NotificationSettings.PushoverEnabled,
-			PushoverUserKey: body.NotificationSettings.PushoverUserKey,
-		})
-		if err == nil {
-			updated, err = s.store.GetUser(r.Context(), act.user.ID)
-		}
-	}
 	writeResult(w, map[string]any{"user": updated}, err)
 }
 

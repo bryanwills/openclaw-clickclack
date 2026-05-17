@@ -205,6 +205,14 @@ type UpdateUserProfileInput struct {
 	AvatarURL   string
 }
 
+type UpdateUserProfileAndNotificationSettingsInput struct {
+	UserID               string
+	DisplayName          string
+	Handle               string
+	AvatarURL            string
+	NotificationSettings *NotificationSettings
+}
+
 type CreateWorkspaceInput struct {
 	Name string
 	Slug string
@@ -398,6 +406,7 @@ type Store interface {
 	CreateBot(ctx context.Context, input CreateBotInput) (User, BotToken, error)
 	UpsertIdentityUser(ctx context.Context, input UpsertIdentityUserInput) (User, error)
 	UpdateUserProfile(ctx context.Context, input UpdateUserProfileInput) (User, error)
+	UpdateUserProfileAndNotificationSettings(ctx context.Context, input UpdateUserProfileAndNotificationSettingsInput) (User, error)
 	UpdateNotificationSettings(ctx context.Context, input UpdateNotificationSettingsInput) (NotificationSettings, error)
 	ListPushNotificationRecipients(ctx context.Context, messageID string) ([]PushNotificationRecipient, error)
 	AddWorkspaceMember(ctx context.Context, workspaceID, userID, role string) error

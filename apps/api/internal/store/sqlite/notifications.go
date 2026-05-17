@@ -14,25 +14,33 @@ import (
 var pushoverUserKeyRE = regexp.MustCompile(`^[A-Za-z0-9]{30}$`)
 
 func (s *Store) UpdateNotificationSettings(ctx context.Context, input store.UpdateNotificationSettingsInput) (store.NotificationSettings, error) {
-	userKey := strings.TrimSpace(input.PushoverUserKey)
-	if input.PushoverEnabled && userKey == "" {
-		return store.NotificationSettings{}, errors.New("pushover_user_key is required when pushover notifications are enabled")
-	}
-	if userKey != "" && !pushoverUserKeyRE.MatchString(userKey) {
-		return store.NotificationSettings{}, errors.New("pushover_user_key must be 30 alphanumeric characters")
-	}
-	enabled := 0
-	if input.PushoverEnabled {
-		enabled = 1
+	settings, enabled, err := normalizeNotificationSettings(input)
+	if err != nil {
+		return store.NotificationSettings{}, err
 	}
 	if err := s.q.UpsertNotificationSettings(ctx, storedb.UpsertNotificationSettingsParams{
 		UserID:          input.UserID,
-		PushoverEnabled: int64(enabled),
-		PushoverUserKey: userKey,
+		PushoverEnabled: enabled,
+		PushoverUserKey: settings.PushoverUserKey,
 	}); err != nil {
 		return store.NotificationSettings{}, err
 	}
-	return store.NotificationSettings{PushoverEnabled: input.PushoverEnabled, PushoverUserKey: userKey}, nil
+	return settings, nil
+}
+
+func normalizeNotificationSettings(input store.UpdateNotificationSettingsInput) (store.NotificationSettings, int64, error) {
+	userKey := strings.TrimSpace(input.PushoverUserKey)
+	if input.PushoverEnabled && userKey == "" {
+		return store.NotificationSettings{}, 0, errors.New("pushover_user_key is required when pushover notifications are enabled")
+	}
+	if userKey != "" && !pushoverUserKeyRE.MatchString(userKey) {
+		return store.NotificationSettings{}, 0, errors.New("pushover_user_key must be 30 alphanumeric characters")
+	}
+	var enabled int64
+	if input.PushoverEnabled {
+		enabled = 1
+	}
+	return store.NotificationSettings{PushoverEnabled: input.PushoverEnabled, PushoverUserKey: userKey}, enabled, nil
 }
 
 func (s *Store) hydrateUserNotificationSettings(ctx context.Context, user store.User) (store.User, error) {
