@@ -80,11 +80,12 @@ table. Hydration happens in `hydrateAttachments` and surfaces as the
 `attachments` field on `Message`. See [uploads.md](uploads.md) for the
 two-step upload-then-attach flow.
 
-The web client renders image and video attachments inline and links other
-attachments as file cards. Clicking an inline image attachment, or an image
-inside rendered Markdown, opens an in-app image viewer with an Open original
-link. Markdown image URLs, including animated GIF URLs, render inline through
-the same sanitized Markdown path.
+The web client renders image, video, audio, PDF, and text attachments as
+compact preview cards where safe, and links other attachments as authenticated
+download cards. Clicking an inline image attachment, or an image inside
+rendered Markdown, opens an in-app image viewer with an Open original link.
+Markdown image URLs, including animated GIF URLs, render inline through the
+same sanitized Markdown path.
 
 Giphy-backed Markdown GIF images play briefly, then swap to a still preview
 with a small replay button in the lower-right corner. Pressing replay reloads
@@ -99,5 +100,5 @@ clients don't need a second round-trip. Avatar URLs are passed through as-is.
 ## What is intentionally missing
 
 - Hard delete. The soft-delete row stays for cursor stability.
-- Pinning, bookmarks, read receipts.
+- Pinning and bookmarks.
 - Per-message permissions beyond "the author can edit/delete".

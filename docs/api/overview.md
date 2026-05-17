@@ -28,6 +28,7 @@ The server resolves callers in this order (see
 | Auth          | `/api/auth/magic/{request,consume}`, `/api/auth/github/{start,callback}` | [auth](../features/auth.md) |
 | Profile       | `/api/me` | [profiles](../features/profiles.md) |
 | Workspaces    | `/api/workspaces`, `/api/workspaces/{id}` | [workspaces](../features/workspaces.md) |
+| Moderation    | `/api/workspaces/{id}/moderation/members` | [moderation](../features/moderation.md) |
 | Channels      | `/api/workspaces/{id}/channels`, `/api/channels/{id}` | [workspaces](../features/workspaces.md) |
 | Messages      | `/api/channels/{id}/messages`, `/api/messages/{id}` | [messages](../features/messages.md) |
 | Threads       | `/api/messages/{id}/thread`, `/api/messages/{id}/thread/replies` | [threads](../features/threads.md) |
@@ -48,6 +49,8 @@ The server resolves callers in this order (see
 - Pagination on listings uses cursor-style sequence numbers (`after_seq` for
   channel/DM messages, `after_cursor` for events).
 - Errors come back as `{ "error": "<message>" }` with an HTTP status code.
+- Store-level moderation restrictions surface as `403`; exhausted guest post
+  budgets surface as `429`.
 
 ## SDK
 

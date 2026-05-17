@@ -122,10 +122,13 @@ waiting-room guests with a three-post daily budget until a moderator promotes
 them to `member`; matching GitHub org members become moderators in the guest
 workspace. If the moderator org is unset, open-login users join as normal
 members so the workspace cannot become ownerless.
-Org-gated
-deployments request `read:org`. GitHub only returns private org membership
-after the user grants that scope, so team-only hosting should set
-`CLICKCLACK_GITHUB_ALLOWED_ORG`.
+
+Open guest deployments with a moderator org, and org-gated deployments, request
+`read:org`. GitHub only returns private org membership after the user grants
+that scope, so team-only hosting should set `CLICKCLACK_GITHUB_ALLOWED_ORG`.
+
+Guest restrictions and moderator controls are documented in
+[moderation.md](moderation.md).
 
 ## Authorization
 
@@ -134,8 +137,10 @@ in-tx variant). API handlers do not duplicate that check — trust the store
 layer for it. WebSocket subscriptions revalidate `GetWorkspace` before
 upgrading.
 
-Roles today are limited to `owner` and `member`, used only by the bootstrap
-helper. There is no role enforcement on writes yet beyond membership.
+Workspace roles are `owner`, `moderator`, `member`, `guest`, and `bot`. The
+store enforces guest room visibility, guest post budgets, timeout/block state,
+and moderator rank before writes. HTTP handlers still call store methods
+rather than duplicating those checks.
 
 Bot tokens add a second layer on top of membership: scope checks and a token
 workspace check. See [bots.md](bots.md).
@@ -151,4 +156,4 @@ expires.
 - Email/password login.
 - Password reset.
 - SMTP delivery for magic links (V0 prints the token; V1 will add delivery).
-- Per-channel ACLs, role-based permissions, audit logs.
+- Per-channel ACLs and a historical moderation audit log.

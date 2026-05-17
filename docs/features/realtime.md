@@ -67,6 +67,7 @@ Inserted in the same transaction as the underlying mutation:
 - `channel.read`, `dm.read`
 - `thread.reply_created`, `thread.state_updated`
 - `reaction.added`, `reaction.removed`
+- `member.moderation_updated`
 
 Direct messages also publish into the workspace event stream so DM lists stay
 fresh, but they are persisted with recipient rows and replay only to direct
@@ -77,6 +78,8 @@ conversation members.
 `nonce` in `payload`. Read receipt events carry the updated read pointer in
 top-level `seq` and include `user_id` plus the channel or DM conversation ID in
 `payload`; they are delivered only to that user.
+Moderation events carry the target `user_id` and current `role`; they are
+private to the target user and current owners/moderators.
 
 ## Ephemeral events
 

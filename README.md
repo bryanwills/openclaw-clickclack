@@ -24,7 +24,8 @@ go run ./apps/api/cmd/clickclack serve
   to recover anything you missed; HTTP `/api/realtime/events` works as a
   pull-style fallback.
 - Channels with Slack-style threads (one level, no nesting), reactions,
-  uploads, and direct messages.
+  uploads, direct messages, and a guest waiting-room path with moderator
+  approvals, timeouts, and blocks.
 - CLI-managed bootstrap, magic-link auth, optional GitHub OAuth, and an
   agent-friendly client mode for sending/listing/replying from scripts.
 - Framework-neutral [TypeScript SDK](packages/sdk-ts) and a tiny
@@ -58,6 +59,7 @@ Per-feature docs:
 | Feature          | Doc |
 |------------------|-----|
 | Auth             | [docs/features/auth.md](docs/features/auth.md) |
+| Moderation       | [docs/features/moderation.md](docs/features/moderation.md) |
 | Workspaces       | [docs/features/workspaces.md](docs/features/workspaces.md) |
 | Messages         | [docs/features/messages.md](docs/features/messages.md) |
 | Threads          | [docs/features/threads.md](docs/features/threads.md) |
@@ -147,9 +149,10 @@ CLICKCLACK_GITHUB_CLIENT_SECRET=...
 ```
 
 Without the org gate, GitHub users land in an isolated `Guests` workspace. When
-`CLICKCLACK_GITHUB_MODERATOR_ORG` is set, non-members of that org start as
-waiting-room guests with a small daily post budget until a moderator approves
-them; if it is unset, open-login users join as normal members.
+`CLICKCLACK_GITHUB_MODERATOR_ORG` is set, matching org members become
+moderators and non-members start as waiting-room guests with a three-post daily
+budget until a moderator approves them; if it is unset, open-login users join
+as normal members. See [docs/features/moderation.md](docs/features/moderation.md).
 
 Details and trade-offs in [docs/features/auth.md](docs/features/auth.md).
 For the CLI, stored session tokens, workspace defaults, and channel defaults
@@ -191,8 +194,8 @@ are in [docs/deployment.md](docs/deployment.md).
 
 V1 is in-flight. The vertical slice (workspaces, channels, Markdown
 messages, threads, realtime, reactions, search, uploads, DMs, magic-link
-auth, GitHub OAuth, Docker) is implemented. See [SPEC.md](SPEC.md) for what
-is still open.
+auth, GitHub OAuth, guest-room moderation, Postgres, R2 uploads, Docker) is
+implemented. See [SPEC.md](SPEC.md) for what is still open.
 
 ## License
 

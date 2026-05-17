@@ -42,8 +42,8 @@ or by reconnecting the websocket with a cursor.
   message that isn't in the DB.
 - IDs are sortable ULID text with semantic prefixes (see
   [../data-model.md](../data-model.md)).
-- Postgres should be added behind the store layer without changing API
-  handlers.
+- Postgres lives behind the same store layer as SQLite. API handlers call store
+  methods and do not embed dialect-specific SQL.
 
 ## Cross-cutting docs
 

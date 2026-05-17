@@ -22,6 +22,7 @@ const sections = [
   ["Welcome", ["README.md", "install.md", "quickstart.md"]],
   ["Features", [
     "features/auth.md",
+    "features/moderation.md",
     "features/workspaces.md",
     "features/messages.md",
     "features/threads.md",

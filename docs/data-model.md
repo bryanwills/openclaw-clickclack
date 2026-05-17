@@ -38,6 +38,7 @@ only when a thread URL is needed.
 ```text
 users                              identities
 workspaces                         workspace_members
+workspace_member_moderation
 channels
 messages                           thread_state
 reactions
@@ -52,7 +53,9 @@ messages_fts                       (SQLite FTS5 virtual)
 Full SQLite SQL is in
 [`apps/api/internal/store/sqlite/migrations/0001_initial.sql`](../apps/api/internal/store/sqlite/migrations/0001_initial.sql)
 and
-[`0002_auth.sql`](../apps/api/internal/store/sqlite/migrations/0002_auth.sql).
+[`0002_auth.sql`](../apps/api/internal/store/sqlite/migrations/0002_auth.sql);
+later migrations add auth/session hardening, upload metadata, public route IDs,
+read receipts, bot records, Postgres parity, and member moderation.
 Full Postgres SQL is in
 [`apps/api/internal/store/postgres/migrations/0001_schema.sql`](../apps/api/internal/store/postgres/migrations/0001_schema.sql).
 
@@ -106,3 +109,7 @@ triggers keep it in sync on insert/delete/update-of-body. Postgres search uses
 The store interface in `apps/api/internal/store/types.go` is the abstraction
 line — handlers should keep calling store methods, not embed dialect-specific
 SQL.
+
+SQL accessors are generated with `sqlc`. When changing store SQL, edit the
+schema/query files and run `pnpm generate:sqlc`; do not hand-maintain generated
+`storedb` code.

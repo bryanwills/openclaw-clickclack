@@ -8,7 +8,7 @@ read_when:
 
 A workspace is the top-level container. It owns channels, direct conversations,
 events, uploads, and invites. Membership lives in `workspace_members` with a
-`role` of `owner` or `member`.
+role of `owner`, `moderator`, `member`, `guest`, or `bot`.
 
 ## Workspaces
 
@@ -22,8 +22,8 @@ GET  /api/workspaces/{workspace_id}           # one workspace, must be a member
 form of `name` and must be unique.
 
 The owner who creates the workspace is auto-added with role `owner`. Adding
-other members today goes through `clickclack admin user create --workspace
-wsp_...` — the HTTP API does not yet expose member management.
+other members today goes through auth/bootstrap flows or admin commands; the
+HTTP API exposes moderation for existing members, not arbitrary invites.
 
 ## Channels
 
@@ -31,8 +31,6 @@ wsp_...` — the HTTP API does not yet expose member management.
 GET  /api/workspaces/{workspace_id}/channels  # list, ordered by name
 POST /api/workspaces/{workspace_id}/channels  # create
 PATCH /api/channels/{channel_id}              # rename, change kind, archive
-GET  /api/workspaces/{workspace_id}/moderation/members
-PATCH /api/workspaces/{workspace_id}/moderation/members/{user_id}
 ```
 
 Create body: `{name, kind?}`. `name` is slugified to keep `(workspace_id, name)`
@@ -43,11 +41,12 @@ fills `archived_at`; `archived=false` clears it.
 
 Guest workspace members are waiting-room users. They can only see `#guest`, can
 post three messages per day, and cannot create rooms or DMs. Moderators and
-owners can promote them to `member`, time them out, or block them.
+owners can promote them to `member`, time them out, or block them. See
+[moderation.md](moderation.md).
 
-Both endpoints emit a durable `channel.created` or `channel.updated` event into
-the workspace event stream so connected clients see the change without
-polling.
+Channel write endpoints emit a durable `channel.created` or `channel.updated`
+event into the workspace event stream so connected clients see the change
+without polling.
 
 ## Web routes
 
@@ -88,5 +87,5 @@ first direct conversation.
 ## What is intentionally missing
 
 - Private channels with explicit member sets (planned but not modeled in V1).
-- Workspace-level roles beyond owner/member.
+- Arbitrary HTTP member invites/additions.
 - Channel topic, description, or pinned messages.

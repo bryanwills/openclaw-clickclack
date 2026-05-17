@@ -80,6 +80,7 @@ apps/
       realtime/         # in-process pub/sub hub
       store/            # store interface + types
         sqlite/         # SQLite implementation, migrations, backup, export
+        postgres/       # Postgres implementation, migrations, export
       webassets/        # go:embed for the built SPA
   web/                  # Svelte 5 SPA
 packages/
@@ -88,8 +89,8 @@ packages/
 examples/
   bot-ts/               # SDK usage example
 infra/
-  migrations/sqlite     # mirror of embedded migrations for tooling
-  migrations/postgres   # placeholder for future Postgres support
+  migrations/sqlite     # mirror of embedded SQLite migrations for tooling
+  migrations/postgres   # mirror of embedded Postgres migrations for tooling
 tests/
   e2e/                  # Playwright tests
 docs/                   # this directory
@@ -100,7 +101,8 @@ docs/                   # this directory
 1. Update `packages/protocol/openapi.yaml` first when the wire shape
    changes. It is the contract.
 2. Add the store method on `apps/api/internal/store/types.go` and implement
-   it in `apps/api/internal/store/sqlite`.
+   it in both `apps/api/internal/store/sqlite` and
+   `apps/api/internal/store/postgres` when the feature touches durable state.
 3. Wire the handler in `apps/api/internal/httpapi`.
 4. Update the SDK in `packages/sdk-ts/src/index.ts` so TS clients have a
    typed surface.
@@ -120,7 +122,9 @@ docs/                   # this directory
   `msg_`, `evt_`, `upl_`, `idn_`).
 - Keep transactions short. Outbox events are inserted in the same tx as the
   durable write that produced them.
-- Avoid Postgres-only SQL. Postgres support is planned to live behind the
-  store interface, not by leaking dialect-specific SQL into handlers.
+- Keep SQL behind the store interface. Dialect-specific SQL belongs in the
+  SQLite/Postgres store packages, not in HTTP handlers.
+- Use `sqlc` for typed SQL. Edit schema/query files, then run
+  `pnpm generate:sqlc`; do not hand-maintain generated `storedb` code.
 - TypeScript: no Svelte imports in `packages/sdk-ts`. The SDK must stay
   framework-neutral.

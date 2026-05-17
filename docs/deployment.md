@@ -165,14 +165,19 @@ CLICKCLACK_GITHUB_CLIENT_ID=...
 CLICKCLACK_GITHUB_CLIENT_SECRET=...
 # Optional org gate:
 # CLICKCLACK_GITHUB_ALLOWED_ORG=openclaw
+# Optional moderator org for open guest login:
+# CLICKCLACK_GITHUB_MODERATOR_ORG=openclaw
 ```
 
 Configure the GitHub OAuth app callback to
 `<public-url>/api/auth/github/callback`. Without `CLICKCLACK_GITHUB_ALLOWED_ORG`,
 any GitHub account can sign in and is joined to an isolated `Guests` workspace
-with a `guest` channel. When the
-org gate is set, ClickClack asks GitHub for `read:org` and only accepts active
-members of that org. See [features/auth.md](features/auth.md).
+with a `guest` channel. When `CLICKCLACK_GITHUB_MODERATOR_ORG` is set, members
+of that org become guest-workspace moderators and non-members start as
+post-limited guests until approved. When the org gate is set, ClickClack asks
+GitHub for `read:org` and only accepts active members of that org. See
+[features/auth.md](features/auth.md) and
+[features/moderation.md](features/moderation.md).
 
 ## Migrations
 

@@ -9,7 +9,7 @@ read_when:
 Uploads are files keyed by an `upl_...` ID and attached to messages through a
 join table. The default backend is local disk; Cloudflare R2 can store bytes
 for ephemeral container deployments. The server streams uploads back to
-authenticated workspace members.
+authenticated workspace members and serves common safe preview types inline.
 
 ## Endpoints
 
@@ -25,6 +25,8 @@ POST /api/messages/{message_id}/attachments        # { upload_id }
   not used as the storage key.
 - `Content-Type` falls back to `application/octet-stream` when the client
   doesn't send one.
+- Guests cannot upload or attach files while they are still in the waiting
+  room. Timed-out and blocked users are also upload-restricted.
 
 ## Attaching to a message
 
@@ -37,10 +39,20 @@ The handler checks that the requesting user is a member of the message's
 workspace before linking. There is no "upload owner must equal message
 author" rule today.
 
-The web client renders `image/*` uploads inline in timelines and threads, and
-renders `video/*` uploads as inline native players with controls. Other content
-types appear as authenticated download cards that link to
-`/api/uploads/{upload_id}`.
+The web client renders common previewable types in compact attachment cards:
+
+- `image/*` inline, preserving recorded dimensions when available.
+- `video/*` as inline native players with controls.
+- `audio/*` as inline native audio controls.
+- `application/pdf` as a first-page thumbnail card with the filename, size,
+  and authenticated download link.
+- `text/plain` as a lightweight text-file card.
+
+Other content types appear as authenticated download cards that link to
+`/api/uploads/{upload_id}`. The server sends `Content-Disposition: inline` only
+for the safe preview set (`image`, `video`, `audio`, `text/plain`, and
+`application/pdf`) and keeps `X-Content-Type-Options: nosniff` plus a sandbox
+content-security policy on upload responses.
 
 ## Storage layout
 
@@ -73,6 +85,6 @@ fetched from R2.
 
 ## What is intentionally missing
 
-- Image thumbnailing/transcoding.
+- Server-side image thumbnailing/transcoding.
 - Virus scanning.
 - Per-workspace quotas.
