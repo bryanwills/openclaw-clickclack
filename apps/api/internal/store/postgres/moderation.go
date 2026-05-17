@@ -274,22 +274,34 @@ func (s *Store) UpdateMemberModeration(ctx context.Context, input store.UpdateMe
 		return store.MemberModeration{}, store.Event{}, err
 	}
 	defer tx.Rollback()
-	if err := requireModeratorTx(ctx, tx, input.WorkspaceID, input.ActorUserID); err != nil {
+	qtx := storedb.New(tx)
+	roleRows, err := qtx.MembershipRolesForUpdate(ctx, storedb.MembershipRolesForUpdateParams{WorkspaceID: input.WorkspaceID, ActorUserID: input.ActorUserID, TargetUserID: input.TargetUserID})
+	if err != nil {
+		return store.MemberModeration{}, store.Event{}, err
+	}
+	roles := make(map[string]string, len(roleRows))
+	for _, row := range roleRows {
+		roles[row.UserID] = row.Role
+	}
+	actorRole, ok := roles[input.ActorUserID]
+	if !ok {
+		return store.MemberModeration{}, store.Event{}, sql.ErrNoRows
+	}
+	if actorRole != store.WorkspaceRoleOwner && actorRole != store.WorkspaceRoleModerator {
+		return store.MemberModeration{}, store.Event{}, store.ErrModerationRestricted
+	}
+	if err := requireNoModerationBlockTx(ctx, tx, input.WorkspaceID, input.ActorUserID); err != nil {
 		return store.MemberModeration{}, store.Event{}, err
 	}
 	if input.TargetUserID == input.ActorUserID {
 		return store.MemberModeration{}, store.Event{}, errors.New("moderators cannot moderate themselves")
 	}
-	targetRole, err := memberRoleTx(ctx, tx, input.WorkspaceID, input.TargetUserID)
-	if err != nil {
-		return store.MemberModeration{}, store.Event{}, err
+	targetRole, ok := roles[input.TargetUserID]
+	if !ok {
+		return store.MemberModeration{}, store.Event{}, sql.ErrNoRows
 	}
 	if targetRole == store.WorkspaceRoleOwner {
 		return store.MemberModeration{}, store.Event{}, errors.New("owners cannot be moderated")
-	}
-	actorRole, err := memberRoleTx(ctx, tx, input.WorkspaceID, input.ActorUserID)
-	if err != nil {
-		return store.MemberModeration{}, store.Event{}, err
 	}
 	if roleRank(targetRole) >= roleRank(actorRole) {
 		return store.MemberModeration{}, store.Event{}, errors.New("target role is too high for this moderator")
@@ -350,7 +362,6 @@ func (s *Store) UpdateMemberModeration(ctx context.Context, input store.UpdateMe
 	if err != nil {
 		return store.MemberModeration{}, store.Event{}, err
 	}
-	qtx := storedb.New(tx)
 	clearTimeoutParams := storedb.ClearMemberTimeoutParams{WorkspaceID: input.WorkspaceID, UserID: input.TargetUserID, ModerationBy: sqlText(input.ActorUserID), ModerationAt: nowValue}
 	if input.ClearTimeout {
 		if err := qtx.ClearMemberTimeout(ctx, clearTimeoutParams); err != nil {

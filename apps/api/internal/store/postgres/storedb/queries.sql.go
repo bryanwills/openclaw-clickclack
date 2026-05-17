@@ -2087,6 +2087,49 @@ func (q *Queries) MarkMagicLinkUsed(ctx context.Context, arg MarkMagicLinkUsedPa
 	return result.RowsAffected()
 }
 
+const membershipRolesForUpdate = `-- name: MembershipRolesForUpdate :many
+SELECT user_id, role
+FROM workspace_members
+WHERE workspace_id = $1
+  AND user_id IN ($2, $3)
+ORDER BY user_id
+FOR UPDATE
+`
+
+type MembershipRolesForUpdateParams struct {
+	WorkspaceID  string `json:"workspace_id"`
+	ActorUserID  string `json:"actor_user_id"`
+	TargetUserID string `json:"target_user_id"`
+}
+
+type MembershipRolesForUpdateRow struct {
+	UserID string `json:"user_id"`
+	Role   string `json:"role"`
+}
+
+func (q *Queries) MembershipRolesForUpdate(ctx context.Context, arg MembershipRolesForUpdateParams) ([]MembershipRolesForUpdateRow, error) {
+	rows, err := q.db.QueryContext(ctx, membershipRolesForUpdate, arg.WorkspaceID, arg.ActorUserID, arg.TargetUserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []MembershipRolesForUpdateRow
+	for rows.Next() {
+		var i MembershipRolesForUpdateRow
+		if err := rows.Scan(&i.UserID, &i.Role); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const pruneEvents = `-- name: PruneEvents :execrows
 DELETE FROM events AS e
 WHERE e.workspace_id = $1

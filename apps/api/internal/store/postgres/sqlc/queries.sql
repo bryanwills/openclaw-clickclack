@@ -211,6 +211,14 @@ FROM workspace_members
 WHERE workspace_id = sqlc.arg(workspace_id)
   AND user_id = sqlc.arg(user_id);
 
+-- name: MembershipRolesForUpdate :many
+SELECT user_id, role
+FROM workspace_members
+WHERE workspace_id = sqlc.arg(workspace_id)
+  AND user_id IN (sqlc.arg(actor_user_id), sqlc.arg(target_user_id))
+ORDER BY user_id
+FOR UPDATE;
+
 -- name: UserHasNonGuestMembership :one
 SELECT workspace_id
 FROM workspace_members
