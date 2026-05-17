@@ -38,7 +38,7 @@ func (s *Server) markChannelRead(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Seq int64 `json:"seq"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -65,7 +65,7 @@ func (s *Server) markDirectRead(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Seq int64 `json:"seq"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -317,11 +317,15 @@ func (s *Server) attachUpload(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		UploadID string `json:"upload_id"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
 	if err := act.requireScope("uploads:write"); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	if err := act.requireScope("messages:write"); err != nil {
 		writeError(w, http.StatusForbidden, err)
 		return
 	}
@@ -369,7 +373,7 @@ func (s *Server) createDirectConversation(w http.ResponseWriter, r *http.Request
 		WorkspaceID string   `json:"workspace_id"`
 		MemberIDs   []string `json:"member_ids"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -418,7 +422,7 @@ func (s *Server) createDirectMessage(w http.ResponseWriter, r *http.Request) {
 		QuotedMessageID string `json:"quoted_message_id"`
 		Nonce           string `json:"nonce"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -446,7 +450,7 @@ func (s *Server) mattermostWebhook(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Text string `json:"text"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}

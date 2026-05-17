@@ -22,6 +22,10 @@ var ErrInvalidMessagePage = errors.New("invalid message page request")
 // a write. HTTP callers surface it as a 403 or 429 depending on the rule.
 var ErrModerationRestricted = errors.New("moderation restriction")
 
+// ErrMessageNotWritable is returned when a user can read a message but cannot
+// mutate it.
+var ErrMessageNotWritable = errors.New("message is not writable")
+
 // ErrPostRateLimited is returned when a waiting-room guest exhausts the small
 // daily post budget.
 var ErrPostRateLimited = errors.New("waiting room post limit reached")

@@ -223,6 +223,79 @@ func TestDirectTypingEphemeralIsLimitedToConversationMembers(t *testing.T) {
 	}
 }
 
+func TestChannelTypingEphemeralRequiresVisibleChannel(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dataDir := t.TempDir()
+	st, err := sqlitestore.Open("sqlite://" + filepath.Join(dataDir, "clickclack.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	moderator, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: "Moderator", Email: "typing-mod@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace, err := st.EnsureDefaultGuestWorkspaceMember(ctx, moderator.ID, store.WorkspaceRoleModerator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	guest, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: "Guest", Email: "typing-guest@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.EnsureDefaultGuestWorkspaceMember(ctx, guest.ID, store.WorkspaceRoleGuest); err != nil {
+		t.Fatal(err)
+	}
+	channels, err := st.ListChannels(ctx, workspace.ID, moderator.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var guestChannelID, generalChannelID string
+	for _, channel := range channels {
+		switch channel.Name {
+		case "guest":
+			guestChannelID = channel.ID
+		case "general":
+			generalChannelID = channel.ID
+		}
+	}
+	if guestChannelID == "" || generalChannelID == "" {
+		t.Fatalf("expected guest and general channels, got %#v", channels)
+	}
+	server := httptest.NewServer(New(st, realtime.NewHub(), Options{UploadDir: filepath.Join(dataDir, "uploads")}).Handler())
+	t.Cleanup(server.Close)
+
+	expectStatusAsUser(t, moderator.ID, http.MethodPost, server.URL+"/api/realtime/ephemeral", strings.NewReader(`{"workspace_id":"`+workspace.ID+`","type":"typing.started","payload":{"channel_id":"`+generalChannelID+`"}}`), http.StatusBadRequest)
+	expectStatusAsUser(t, guest.ID, http.MethodPost, server.URL+"/api/realtime/ephemeral", strings.NewReader(`{"workspace_id":"`+workspace.ID+`","channel_id":"`+generalChannelID+`","type":"typing.started"}`), http.StatusForbidden)
+
+	ephemeral := postJSONAsUser[struct {
+		Event store.Event `json:"event"`
+	}](t, moderator.ID, server.URL+"/api/realtime/ephemeral", map[string]any{
+		"workspace_id": workspace.ID,
+		"channel_id":   guestChannelID,
+		"type":         "typing.started",
+		"payload": map[string]any{
+			"channel_id":              generalChannelID,
+			"direct_conversation_id":  "dcn_spoof",
+			"client_ephemeral_status": "typing",
+		},
+	})
+	if ephemeral.Event.ChannelID != guestChannelID {
+		t.Fatalf("expected canonical channel_id, got %#v", ephemeral.Event)
+	}
+	payload, ok := ephemeral.Event.Payload.(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected payload type: %#v", ephemeral.Event.Payload)
+	}
+	if payload["channel_id"] != guestChannelID || payload["direct_conversation_id"] != nil || payload["user_id"] != moderator.ID {
+		t.Fatalf("unexpected canonical payload: %#v", payload)
+	}
+}
+
 func dialRealtimeAsUser(t *testing.T, serverURL, workspaceID, userID string) *websocket.Conn {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

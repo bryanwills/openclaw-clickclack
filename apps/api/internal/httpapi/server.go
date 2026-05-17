@@ -32,7 +32,11 @@ type Server struct {
 	pushNotifier   PushNotifier
 }
 
-const websocketBearerProtocolPrefix = "clickclack.bearer."
+const (
+	websocketBearerProtocolPrefix = "clickclack.bearer."
+	maxJSONBodyBytes              = 1 << 20
+	httpRequestTimeout            = 30 * time.Second
+)
 
 type actor struct {
 	user        store.User
@@ -256,7 +260,7 @@ func (s *Server) updateMe(w http.ResponseWriter, r *http.Request) {
 		AvatarURL            string                      `json:"avatar_url"`
 		NotificationSettings *store.NotificationSettings `json:"notification_settings"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -316,7 +320,7 @@ func (s *Server) createWorkspace(w http.ResponseWriter, r *http.Request) {
 		Name string `json:"name"`
 		Slug string `json:"slug"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -403,7 +407,7 @@ func (s *Server) updateWorkspaceMemberModeration(w http.ResponseWriter, r *http.
 		Blocked        *bool   `json:"blocked"`
 		ModerationNote *string `json:"moderation_note"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -469,7 +473,7 @@ func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
 		Name string `json:"name"`
 		Kind string `json:"kind"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -517,7 +521,7 @@ func (s *Server) createMessage(w http.ResponseWriter, r *http.Request) {
 		QuotedMessageID string `json:"quoted_message_id"`
 		Nonce           string `json:"nonce"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -584,7 +588,7 @@ func (s *Server) createThreadReply(w http.ResponseWriter, r *http.Request) {
 		QuotedMessageID string `json:"quoted_message_id"`
 		Nonce           string `json:"nonce"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -612,7 +616,7 @@ func (s *Server) addReaction(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Emoji string `json:"emoji"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -926,8 +930,9 @@ func writeWS(ctx context.Context, conn *websocket.Conn, event store.Event) error
 	return conn.Write(ctx, websocket.MessageText, body)
 }
 
-func readJSON(r *http.Request, out any) error {
+func readJSON(w http.ResponseWriter, r *http.Request, out any) error {
 	defer r.Body.Close()
+	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBodyBytes)
 	return json.NewDecoder(r.Body).Decode(out)
 }
 
@@ -988,6 +993,10 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 }
 
 func writeError(w http.ResponseWriter, status int, err error) {
+	var maxBytesErr *http.MaxBytesError
+	if errors.As(err, &maxBytesErr) {
+		status = http.StatusRequestEntityTooLarge
+	}
 	writeJSON(w, status, map[string]any{"error": err.Error()})
 }
 
@@ -996,6 +1005,8 @@ func writeStoreError(w http.ResponseWriter, err error) {
 	case errors.Is(err, store.ErrPostRateLimited):
 		writeError(w, http.StatusTooManyRequests, err)
 	case errors.Is(err, store.ErrModerationRestricted):
+		writeError(w, http.StatusForbidden, err)
+	case errors.Is(err, store.ErrMessageNotWritable):
 		writeError(w, http.StatusForbidden, err)
 	default:
 		writeError(w, http.StatusBadRequest, err)
@@ -1079,7 +1090,12 @@ func writeMessagePage(w http.ResponseWriter, page store.MessagePage, err error) 
 }
 
 func ListenAndServe(ctx context.Context, addr string, handler http.Handler) error {
-	server := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: 5 * time.Second}
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           withHTTPDeadlines(handler),
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -1091,4 +1107,20 @@ func ListenAndServe(ctx context.Context, addr string, handler http.Handler) erro
 		return nil
 	}
 	return fmt.Errorf("serve %s: %w", addr, err)
+}
+
+func withHTTPDeadlines(handler http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+			handler.ServeHTTP(w, r)
+			return
+		}
+		controller := http.NewResponseController(w)
+		deadline := time.Now().Add(httpRequestTimeout)
+		_ = controller.SetReadDeadline(deadline)
+		defer func() {
+			_ = controller.SetReadDeadline(time.Time{})
+		}()
+		handler.ServeHTTP(w, r)
+	})
 }

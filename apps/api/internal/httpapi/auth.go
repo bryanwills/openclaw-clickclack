@@ -29,7 +29,7 @@ func (s *Server) requestMagicLink(w http.ResponseWriter, r *http.Request) {
 		Email       string `json:"email"`
 		DisplayName string `json:"display_name"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -50,7 +50,7 @@ func (s *Server) consumeMagicLink(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Token string `json:"token"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}

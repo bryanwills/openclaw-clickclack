@@ -109,6 +109,9 @@ func (s *Store) AttachUpload(ctx context.Context, input store.AttachUploadInput)
 	if err := requireMessageAccessTx(ctx, tx, msg, input.UserID); err != nil {
 		return err
 	}
+	if msg.AuthorID != input.UserID {
+		return store.ErrMessageNotWritable
+	}
 	if err := requireNoModerationBlockTx(ctx, tx, msg.WorkspaceID, input.UserID); err != nil {
 		return err
 	}

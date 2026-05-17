@@ -3,6 +3,7 @@ package httpapi
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -24,7 +25,7 @@ func (s *Server) updateChannel(w http.ResponseWriter, r *http.Request) {
 		Kind     string `json:"kind"`
 		Archived *bool  `json:"archived"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -51,7 +52,7 @@ func (s *Server) updateMessage(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Body string `json:"body"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -102,7 +103,7 @@ func (s *Server) publishEphemeral(w http.ResponseWriter, r *http.Request) {
 		Type                 string         `json:"type"`
 		Payload              map[string]any `json:"payload"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -121,15 +122,20 @@ func (s *Server) publishEphemeral(w http.ResponseWriter, r *http.Request) {
 	if body.Payload == nil {
 		body.Payload = map[string]any{}
 	}
-	directConversationID := body.DirectConversationID
-	if directConversationID == "" {
+	channelID := strings.TrimSpace(body.ChannelID)
+	directConversationID := strings.TrimSpace(body.DirectConversationID)
+	if channelID == "" && directConversationID == "" {
 		if payloadID, _ := body.Payload["direct_conversation_id"].(string); payloadID != "" {
-			directConversationID = payloadID
+			directConversationID = strings.TrimSpace(payloadID)
 		}
+	}
+	if (body.Type == "typing.started" || body.Type == "typing.stopped") && channelID == "" && directConversationID == "" {
+		writeError(w, http.StatusBadRequest, errors.New("typing events require channel_id or direct_conversation_id"))
+		return
 	}
 	var recipientUserIDs []string
 	if directConversationID != "" {
-		if body.ChannelID != "" {
+		if channelID != "" {
 			writeError(w, http.StatusBadRequest, errors.New("channel_id and direct_conversation_id are mutually exclusive"))
 			return
 		}
@@ -146,13 +152,28 @@ func (s *Server) publishEphemeral(w http.ResponseWriter, r *http.Request) {
 			recipientUserIDs = append(recipientUserIDs, member.ID)
 		}
 		body.Payload["direct_conversation_id"] = directConversationID
+		delete(body.Payload, "channel_id")
+	} else if channelID != "" {
+		channel, err := s.store.GetChannel(r.Context(), channelID, act.user.ID)
+		if err != nil || channel.WorkspaceID != body.WorkspaceID {
+			if err == nil {
+				err = errors.New("channel is not in this workspace")
+			}
+			writeError(w, http.StatusForbidden, err)
+			return
+		}
+		body.Payload["channel_id"] = channelID
+		delete(body.Payload, "direct_conversation_id")
+	} else {
+		delete(body.Payload, "channel_id")
+		delete(body.Payload, "direct_conversation_id")
 	}
 	body.Payload["user_id"] = act.user.ID
 	event := store.Event{
 		ID:               "eph_" + time.Now().UTC().Format("20060102150405.000000000"),
 		Type:             body.Type,
 		WorkspaceID:      body.WorkspaceID,
-		ChannelID:        body.ChannelID,
+		ChannelID:        channelID,
 		CreatedAt:        time.Now().UTC().Format(time.RFC3339Nano),
 		Payload:          body.Payload,
 		RecipientUserIDs: recipientUserIDs,

@@ -205,6 +205,7 @@ func TestChatAPIVerticalSlice(t *testing.T) {
 	}
 	privateUpload := uploadFileAsUser(t, second.ID, server.URL+"/api/uploads", workspace.ID, "private.txt", "private upload")
 	expectStatus(t, http.MethodPost, server.URL+"/api/messages/"+created.Message.ID+"/attachments", strings.NewReader(`{"upload_id":"`+privateUpload.ID+`"}`), http.StatusForbidden)
+	expectStatusAsUser(t, second.ID, http.MethodPost, server.URL+"/api/messages/"+created.Message.ID+"/attachments", strings.NewReader(`{"upload_id":"`+privateUpload.ID+`"}`), http.StatusForbidden)
 
 	reaction := postJSON[struct {
 		Event store.Event `json:"event"`
@@ -298,6 +299,36 @@ func TestCreateWorkspaceAllowedForUsersWithoutMemberships(t *testing.T) {
 
 	expectStatusAsUser(t, newUser.ID, http.MethodPost, server.URL+"/api/workspaces", strings.NewReader(`{"name":"First Room"}`), http.StatusCreated)
 	expectStatusAsUser(t, guest.ID, http.MethodPost, server.URL+"/api/workspaces", strings.NewReader(`{"name":"Guest Escape"}`), http.StatusForbidden)
+}
+
+func TestJSONBodiesAreSizeLimited(t *testing.T) {
+	t.Parallel()
+	st := newHTTPStore(t)
+	server := httptest.NewServer(New(st, realtime.NewHub(), Options{}).Handler())
+	t.Cleanup(server.Close)
+
+	body := strings.NewReader(`{"token":"` + strings.Repeat("a", maxJSONBodyBytes+1) + `"}`)
+	expectStatus(t, http.MethodPost, server.URL+"/api/auth/magic/consume", body, http.StatusRequestEntityTooLarge)
+}
+
+func TestHTTPDeadlinesSkipWebSocketUpgrades(t *testing.T) {
+	t.Parallel()
+	var normal deadlineRecorder
+	withHTTPDeadlines(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})).ServeHTTP(&normal, httptest.NewRequest(http.MethodPost, "/api/me", nil))
+	if len(normal.readDeadlines) != 2 || normal.readDeadlines[0].IsZero() || !normal.readDeadlines[1].IsZero() {
+		t.Fatalf("unexpected read deadlines: %#v", normal.readDeadlines)
+	}
+	if len(normal.writeDeadlines) != 0 {
+		t.Fatalf("unexpected write deadlines: %#v", normal.writeDeadlines)
+	}
+
+	var websocket deadlineRecorder
+	req := httptest.NewRequest(http.MethodGet, "/api/realtime/ws", nil)
+	req.Header.Set("Upgrade", "websocket")
+	withHTTPDeadlines(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})).ServeHTTP(&websocket, req)
+	if len(websocket.readDeadlines) != 0 || len(websocket.writeDeadlines) != 0 {
+		t.Fatalf("websocket request should not inherit HTTP deadlines: read=%#v write=%#v", websocket.readDeadlines, websocket.writeDeadlines)
+	}
 }
 
 func TestMessagePageHTTPCursors(t *testing.T) {
@@ -1131,6 +1162,22 @@ func expectStatusWithBearer(t *testing.T, token, method, endpoint string, body i
 		payload, _ := io.ReadAll(resp.Body)
 		t.Fatalf("%s %s with bearer: expected %d, got %s %s", method, endpoint, status, resp.Status, string(payload))
 	}
+}
+
+type deadlineRecorder struct {
+	httptest.ResponseRecorder
+	readDeadlines  []time.Time
+	writeDeadlines []time.Time
+}
+
+func (r *deadlineRecorder) SetReadDeadline(deadline time.Time) error {
+	r.readDeadlines = append(r.readDeadlines, deadline)
+	return nil
+}
+
+func (r *deadlineRecorder) SetWriteDeadline(deadline time.Time) error {
+	r.writeDeadlines = append(r.writeDeadlines, deadline)
+	return nil
 }
 
 func uploadFile(t *testing.T, endpoint, workspaceID, filename, content string) store.Upload {

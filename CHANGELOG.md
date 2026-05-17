@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Hardened JSON request body limits, realtime typing scope validation, and upload attachment authorization after DeepSec review.
 - Documented guest-room moderation, upload previews, Postgres/R2 deployment notes, and sqlc store workflow.
 - Added a guest waiting-room moderation flow with three-post daily guest limits, OpenClaw GitHub org moderator mapping, member approval, timeouts, blocks, and moderator profile controls.
 - Added first-page thumbnail previews for PDF uploads, thumbnail cards for text uploads, inline audio controls in chat messages, and open GitHub guest-room sign-in.
