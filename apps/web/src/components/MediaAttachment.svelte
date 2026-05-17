@@ -17,8 +17,14 @@
   let loadedDurationLabel = $state("");
   let durationLabel = $derived(loadedDurationLabel || formatDuration(upload.duration_ms ?? 0));
 
-  let isImage = $derived(upload.content_type?.startsWith("image/") ?? false);
-  let isVideo = $derived(upload.content_type?.startsWith("video/") ?? false);
+  let contentType = $derived((upload.content_type || "").split(";")[0].trim().toLowerCase());
+  let isImage = $derived(contentType.startsWith("image/"));
+  let isVideo = $derived(contentType.startsWith("video/"));
+  let isAudio = $derived(contentType.startsWith("audio/"));
+  let isPDF = $derived(contentType === "application/pdf");
+  let isText = $derived(contentType === "text/plain");
+  let canPreviewDocument = $derived(isPDF || isText);
+  let documentLabel = $derived(isPDF ? "PDF" : "Text");
 
   let mediaStyle = $derived.by(() => {
     const w = upload.width ?? 0;
@@ -114,7 +120,7 @@
       onplay={handlePlay}
       onloadedmetadata={handleLoadedMetadata}
     >
-      <source src={url} type={upload.content_type} />
+      <source src={url} type={contentType} />
     </video>
     {#if !started}
       <button
@@ -154,6 +160,52 @@
         </svg>
       </a>
     </div>
+  </div>
+{:else if isAudio}
+  <div class="audio-attachment">
+    <div class="audio-attachment__meta">
+      <span class="file-icon" aria-hidden="true">♪</span>
+      <span>
+        <strong>{upload.filename}</strong>
+        <small>{formatBytes(upload.byte_size)}</small>
+      </span>
+    </div>
+    <audio controls preload="metadata" src={url}>
+      <a href={url} target="_blank" rel="noreferrer">{upload.filename}</a>
+    </audio>
+  </div>
+{:else if canPreviewDocument}
+  <div class="document-attachment">
+    <div class="document-attachment__bar">
+      <span class="document-attachment__badge">{documentLabel}</span>
+      <a class="document-attachment__title" href={url} target="_blank" rel="noreferrer">
+        {upload.filename}
+      </a>
+      <small>{formatBytes(upload.byte_size)}</small>
+      <a
+        class="document-attachment__download"
+        href={url}
+        download={upload.filename}
+        aria-label={`Download ${upload.filename}`}
+      >
+        <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+          <path
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M12 4v12m0 0 4-4m-4 4-4-4M5 20h14"
+          />
+        </svg>
+      </a>
+    </div>
+    <iframe
+      class="document-attachment__preview"
+      src={url}
+      title={`${documentLabel} preview: ${upload.filename}`}
+      loading="lazy"
+    ></iframe>
   </div>
 {:else}
   <a class="file-attachment" href={url} target="_blank" rel="noreferrer">
