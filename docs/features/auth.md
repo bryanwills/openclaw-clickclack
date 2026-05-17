@@ -79,7 +79,8 @@ explicit `--token`.
 
 `ConsumeMagicLink` returns `{user, session, token}` and sets `cc_session` as an
 HTTP-only cookie. Browsers can drop the body; non-browser clients should hold
-the `session.token` for the `Authorization` header.
+the `session.token` for the `Authorization` header. Session cookies default to
+`Secure` outside local dev HTTP, even if a reverse proxy omits HTTPS headers.
 
 ## GitHub OAuth (optional)
 

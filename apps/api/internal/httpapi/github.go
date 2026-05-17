@@ -283,10 +283,20 @@ func (s *Server) setSessionCookie(w http.ResponseWriter, r *http.Request, sessio
 }
 
 func (s *Server) secureCookies(r *http.Request) bool {
-	if publicURL, err := url.Parse(strings.TrimSpace(s.githubOAuth.PublicURL)); err == nil && publicURL.Scheme == "https" {
+	if publicURL, err := url.Parse(strings.TrimSpace(s.githubOAuth.PublicURL)); err == nil {
+		if publicURL.Scheme == "https" {
+			return true
+		}
+	}
+	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
 		return true
 	}
-	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+	if publicURL, err := url.Parse(strings.TrimSpace(s.githubOAuth.PublicURL)); err == nil {
+		if !s.disableDevAuth && publicURL.Scheme == "http" && isLocalHostPort(publicURL.Host) {
+			return false
+		}
+	}
+	return !(!s.disableDevAuth && isLocalHostPort(r.RemoteAddr) && isLocalHostPort(r.Host))
 }
 
 func randomToken() (string, error) {

@@ -1339,6 +1339,59 @@ func TestSecureCookiesFollowPublicURL(t *testing.T) {
 	}
 }
 
+func TestSessionCookiesDefaultSecureOutsideLocalDev(t *testing.T) {
+	t.Parallel()
+	session := store.Session{Token: "tok_test", ExpiresAt: time.Now().Add(time.Hour).Format(time.RFC3339Nano)}
+	for _, tc := range []struct {
+		name       string
+		options    Options
+		url        string
+		remoteAddr string
+		wantSecure bool
+	}{
+		{
+			name:       "production_http_fails_closed",
+			options:    Options{DisableDevAuth: true},
+			url:        "http://app.example.test/",
+			remoteAddr: "203.0.113.10:45678",
+			wantSecure: true,
+		},
+		{
+			name:       "local_dev_http",
+			options:    Options{},
+			url:        "http://127.0.0.1:8080/",
+			remoteAddr: "127.0.0.1:45678",
+			wantSecure: false,
+		},
+		{
+			name:       "local_dev_http_public_host",
+			options:    Options{},
+			url:        "http://app.example.test/",
+			remoteAddr: "127.0.0.1:45678",
+			wantSecure: true,
+		},
+		{
+			name:       "local_public_url_does_not_downgrade_https_request",
+			options:    Options{GitHubOAuth: GitHubOAuthConfig{PublicURL: "http://localhost:8080"}},
+			url:        "https://localhost:8080/",
+			remoteAddr: "127.0.0.1:45678",
+			wantSecure: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			req := httptest.NewRequest(http.MethodGet, tc.url, nil)
+			req.RemoteAddr = tc.remoteAddr
+			recorder := httptest.NewRecorder()
+			New(nil, nil, tc.options).setSessionCookie(recorder, req, session)
+			cookie := findCookie(recorder.Result().Cookies(), "cc_session")
+			if cookie == nil || cookie.Secure != tc.wantSecure {
+				t.Fatalf("expected secure=%v session cookie, got %#v", tc.wantSecure, cookie)
+			}
+		})
+	}
+}
+
 func TestRealtimeWebSocketOriginAndBearerProtocol(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
