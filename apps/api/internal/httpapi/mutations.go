@@ -123,11 +123,22 @@ func (s *Server) publishEphemeral(w http.ResponseWriter, r *http.Request) {
 		body.Payload = map[string]any{}
 	}
 	channelID := strings.TrimSpace(body.ChannelID)
-	directConversationID := strings.TrimSpace(body.DirectConversationID)
-	if channelID == "" && directConversationID == "" {
-		if payloadID, _ := body.Payload["direct_conversation_id"].(string); payloadID != "" {
-			directConversationID = strings.TrimSpace(payloadID)
+	if payloadID, _ := body.Payload["channel_id"].(string); payloadID != "" {
+		payloadID = strings.TrimSpace(payloadID)
+		if channelID != "" && channelID != payloadID {
+			writeError(w, http.StatusBadRequest, errors.New("channel_id values do not match"))
+			return
 		}
+		channelID = payloadID
+	}
+	directConversationID := strings.TrimSpace(body.DirectConversationID)
+	if payloadID, _ := body.Payload["direct_conversation_id"].(string); payloadID != "" {
+		payloadID = strings.TrimSpace(payloadID)
+		if directConversationID != "" && directConversationID != payloadID {
+			writeError(w, http.StatusBadRequest, errors.New("direct_conversation_id values do not match"))
+			return
+		}
+		directConversationID = payloadID
 	}
 	if (body.Type == "typing.started" || body.Type == "typing.stopped") && channelID == "" && directConversationID == "" {
 		writeError(w, http.StatusBadRequest, errors.New("typing events require channel_id or direct_conversation_id"))
@@ -153,6 +164,7 @@ func (s *Server) publishEphemeral(w http.ResponseWriter, r *http.Request) {
 		}
 		body.Payload["direct_conversation_id"] = directConversationID
 		delete(body.Payload, "channel_id")
+		body.DirectConversationID = directConversationID
 	} else if channelID != "" {
 		channel, err := s.store.GetChannel(r.Context(), channelID, act.user.ID)
 		if err != nil || channel.WorkspaceID != body.WorkspaceID {
@@ -164,6 +176,7 @@ func (s *Server) publishEphemeral(w http.ResponseWriter, r *http.Request) {
 		}
 		body.Payload["channel_id"] = channelID
 		delete(body.Payload, "direct_conversation_id")
+		body.ChannelID = channelID
 	} else {
 		delete(body.Payload, "channel_id")
 		delete(body.Payload, "direct_conversation_id")
