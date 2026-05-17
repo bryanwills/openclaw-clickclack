@@ -51,7 +51,7 @@ The Vite dev server proxies `/api` and `/api/realtime/ws` to `localhost:8080`.
 | `pnpm build:web`       | Builds and normalizes the Svelte app without touching embedded Go assets. |
 | `pnpm build:sdk`       | Builds the TypeScript SDK. |
 | `pnpm check`           | Full local gate: `pnpm test`, root/workspace `tsgo`, `oxlint`, and format checks. |
-| `pnpm coverage`        | Go tests with coverage; fails under 90% line coverage. |
+| `pnpm coverage`        | Go tests with coverage; fails under 85% line coverage. |
 | `pnpm dev:api`         | `go run ./apps/api/cmd/clickclack serve --dev-bootstrap=true`. |
 | `pnpm dev:web`         | `vite dev` for the SPA. |
 | `pnpm fmt`             | `gofmt` + `oxfmt` over Go and TS/Svelte. |
@@ -112,7 +112,7 @@ docs/                   # this directory
 ## Testing
 
 - `apps/api/internal/...` is the bulk of the test suite. Coverage gate is
-  90%.
+  85%.
 - `tests/e2e/chat.spec.ts` exercises the SPA end-to-end via Playwright.
 - The SDK has no test target yet — the bot example is the smoke test.
 

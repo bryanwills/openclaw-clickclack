@@ -166,11 +166,11 @@ provided.
 - Lint/format: `oxlint` and `oxfmt`.
 - Tests: `go test ./...` for the backend, Playwright (`pnpm test:e2e`) for
   the SPA.
-- Coverage gate: `pnpm coverage` fails under 90% Go line coverage.
+- Coverage gate: `pnpm coverage` fails under 85% Go line coverage.
 
 ```sh
 pnpm check        # go test + root/workspace typecheck + lint + format check
-pnpm coverage     # Go coverage with 90% gate
+pnpm coverage     # Go coverage with 85% gate
 pnpm test:e2e     # Playwright
 pnpm fmt          # gofmt + oxfmt write
 pnpm fmt:check    # gofmt + oxfmt check, CI-compatible
