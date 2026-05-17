@@ -1358,7 +1358,10 @@ export interface operations {
   };
   createUpload: {
     parameters: {
-      query?: never;
+      query?: {
+        /** @description Optional workspace id for multipart clients that cannot send fields before the file part. If omitted, workspace_id must be included as a form field before file. */
+        workspace_id?: string;
+      };
       header?: never;
       path?: never;
       cookie?: never;
@@ -1366,7 +1369,8 @@ export interface operations {
     requestBody: {
       content: {
         "multipart/form-data": {
-          workspace_id: string;
+          /** @description Workspace id. Required when the workspace_id query parameter is omitted. */
+          workspace_id?: string;
           /** Format: binary */
           file: string;
           width?: number;

@@ -123,7 +123,10 @@ func (s *Server) createUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fields := map[string]string{}
-	var workspaceID string
+	workspaceID := strings.TrimSpace(r.URL.Query().Get("workspace_id"))
+	if workspaceID != "" && !s.authorizeUploadWorkspace(w, r, act, workspaceID) {
+		return
+	}
 	var upload store.CreateUploadInput
 	var savedPath string
 	committed := false
@@ -156,19 +159,17 @@ func (s *Server) createUpload(w http.ResponseWriter, r *http.Request) {
 			fields[name] = string(body)
 			if name == "workspace_id" && workspaceID == "" {
 				workspaceID = strings.TrimSpace(fields[name])
-				if err := act.requireWorkspace(workspaceID); err != nil {
-					writeError(w, http.StatusForbidden, err)
+				if !s.authorizeUploadWorkspace(w, r, act, workspaceID) {
 					return
 				}
-				if _, err := s.store.GetWorkspace(r.Context(), workspaceID, act.user.ID); err != nil {
-					writeError(w, http.StatusForbidden, err)
-					return
-				}
+			} else if name == "workspace_id" && strings.TrimSpace(fields[name]) != "" && strings.TrimSpace(fields[name]) != workspaceID {
+				writeError(w, http.StatusBadRequest, errors.New("workspace_id does not match query"))
+				return
 			}
 			continue
 		}
 		if workspaceID == "" {
-			writeError(w, http.StatusBadRequest, errors.New("workspace_id must precede file"))
+			writeError(w, http.StatusBadRequest, errors.New("workspace_id must precede file or be provided as a query parameter"))
 			return
 		}
 		if upload.StoragePath != "" {
@@ -213,6 +214,18 @@ func (s *Server) createUpload(w http.ResponseWriter, r *http.Request) {
 		committed = true
 	}
 	writeResultStatus(w, http.StatusCreated, map[string]any{"upload": created}, err)
+}
+
+func (s *Server) authorizeUploadWorkspace(w http.ResponseWriter, r *http.Request, act actor, workspaceID string) bool {
+	if err := act.requireWorkspace(workspaceID); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return false
+	}
+	if _, err := s.store.GetWorkspace(r.Context(), workspaceID, act.user.ID); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return false
+	}
+	return true
 }
 
 func writeUploadBodyError(w http.ResponseWriter, err error, fallbackStatus int) {

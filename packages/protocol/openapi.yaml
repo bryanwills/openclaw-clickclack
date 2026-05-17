@@ -383,16 +383,23 @@ paths:
   /api/uploads:
     post:
       operationId: createUpload
+      parameters:
+        - name: workspace_id
+          in: query
+          description: Optional workspace id for multipart clients that cannot send fields before the file part. If omitted, workspace_id must be included as a form field before file.
+          schema:
+            type: string
       requestBody:
         required: true
         content:
           multipart/form-data:
             schema:
               type: object
-              required: [workspace_id, file]
+              required: [file]
               properties:
                 workspace_id:
                   type: string
+                  description: Workspace id. Required when the workspace_id query parameter is omitted.
                 file:
                   type: string
                   format: binary

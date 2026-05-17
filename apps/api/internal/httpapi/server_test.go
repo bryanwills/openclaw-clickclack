@@ -1432,9 +1432,9 @@ func TestUploadRejectsInvalidMultipartShapes(t *testing.T) {
 	server := httptest.NewServer(New(st, realtime.NewHub(), Options{UploadDir: filepath.Join(dataDir, "uploads")}).Handler())
 	t.Cleanup(server.Close)
 
-	postUpload := func(t *testing.T, body *bytes.Buffer, contentType string) int {
+	postUploadPath := func(t *testing.T, path string, body *bytes.Buffer, contentType string) int {
 		t.Helper()
-		req, err := http.NewRequest(http.MethodPost, server.URL+"/api/uploads", body)
+		req, err := http.NewRequest(http.MethodPost, server.URL+path, body)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1445,6 +1445,10 @@ func TestUploadRejectsInvalidMultipartShapes(t *testing.T) {
 		}
 		defer resp.Body.Close()
 		return resp.StatusCode
+	}
+	postUpload := func(t *testing.T, body *bytes.Buffer, contentType string) int {
+		t.Helper()
+		return postUploadPath(t, "/api/uploads", body, contentType)
 	}
 
 	var fileFirst bytes.Buffer
@@ -1464,6 +1468,41 @@ func TestUploadRejectsInvalidMultipartShapes(t *testing.T) {
 	}
 	if got := postUpload(t, &fileFirst, fileFirstWriter.FormDataContentType()); got != http.StatusBadRequest {
 		t.Fatalf("file before workspace_id: got %d", got)
+	}
+
+	var queryWorkspace bytes.Buffer
+	queryWorkspaceWriter := multipart.NewWriter(&queryWorkspace)
+	part, err = queryWorkspaceWriter.CreateFormFile("file", "early.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write([]byte("early")); err != nil {
+		t.Fatal(err)
+	}
+	if err := queryWorkspaceWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got := postUploadPath(t, "/api/uploads?workspace_id="+url.QueryEscape(workspaces[0].ID), &queryWorkspace, queryWorkspaceWriter.FormDataContentType()); got != http.StatusCreated {
+		t.Fatalf("file before form workspace_id with query workspace_id: got %d", got)
+	}
+
+	var mismatch bytes.Buffer
+	mismatchWriter := multipart.NewWriter(&mismatch)
+	if err := mismatchWriter.WriteField("workspace_id", "wsp_other"); err != nil {
+		t.Fatal(err)
+	}
+	part, err = mismatchWriter.CreateFormFile("file", "mismatch.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write([]byte("mismatch")); err != nil {
+		t.Fatal(err)
+	}
+	if err := mismatchWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got := postUploadPath(t, "/api/uploads?workspace_id="+url.QueryEscape(workspaces[0].ID), &mismatch, mismatchWriter.FormDataContentType()); got != http.StatusBadRequest {
+		t.Fatalf("mismatched form/query workspace_id: got %d", got)
 	}
 
 	var duplicate bytes.Buffer

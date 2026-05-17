@@ -317,9 +317,9 @@ export class ClickClackClient {
       filename = "upload.bin",
     ): Promise<Upload> => {
       const form = new FormData();
-      form.set("workspace_id", workspaceId);
       form.set("file", file, filename);
-      const data = await this.request<{ upload: Upload }>("/api/uploads", {
+      const params = new URLSearchParams({ workspace_id: workspaceId });
+      const data = await this.request<{ upload: Upload }>(`/api/uploads?${params.toString()}`, {
         method: "POST",
         body: form,
       });

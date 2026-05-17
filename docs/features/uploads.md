@@ -14,7 +14,7 @@ authenticated workspace members.
 ## Endpoints
 
 ```http
-POST /api/uploads                                  # multipart: file, workspace_id
+POST /api/uploads?workspace_id=...                 # multipart: file; form workspace_id also supported
 GET  /api/uploads/{upload_id}                      # streams the file
 POST /api/messages/{message_id}/attachments        # { upload_id }
 ```
