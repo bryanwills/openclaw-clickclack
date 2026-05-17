@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Reserved the `guest` channel name, locked Postgres moderation role checks during member updates, and bounded direct-conversation member sets after DeepSec review.
 - Hardened JSON request body limits, realtime typing scope validation, and upload attachment authorization after DeepSec review.
 - Documented guest-room moderation, upload previews, Postgres/R2 deployment notes, and sqlc store workflow.
 - Added a guest waiting-room moderation flow with three-post daily guest limits, OpenClaw GitHub org moderator mapping, member approval, timeouts, blocks, and moderator profile controls.
