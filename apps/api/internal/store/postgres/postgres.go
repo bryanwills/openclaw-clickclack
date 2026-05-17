@@ -390,6 +390,9 @@ func (s *Store) CreateChannel(ctx context.Context, input store.CreateChannelInpu
 	if ch.Name == "" {
 		ch.Name = "general"
 	}
+	if ch.Name == store.GuestChannelName {
+		return store.Channel{}, store.Event{}, errors.New("guest channel name is reserved")
+	}
 	if ch.Kind == "" {
 		ch.Kind = "public"
 	}

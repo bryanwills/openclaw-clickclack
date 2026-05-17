@@ -32,6 +32,9 @@ func (s *Store) UpdateChannel(ctx context.Context, input store.UpdateChannelInpu
 	if name == "" {
 		name = ch.Name
 	}
+	if name != ch.Name && (name == store.GuestChannelName || ch.Name == store.GuestChannelName) {
+		return store.Channel{}, store.Event{}, errors.New("guest channel name is reserved")
+	}
 	kind := strings.TrimSpace(input.Kind)
 	if kind == "" {
 		kind = ch.Kind

@@ -40,6 +40,7 @@ const (
 	WorkspaceRoleMember    = "member"
 	WorkspaceRoleGuest     = "guest"
 	WorkspaceRoleBot       = "bot"
+	GuestChannelName       = "guest"
 	GuestPostLimit         = 3
 
 	UploadQuotaBytesPerUserWorkspace int64 = 512 << 20

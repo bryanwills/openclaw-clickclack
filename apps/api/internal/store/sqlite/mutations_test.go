@@ -121,6 +121,51 @@ func TestMutationsCreateDurableEvents(t *testing.T) {
 	}
 }
 
+func TestGuestChannelNameIsReserved(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	st := newTestStore(t)
+	owner, err := st.EnsureBootstrap(ctx, "Owner", "owner-reserved@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace, err := st.EnsureDefaultGuestWorkspaceMember(ctx, owner.ID, store.WorkspaceRoleOwner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.CreateChannel(ctx, store.CreateChannelInput{WorkspaceID: workspace.ID, UserID: owner.ID, Name: "guest"}); err == nil {
+		t.Fatal("expected guest channel create to be rejected")
+	}
+	general, _, err := st.CreateChannel(ctx, store.CreateChannelInput{WorkspaceID: workspace.ID, UserID: owner.ID, Name: "general-chat"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.UpdateChannel(ctx, store.UpdateChannelInput{ChannelID: general.ID, UserID: owner.ID, Name: "guest"}); err == nil {
+		t.Fatal("expected rename to guest to be rejected")
+	}
+	channels, err := st.ListChannels(ctx, workspace.ID, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var guestID string
+	for _, channel := range channels {
+		if channel.Name == store.GuestChannelName {
+			guestID = channel.ID
+			break
+		}
+	}
+	if guestID == "" {
+		t.Fatalf("expected internal guest channel in %#v", channels)
+	}
+	if _, _, err := st.UpdateChannel(ctx, store.UpdateChannelInput{ChannelID: guestID, UserID: owner.ID, Name: "renamed-guest"}); err == nil {
+		t.Fatal("expected rename from guest to be rejected")
+	}
+	archived := true
+	if _, _, err := st.UpdateChannel(ctx, store.UpdateChannelInput{ChannelID: guestID, UserID: owner.ID, Archived: &archived}); err != nil {
+		t.Fatalf("expected non-rename guest channel update to remain allowed: %v", err)
+	}
+}
+
 func TestMutationsRejectInvalidInput(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
