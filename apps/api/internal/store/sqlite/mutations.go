@@ -89,8 +89,12 @@ func (s *Store) UpdateMessage(ctx context.Context, input store.UpdateMessageInpu
 		return store.Message{}, store.Event{}, errors.New("message body is required")
 	}
 	editedAt := now()
-	if err := s.q.WithTx(tx).UpdateMessageBody(ctx, storedb.UpdateMessageBodyParams{Body: body, EditedAt: sqlText(editedAt), ID: msg.ID}); err != nil {
+	affected, err := s.q.WithTx(tx).UpdateMessageBody(ctx, storedb.UpdateMessageBodyParams{Body: body, EditedAt: sqlText(editedAt), ID: msg.ID})
+	if err != nil {
 		return store.Message{}, store.Event{}, err
+	}
+	if affected == 0 {
+		return store.Message{}, store.Event{}, errors.New("deleted messages cannot be edited")
 	}
 	payload := messagePayload(msg)
 	recipients, err := eventRecipientsForMessageTx(ctx, tx, msg)

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/openclaw/clickclack/apps/api/internal/store"
+	"github.com/openclaw/clickclack/apps/api/internal/store/sqlite/storedb"
 )
 
 func TestMutationsCreateDurableEvents(t *testing.T) {
@@ -218,6 +219,20 @@ func TestMutationsRejectInvalidInput(t *testing.T) {
 	}
 	if _, _, err := st.UpdateMessage(ctx, store.UpdateMessageInput{MessageID: message.ID, UserID: owner.ID, Body: "deleted body returns"}); err == nil {
 		t.Fatal("expected deleted message update error")
+	}
+	affected, err := st.q.UpdateMessageBody(ctx, storedb.UpdateMessageBodyParams{Body: "race edit", EditedAt: sqlText(now()), ID: message.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if affected != 0 {
+		t.Fatalf("deleted message update affected %d rows", affected)
+	}
+	reloaded, err := st.GetMessage(ctx, message.ID, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.Body != "" {
+		t.Fatalf("deleted message body changed: %#v", reloaded)
 	}
 	results, err := st.SearchMessages(ctx, workspaces[0].ID, channels[0].ID, owner.ID, "deleted body returns", 10)
 	if err != nil {

@@ -558,11 +558,12 @@ SET name = sqlc.arg(name),
     archived_at = sqlc.arg(archived_at)
 WHERE id = sqlc.arg(id);
 
--- name: UpdateMessageBody :exec
+-- name: UpdateMessageBody :execrows
 UPDATE messages
 SET body = sqlc.arg(body),
     edited_at = sqlc.arg(edited_at)
-WHERE id = sqlc.arg(id);
+WHERE id = sqlc.arg(id)
+  AND deleted_at IS NULL;
 
 -- name: DeleteMessageBody :execrows
 UPDATE messages

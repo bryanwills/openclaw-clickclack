@@ -2339,11 +2339,12 @@ func (q *Queries) UpdateChannel(ctx context.Context, arg UpdateChannelParams) er
 	return err
 }
 
-const updateMessageBody = `-- name: UpdateMessageBody :exec
+const updateMessageBody = `-- name: UpdateMessageBody :execrows
 UPDATE messages
 SET body = $1,
     edited_at = $2
 WHERE id = $3
+  AND deleted_at IS NULL
 `
 
 type UpdateMessageBodyParams struct {
@@ -2352,9 +2353,12 @@ type UpdateMessageBodyParams struct {
 	ID       string         `json:"id"`
 }
 
-func (q *Queries) UpdateMessageBody(ctx context.Context, arg UpdateMessageBodyParams) error {
-	_, err := q.db.ExecContext(ctx, updateMessageBody, arg.Body, arg.EditedAt, arg.ID)
-	return err
+func (q *Queries) UpdateMessageBody(ctx context.Context, arg UpdateMessageBodyParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateMessageBody, arg.Body, arg.EditedAt, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const updateThreadState = `-- name: UpdateThreadState :exec
