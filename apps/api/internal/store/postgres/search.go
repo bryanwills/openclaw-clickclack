@@ -16,9 +16,24 @@ func (s *Store) SearchMessages(ctx context.Context, workspaceID, channelID, user
 	if err := s.requireMembership(ctx, workspaceID, userID); err != nil {
 		return nil, err
 	}
+	role, err := s.memberRole(ctx, workspaceID, userID)
+	if err != nil {
+		return nil, err
+	}
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return []store.SearchResult{}, nil
+	}
+	if channelID != "" {
+		if err := s.requireGuestChannelAccess(ctx, workspaceID, channelID, userID); err != nil {
+			return nil, err
+		}
+	}
+	channelJoin := ""
+	guestWhere := ""
+	if role == store.WorkspaceRoleGuest {
+		channelJoin = "JOIN channels c ON c.id = m.channel_id AND c.workspace_id = m.workspace_id"
+		guestWhere = "AND c.name = 'guest'"
 	}
 	channelWhere := ""
 	args := []any{workspaceID, query}
@@ -35,6 +50,7 @@ func (s *Store) SearchMessages(ctx context.Context, workspaceID, channelID, user
 		       qu.id, qu.kind, qu.owner_user_id, qu.display_name, qu.handle, qu.avatar_url, qu.created_at,
 		       ts_rank_cd(to_tsvector('simple', m.body), websearch_to_tsquery('simple', $2)) AS rank
 		FROM messages m
+		`+channelJoin+`
 		JOIN users u ON u.id = m.author_id
 		LEFT JOIN users qu ON qu.id = m.quoted_author_id
 		WHERE m.workspace_id = $1
@@ -42,6 +58,7 @@ func (s *Store) SearchMessages(ctx context.Context, workspaceID, channelID, user
 		  AND m.direct_conversation_id IS NULL
 		  AND m.channel_id IS NOT NULL
 		  AND m.deleted_at IS NULL
+		  `+guestWhere+`
 		  `+channelWhere+`
 		ORDER BY rank DESC
 		LIMIT $`+fmt.Sprint(len(args)), args...)

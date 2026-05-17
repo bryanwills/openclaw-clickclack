@@ -18,6 +18,23 @@ var ErrClientNonceConflict = errors.New("client nonce was already used for a dif
 // mutually exclusive cursors or uses an invalid cursor value.
 var ErrInvalidMessagePage = errors.New("invalid message page request")
 
+// ErrModerationRestricted is returned when a workspace moderation rule blocks
+// a write. HTTP callers surface it as a 403 or 429 depending on the rule.
+var ErrModerationRestricted = errors.New("moderation restriction")
+
+// ErrPostRateLimited is returned when a waiting-room guest exhausts the small
+// daily post budget.
+var ErrPostRateLimited = errors.New("waiting room post limit reached")
+
+const (
+	WorkspaceRoleOwner     = "owner"
+	WorkspaceRoleModerator = "moderator"
+	WorkspaceRoleMember    = "member"
+	WorkspaceRoleGuest     = "guest"
+	WorkspaceRoleBot       = "bot"
+	GuestPostLimit         = 3
+)
+
 type User struct {
 	ID                   string                `json:"id"`
 	Kind                 string                `json:"kind"`
@@ -52,6 +69,7 @@ type Workspace struct {
 	Name      string `json:"name"`
 	Slug      string `json:"slug"`
 	CreatedAt string `json:"created_at"`
+	Role      string `json:"role,omitempty"`
 }
 
 type Channel struct {
@@ -344,6 +362,30 @@ type RouteTarget struct {
 	CanonicalPath    string `json:"canonical_path"`
 }
 
+type MemberModeration struct {
+	WorkspaceID    string  `json:"workspace_id"`
+	User           User    `json:"user"`
+	Role           string  `json:"role"`
+	PostsRemaining int     `json:"posts_remaining"`
+	PostLimit      int     `json:"post_limit"`
+	TimeoutUntil   *string `json:"timeout_until,omitempty"`
+	BlockedAt      *string `json:"blocked_at,omitempty"`
+	ModerationNote string  `json:"moderation_note,omitempty"`
+	ModerationBy   string  `json:"moderation_by,omitempty"`
+	ModerationAt   string  `json:"moderation_at,omitempty"`
+}
+
+type UpdateMemberModerationInput struct {
+	WorkspaceID    string
+	TargetUserID   string
+	ActorUserID    string
+	Role           string
+	TimeoutUntil   *string
+	ClearTimeout   bool
+	Blocked        *bool
+	ModerationNote *string
+}
+
 type Store interface {
 	Close() error
 	Migrate(ctx context.Context) error
@@ -356,7 +398,11 @@ type Store interface {
 	ListPushNotificationRecipients(ctx context.Context, messageID string) ([]PushNotificationRecipient, error)
 	AddWorkspaceMember(ctx context.Context, workspaceID, userID, role string) error
 	EnsureDefaultWorkspaceMember(ctx context.Context, userID string) (Workspace, error)
-	EnsureDefaultGuestWorkspaceMember(ctx context.Context, userID string) (Workspace, error)
+	EnsureDefaultGuestWorkspaceMember(ctx context.Context, userID, role string) (Workspace, error)
+	ListWorkspaceMembers(ctx context.Context, workspaceID, actorUserID string) ([]MemberModeration, error)
+	UpdateMemberModeration(ctx context.Context, input UpdateMemberModerationInput) (MemberModeration, Event, error)
+	UserHasNonGuestMembership(ctx context.Context, userID string) (bool, error)
+	CanCreateUpload(ctx context.Context, workspaceID, userID string) error
 	FirstUser(ctx context.Context) (User, error)
 	GetUser(ctx context.Context, id string) (User, error)
 	ListWorkspaces(ctx context.Context, userID string) ([]Workspace, error)

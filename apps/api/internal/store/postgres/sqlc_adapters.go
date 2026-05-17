@@ -113,6 +113,7 @@ func storeWorkspaceFromListWorkspaces(row storedb.ListWorkspacesRow) store.Works
 		Name:      row.Name,
 		Slug:      row.Slug,
 		CreatedAt: row.CreatedAt,
+		Role:      row.Role,
 	}
 }
 
@@ -123,6 +124,7 @@ func storeWorkspaceFromGetWorkspace(row storedb.GetWorkspaceRow) store.Workspace
 		Name:      row.Name,
 		Slug:      row.Slug,
 		CreatedAt: row.CreatedAt,
+		Role:      row.Role,
 	}
 }
 

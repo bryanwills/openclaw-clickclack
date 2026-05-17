@@ -11,12 +11,12 @@ import (
 
 func (s *Store) AddWorkspaceMember(ctx context.Context, workspaceID, userID, role string) error {
 	if role == "" {
-		role = "member"
+		role = store.WorkspaceRoleMember
 	}
 	return s.q.InsertWorkspaceMember(ctx, storedb.InsertWorkspaceMemberParams{
 		WorkspaceID: workspaceID,
 		UserID:      userID,
-		Role:        role,
+		Role:        normalizeWorkspaceRole(role),
 		CreatedAt:   now(),
 	})
 }
@@ -96,13 +96,14 @@ func (s *Store) EnsureDefaultWorkspaceMember(ctx context.Context, userID string)
 	return workspace, tx.Commit()
 }
 
-func (s *Store) EnsureDefaultGuestWorkspaceMember(ctx context.Context, userID string) (store.Workspace, error) {
+func (s *Store) EnsureDefaultGuestWorkspaceMember(ctx context.Context, userID, role string) (store.Workspace, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return store.Workspace{}, err
 	}
 	defer tx.Rollback()
 	qtx := s.q.WithTx(tx)
+	role = normalizeWorkspaceRole(role)
 
 	workspace, err := postgresWorkspaceBySlugTx(ctx, tx, "guests")
 	if err != nil && err != sql.ErrNoRows {
@@ -142,14 +143,18 @@ func (s *Store) EnsureDefaultGuestWorkspaceMember(ctx context.Context, userID st
 	if err := postgresEnsureNamedChannelTx(ctx, tx, workspace.ID, "guest", "public"); err != nil {
 		return store.Workspace{}, err
 	}
-	if err := qtx.InsertWorkspaceMember(ctx, storedb.InsertWorkspaceMemberParams{
+	if err := postgresEnsureNamedChannelTx(ctx, tx, workspace.ID, "general", "public"); err != nil {
+		return store.Workspace{}, err
+	}
+	if err := qtx.UpsertGuestWorkspaceMemberRole(ctx, storedb.UpsertGuestWorkspaceMemberRoleParams{
 		WorkspaceID: workspace.ID,
 		UserID:      userID,
-		Role:        "member",
+		Role:        role,
 		CreatedAt:   now(),
 	}); err != nil {
 		return store.Workspace{}, err
 	}
+	workspace.Role, _ = memberRoleTx(ctx, tx, workspace.ID, userID)
 	return workspace, tx.Commit()
 }
 

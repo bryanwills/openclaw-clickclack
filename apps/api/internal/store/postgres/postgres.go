@@ -250,6 +250,7 @@ func (s *Store) CreateWorkspace(ctx context.Context, input store.CreateWorkspace
 	}); err != nil {
 		return store.Workspace{}, err
 	}
+	w.Role = store.WorkspaceRoleOwner
 	return w, tx.Commit()
 }
 
@@ -271,7 +272,10 @@ func (s *Store) ListChannels(ctx context.Context, workspaceID, userID string) ([
 	}
 	out := make([]store.Channel, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, storeChannelFromListChannels(row))
+		channel := storeChannelFromListChannels(row)
+		if err := s.requireGuestChannelAccess(ctx, workspaceID, channel.ID, userID); err == nil {
+			out = append(out, channel)
+		}
 	}
 	return out, nil
 }
@@ -285,6 +289,9 @@ func (s *Store) GetChannel(ctx context.Context, channelID, userID string) (store
 	if err := s.requireMembership(ctx, channel.WorkspaceID, userID); err != nil {
 		return store.Channel{}, err
 	}
+	if err := s.requireGuestChannelAccess(ctx, channel.WorkspaceID, channel.ID, userID); err != nil {
+		return store.Channel{}, err
+	}
 	return channel, nil
 }
 
@@ -294,7 +301,10 @@ func (s *Store) CreateChannel(ctx context.Context, input store.CreateChannelInpu
 		return store.Channel{}, store.Event{}, err
 	}
 	defer tx.Rollback()
-	if err := requireMembershipTx(ctx, tx, input.WorkspaceID, input.UserID); err != nil {
+	if err := requireNonGuestTx(ctx, tx, input.WorkspaceID, input.UserID); err != nil {
+		return store.Channel{}, store.Event{}, err
+	}
+	if err := requireNoModerationBlockTx(ctx, tx, input.WorkspaceID, input.UserID); err != nil {
 		return store.Channel{}, store.Event{}, err
 	}
 	ch := store.Channel{ID: newID("chn"), WorkspaceID: input.WorkspaceID, Name: slug(input.Name), Kind: input.Kind, CreatedAt: now()}
@@ -345,6 +355,9 @@ func (s *Store) ListMessages(ctx context.Context, channelID, userID string, page
 	if err := s.requireMembership(ctx, workspaceID, userID); err != nil {
 		return store.MessagePage{}, err
 	}
+	if err := s.requireGuestChannelAccess(ctx, workspaceID, channelID, userID); err != nil {
+		return store.MessagePage{}, err
+	}
 	return s.listMessagePage(ctx, messagePageScope{
 		where: "m.channel_id = $1 AND m.parent_message_id IS NULL",
 		args:  []any{channelID},
@@ -368,16 +381,16 @@ func (s *Store) GetMessage(ctx context.Context, messageID, userID string) (store
 
 func (s *Store) requireMessageAccess(ctx context.Context, message store.Message, userID string) error {
 	if message.DirectConversationID != "" {
-		return s.requireDirectMembership(ctx, message.DirectConversationID, userID)
+		return s.requireDirectAccess(ctx, message.DirectConversationID, userID)
 	}
-	return s.requireMembership(ctx, message.WorkspaceID, userID)
+	return s.requireGuestChannelAccess(ctx, message.WorkspaceID, message.ChannelID, userID)
 }
 
 func requireMessageAccessTx(ctx context.Context, tx *sql.Tx, message store.Message, userID string) error {
 	if message.DirectConversationID != "" {
-		return requireDirectMembershipTx(ctx, tx, message.DirectConversationID, userID)
+		return requireDirectAccessTx(ctx, tx, message.DirectConversationID, userID)
 	}
-	return requireMembershipTx(ctx, tx, message.WorkspaceID, userID)
+	return requireGuestChannelAccessTx(ctx, tx, message.WorkspaceID, message.ChannelID, userID)
 }
 
 func (s *Store) CreateMessage(ctx context.Context, input store.CreateMessageInput) (store.Message, store.Event, error) {
@@ -421,6 +434,9 @@ func (s *Store) CreateMessage(ctx context.Context, input store.CreateMessageInpu
 		}
 		return existing, store.Event{}, nil
 	} else if !errors.Is(err, sql.ErrNoRows) {
+		return store.Message{}, store.Event{}, err
+	}
+	if err := requireCanPostTx(ctx, tx, workspaceID, input.ChannelID, input.AuthorID); err != nil {
 		return store.Message{}, store.Event{}, err
 	}
 	if quotedID != "" {
@@ -564,6 +580,13 @@ func (s *Store) CreateThreadReply(ctx context.Context, input store.CreateThreadR
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return store.Message{}, store.ThreadState{}, nil, err
 	}
+	if root.DirectConversationID != "" {
+		if err := requireCanSendDirectTx(ctx, tx, root.WorkspaceID, input.AuthorID); err != nil {
+			return store.Message{}, store.ThreadState{}, nil, err
+		}
+	} else if err := requireCanPostTx(ctx, tx, root.WorkspaceID, root.ChannelID, input.AuthorID); err != nil {
+		return store.Message{}, store.ThreadState{}, nil, err
+	}
 	if quotedID != "" {
 		snap, authorID, err := resolveQuoteRefTx(ctx, tx, quotedID, quoteScope{kind: "thread", threadRootID: root.ID})
 		if err != nil {
@@ -663,9 +686,29 @@ func (s *Store) ListEventsAfter(ctx context.Context, workspaceID, userID, cursor
 	}
 	out := make([]store.Event, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, storeEventFromListEventsAfter(row))
+		event := storeEventFromListEventsAfter(row)
+		if event.ChannelID != "" {
+			if err := s.requireGuestChannelAccess(ctx, workspaceID, event.ChannelID, userID); err != nil {
+				continue
+			}
+		}
+		if conversationID := directConversationIDFromEvent(event); conversationID != "" {
+			if err := s.requireDirectAccess(ctx, conversationID, userID); err != nil {
+				continue
+			}
+		}
+		out = append(out, event)
 	}
 	return out, nil
+}
+
+func directConversationIDFromEvent(event store.Event) string {
+	payload, ok := event.Payload.(map[string]any)
+	if !ok {
+		return ""
+	}
+	conversationID, _ := payload["direct_conversation_id"].(string)
+	return conversationID
 }
 
 func (s *Store) reaction(ctx context.Context, input store.CreateReactionInput, add bool) (store.Event, error) {
@@ -679,6 +722,9 @@ func (s *Store) reaction(ctx context.Context, input store.CreateReactionInput, a
 		return store.Event{}, err
 	}
 	if err := requireMessageAccessTx(ctx, tx, msg, input.UserID); err != nil {
+		return store.Event{}, err
+	}
+	if err := requireNoModerationBlockTx(ctx, tx, msg.WorkspaceID, input.UserID); err != nil {
 		return store.Event{}, err
 	}
 	qtx := s.q.WithTx(tx)

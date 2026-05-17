@@ -132,6 +132,38 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/workspaces/{workspace_id}/moderation/members": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["listWorkspaceMembersForModeration"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/workspaces/{workspace_id}/moderation/members/{user_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch: operations["updateWorkspaceMemberModeration"];
+    trace?: never;
+  };
   "/api/workspaces/{workspace_id}/channels": {
     parameters: {
       query?: never;
@@ -476,6 +508,16 @@ export interface components {
       name: string;
       slug?: string;
     };
+    UpdateMemberModerationRequest: {
+      /** @enum {string} */
+      role?: "moderator" | "member" | "guest";
+      /** Format: date-time */
+      timeout_until?: string;
+      timeout_minutes?: number;
+      clear_timeout?: boolean;
+      blocked?: boolean;
+      moderation_note?: string;
+    };
     RequestMagicLinkRequest: {
       /** Format: email */
       email: string;
@@ -567,6 +609,24 @@ export interface components {
       slug: string;
       /** Format: date-time */
       created_at: string;
+      /** @enum {string} */
+      role?: "owner" | "moderator" | "member" | "guest" | "bot";
+    };
+    MemberModeration: {
+      workspace_id: string;
+      user: components["schemas"]["User"];
+      /** @enum {string} */
+      role: "owner" | "moderator" | "member" | "guest" | "bot";
+      posts_remaining: number;
+      post_limit: number;
+      /** Format: date-time */
+      timeout_until?: string;
+      /** Format: date-time */
+      blocked_at?: string;
+      moderation_note?: string;
+      moderation_by?: string;
+      /** Format: date-time */
+      moderation_at?: string;
     };
     Channel: {
       id: string;
@@ -943,6 +1003,60 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+    };
+  };
+  listWorkspaceMembersForModeration: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace_id: components["parameters"]["workspace_id"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Workspace members with moderation state */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            members: components["schemas"]["MemberModeration"][];
+          };
+        };
+      };
+    };
+  };
+  updateWorkspaceMemberModeration: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace_id: components["parameters"]["workspace_id"];
+        user_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateMemberModerationRequest"];
+      };
+    };
+    responses: {
+      /** @description Updated member moderation state */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            member: components["schemas"]["MemberModeration"];
+            event?: Record<string, never>;
+          };
+        };
       };
     };
   };

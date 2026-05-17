@@ -22,7 +22,10 @@ func (s *Store) UpdateChannel(ctx context.Context, input store.UpdateChannelInpu
 		return store.Channel{}, store.Event{}, err
 	}
 	ch := storeChannelFromGetChannel(chRow)
-	if err := requireMembershipTx(ctx, tx, ch.WorkspaceID, input.UserID); err != nil {
+	if err := requireNonGuestTx(ctx, tx, ch.WorkspaceID, input.UserID); err != nil {
+		return store.Channel{}, store.Event{}, err
+	}
+	if err := requireNoModerationBlockTx(ctx, tx, ch.WorkspaceID, input.UserID); err != nil {
 		return store.Channel{}, store.Event{}, err
 	}
 	name := slug(input.Name)
@@ -72,6 +75,9 @@ func (s *Store) UpdateMessage(ctx context.Context, input store.UpdateMessageInpu
 	if err := requireMessageAccessTx(ctx, tx, msg, input.UserID); err != nil {
 		return store.Message{}, store.Event{}, err
 	}
+	if err := requireNoModerationBlockTx(ctx, tx, msg.WorkspaceID, input.UserID); err != nil {
+		return store.Message{}, store.Event{}, err
+	}
 	if msg.AuthorID != input.UserID {
 		return store.Message{}, store.Event{}, errors.New("only the author can edit a message")
 	}
@@ -111,6 +117,9 @@ func (s *Store) DeleteMessage(ctx context.Context, input store.DeleteMessageInpu
 		return store.Message{}, store.Event{}, err
 	}
 	if err := requireMessageAccessTx(ctx, tx, msg, input.UserID); err != nil {
+		return store.Message{}, store.Event{}, err
+	}
+	if err := requireNoModerationBlockTx(ctx, tx, msg.WorkspaceID, input.UserID); err != nil {
 		return store.Message{}, store.Event{}, err
 	}
 	if msg.AuthorID != input.UserID {

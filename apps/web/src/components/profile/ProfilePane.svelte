@@ -1,23 +1,54 @@
 <script lang="ts">
   import Avatar from "../avatar/Avatar.svelte";
   import { avatarHue, handleLabel } from "../../lib/chat/people";
-  import type { User } from "../../lib/types";
+  import type { MemberModeration, User, Workspace } from "../../lib/types";
 
   type Props = {
     profile: User;
     currentUser: User | null;
     workspaceName?: string;
+    currentUserRole?: Workspace["role"] | "";
+    moderation?: MemberModeration;
     onClose: () => void;
     onEdit: () => void;
     onMessage: (memberID: string) => void;
+    onApprove: (memberID: string) => void;
+    onTimeout: (memberID: string) => void;
+    onBlock: (memberID: string) => void;
+    onUnblock: (memberID: string) => void;
     onSetStatus: () => void;
   };
 
-  let { profile, currentUser, workspaceName, onClose, onEdit, onMessage, onSetStatus }: Props = $props();
+  let {
+    profile,
+    currentUser,
+    workspaceName,
+    currentUserRole,
+    moderation,
+    onClose,
+    onEdit,
+    onMessage,
+    onApprove,
+    onTimeout,
+    onBlock,
+    onUnblock,
+    onSetStatus,
+  }: Props = $props();
 
   const botLabel = $derived(
     profile.kind === "bot" ? (profile.owner_user_id ? `Bot of ${profile.owner_user_id}` : "Service bot") : "",
   );
+  const targetRole = $derived(moderation?.role || "member");
+  const canModerateRole = $derived(
+    Boolean(moderation) &&
+      targetRole !== "owner" &&
+      (currentUserRole === "owner" || (currentUserRole === "moderator" && (targetRole === "member" || targetRole === "guest"))),
+  );
+  const canModerate = $derived(
+    currentUser?.id !== profile.id && canModerateRole,
+  );
+  const isBlocked = $derived(Boolean(moderation?.blocked_at));
+  const roleLabel = $derived(targetRole);
 </script>
 
 <header>
@@ -121,7 +152,35 @@
       <header>
         <strong>About</strong>
       </header>
-      <p class="profile-note">Member of {workspaceName || "this workspace"}. Click Message to keep the conversation in your sidebar.</p>
+      <p class="profile-note">Member of {workspaceName || "this workspace"}.</p>
     </section>
+    {#if canModerate && moderation}
+      <section class="profile-info moderation-box">
+        <header>
+          <strong>Moderation</strong>
+          <span class="role-pill">{roleLabel}</span>
+        </header>
+        {#if moderation.role === "guest" && moderation.post_limit > 0}
+          <p class="profile-note">{moderation.posts_remaining} of {moderation.post_limit} waiting-room posts left today.</p>
+        {/if}
+        {#if moderation.timeout_until}
+          <p class="profile-note">Timed out until {new Date(moderation.timeout_until).toLocaleString()}.</p>
+        {/if}
+        {#if moderation.blocked_at}
+          <p class="profile-note">Blocked.</p>
+        {/if}
+        <div class="moderation-actions">
+          {#if moderation.role === "guest"}
+            <button type="button" class="primary-action" onclick={() => onApprove(profile.id)}>Approve</button>
+          {/if}
+          <button type="button" class="ghost-action" onclick={() => onTimeout(profile.id)}>Timeout 1h</button>
+          {#if isBlocked}
+            <button type="button" class="ghost-action" onclick={() => onUnblock(profile.id)}>Unblock</button>
+          {:else}
+            <button type="button" class="danger-action" onclick={() => onBlock(profile.id)}>Block</button>
+          {/if}
+        </div>
+      </section>
+    {/if}
   </section>
 </div>

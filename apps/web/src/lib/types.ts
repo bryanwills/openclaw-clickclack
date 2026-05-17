@@ -20,6 +20,7 @@ export type Workspace = {
   name: string;
   slug: string;
   created_at: string;
+  role?: "owner" | "moderator" | "member" | "guest" | "bot";
 };
 
 export type Channel = {
@@ -99,6 +100,19 @@ export type DirectConversation = {
   last_seq?: number;
   last_read_seq?: number;
   unread_count?: number;
+};
+
+export type MemberModeration = {
+  workspace_id: string;
+  user: User;
+  role: "owner" | "moderator" | "member" | "guest" | "bot";
+  posts_remaining: number;
+  post_limit: number;
+  timeout_until?: string;
+  blocked_at?: string;
+  moderation_note?: string;
+  moderation_by?: string;
+  moderation_at?: string;
 };
 
 export type ThreadState = {

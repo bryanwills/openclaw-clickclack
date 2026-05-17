@@ -128,6 +128,7 @@ func serve(args []string) error {
 			ClientSecret: cfg.GitHubClientSecret,
 			PublicURL:    cfg.PublicURL,
 			AllowedOrg:   cfg.GitHubAllowedOrg,
+			ModeratorOrg: cfg.GitHubModeratorOrg,
 		},
 		PushNotifier: pushNotifier,
 	})

@@ -225,6 +225,10 @@ func (s *Server) authorizeUploadWorkspace(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusForbidden, err)
 		return false
 	}
+	if err := s.store.CanCreateUpload(r.Context(), workspaceID, act.user.ID); err != nil {
+		writeStoreError(w, err)
+		return false
+	}
 	return true
 }
 

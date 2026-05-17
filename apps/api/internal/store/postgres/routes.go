@@ -49,7 +49,7 @@ func (s *Store) ResolveLegacyRouteTarget(ctx context.Context, userID, workspaceI
 func (s *Store) resolveTargetInWorkspace(ctx context.Context, userID string, workspace store.Workspace, targetID string, legacy bool) (store.RouteTarget, error) {
 	switch {
 	case (!legacy && strings.HasPrefix(targetID, "C")) || (legacy && strings.HasPrefix(targetID, "chn_")):
-		return s.resolveChannelRouteTarget(ctx, workspace, targetID, legacy)
+		return s.resolveChannelRouteTarget(ctx, userID, workspace, targetID, legacy)
 	case (!legacy && strings.HasPrefix(targetID, "D")) || (legacy && strings.HasPrefix(targetID, "dm_")):
 		return s.resolveDirectRouteTarget(ctx, userID, workspace, targetID, legacy)
 	case (!legacy && strings.HasPrefix(targetID, "M")) || (legacy && strings.HasPrefix(targetID, "msg_")):
@@ -59,7 +59,7 @@ func (s *Store) resolveTargetInWorkspace(ctx context.Context, userID string, wor
 	}
 }
 
-func (s *Store) resolveChannelRouteTarget(ctx context.Context, workspace store.Workspace, targetID string, legacy bool) (store.RouteTarget, error) {
+func (s *Store) resolveChannelRouteTarget(ctx context.Context, userID string, workspace store.Workspace, targetID string, legacy bool) (store.RouteTarget, error) {
 	var channel store.Channel
 	var err error
 	if legacy {
@@ -72,6 +72,9 @@ func (s *Store) resolveChannelRouteTarget(ctx context.Context, workspace store.W
 		channel = store.Channel{ID: row.ID, RouteID: row.RouteID, WorkspaceID: row.WorkspaceID, Name: row.Name, Kind: row.Kind, CreatedAt: row.CreatedAt, ArchivedAt: ptrFromNull(row.ArchivedAt)}
 	}
 	if err != nil || channel.RouteID == "" {
+		return store.RouteTarget{}, sql.ErrNoRows
+	}
+	if err := s.requireGuestChannelAccess(ctx, workspace.ID, channel.ID, userID); err != nil {
 		return store.RouteTarget{}, sql.ErrNoRows
 	}
 	return store.RouteTarget{
@@ -97,6 +100,9 @@ func (s *Store) resolveDirectRouteTarget(ctx context.Context, userID string, wor
 		dm = store.DirectConversation{ID: row.ID, RouteID: row.RouteID, WorkspaceID: row.WorkspaceID, CreatedAt: row.CreatedAt}
 	}
 	if err != nil || dm.RouteID == "" {
+		return store.RouteTarget{}, sql.ErrNoRows
+	}
+	if err := s.requireDirectAccess(ctx, dm.ID, userID); err != nil {
 		return store.RouteTarget{}, sql.ErrNoRows
 	}
 	return store.RouteTarget{

@@ -142,10 +142,14 @@ CLICKCLACK_GITHUB_CLIENT_ID=...
 CLICKCLACK_GITHUB_CLIENT_SECRET=...
 # Optional org gate:
 # CLICKCLACK_GITHUB_ALLOWED_ORG=openclaw
+# Optional moderator org for open guest login:
+# CLICKCLACK_GITHUB_MODERATOR_ORG=openclaw
 ```
 
-Without the org gate, GitHub users land in an isolated `Guests` workspace with
-the `guest` channel.
+Without the org gate, GitHub users land in an isolated `Guests` workspace. When
+`CLICKCLACK_GITHUB_MODERATOR_ORG` is set, non-members of that org start as
+waiting-room guests with a small daily post budget until a moderator approves
+them; if it is unset, open-login users join as normal members.
 
 Details and trade-offs in [docs/features/auth.md](docs/features/auth.md).
 For the CLI, stored session tokens, workspace defaults, and channel defaults

@@ -267,6 +267,39 @@ func TestChatAPIVerticalSlice(t *testing.T) {
 	}
 }
 
+func TestCreateWorkspaceAllowedForUsersWithoutMemberships(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dataDir := t.TempDir()
+	st, err := sqlitestore.Open("sqlite://" + filepath.Join(dataDir, "clickclack.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.EnsureBootstrap(ctx, "Owner", "owner@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	newUser, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: "New User", Email: "new@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	guest, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: "Guest", Email: "guest-create@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.EnsureDefaultGuestWorkspaceMember(ctx, guest.ID, store.WorkspaceRoleGuest); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(New(st, realtime.NewHub(), Options{}).Handler())
+	t.Cleanup(server.Close)
+
+	expectStatusAsUser(t, newUser.ID, http.MethodPost, server.URL+"/api/workspaces", strings.NewReader(`{"name":"First Room"}`), http.StatusCreated)
+	expectStatusAsUser(t, guest.ID, http.MethodPost, server.URL+"/api/workspaces", strings.NewReader(`{"name":"Guest Escape"}`), http.StatusForbidden)
+}
+
 func TestMessagePageHTTPCursors(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -1676,6 +1709,53 @@ func TestQueryHelpersParseValues(t *testing.T) {
 	}
 	if patterns := New(nil, nil, Options{GitHubOAuth: GitHubOAuthConfig{PublicURL: "%"}}).websocketOriginPatterns(httptest.NewRequest(http.MethodGet, "/", nil)); patterns != nil {
 		t.Fatalf("unexpected invalid websocket origin patterns: %#v", patterns)
+	}
+}
+
+func TestDirectRealtimeEventsRespectGuestDemotion(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dataDir := t.TempDir()
+	st, err := sqlitestore.Open("sqlite://" + filepath.Join(dataDir, "clickclack.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	moderator, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: "Moderator", Email: "live-mod@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace, err := st.EnsureDefaultGuestWorkspaceMember(ctx, moderator.ID, store.WorkspaceRoleModerator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	member, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: "Member", Email: "live-member@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.EnsureDefaultGuestWorkspaceMember(ctx, member.ID, store.WorkspaceRoleMember); err != nil {
+		t.Fatal(err)
+	}
+	dm, err := st.CreateDirectConversation(ctx, store.CreateDirectConversationInput{WorkspaceID: workspace.ID, UserID: moderator.ID, MemberIDs: []string{member.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.UpdateMemberModeration(ctx, store.UpdateMemberModerationInput{WorkspaceID: workspace.ID, ActorUserID: moderator.ID, TargetUserID: member.ID, Role: store.WorkspaceRoleGuest}); err != nil {
+		t.Fatal(err)
+	}
+	_, event, err := st.CreateDirectMessage(ctx, store.CreateDirectMessageInput{ConversationID: dm.ID, AuthorID: moderator.ID, Body: "hidden live event"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := New(st, realtime.NewHub(), Options{})
+	if server.shouldDeliverEventToActor(ctx, event, member.ID) {
+		t.Fatalf("direct realtime event delivered to demoted guest: %#v", event)
+	}
+	if !server.shouldDeliverEventToActor(ctx, event, moderator.ID) {
+		t.Fatalf("direct realtime event denied to moderator: %#v", event)
 	}
 }
 

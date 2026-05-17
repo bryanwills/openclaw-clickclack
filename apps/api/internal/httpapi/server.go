@@ -82,6 +82,8 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/workspaces", s.createWorkspace)
 		r.Get("/routes/{workspace_route_id}/{target_route_id}", s.resolveRoute)
 		r.Get("/workspaces/{workspace_id}", s.getWorkspace)
+		r.Get("/workspaces/{workspace_id}/moderation/members", s.listWorkspaceMembers)
+		r.Patch("/workspaces/{workspace_id}/moderation/members/{user_id}", s.updateWorkspaceMemberModeration)
 		r.Get("/workspaces/{workspace_id}/channels", s.listChannels)
 		r.Post("/workspaces/{workspace_id}/channels", s.createChannel)
 		r.Patch("/channels/{channel_id}", s.updateChannel)
@@ -318,6 +320,20 @@ func (s *Server) createWorkspace(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	workspaces, err := s.store.ListWorkspaces(r.Context(), act.user.ID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	hasNonGuestMembership, err := s.store.UserHasNonGuestMembership(r.Context(), act.user.ID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if len(workspaces) > 0 && !hasNonGuestMembership {
+		writeError(w, http.StatusForbidden, store.ErrModerationRestricted)
+		return
+	}
 	workspace, err := s.store.CreateWorkspace(r.Context(), store.CreateWorkspaceInput{Name: body.Name, Slug: body.Slug}, act.user.ID)
 	writeResultStatus(w, http.StatusCreated, map[string]any{"workspace": workspace}, err)
 }
@@ -339,6 +355,81 @@ func (s *Server) getWorkspace(w http.ResponseWriter, r *http.Request) {
 	}
 	workspace, err := s.store.GetWorkspace(r.Context(), workspaceID, act.user.ID)
 	writeResult(w, map[string]any{"workspace": workspace}, err)
+}
+
+func (s *Server) listWorkspaceMembers(w http.ResponseWriter, r *http.Request) {
+	act, err := s.currentActor(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	workspaceID := chi.URLParam(r, "workspace_id")
+	if err := act.requireScope("workspaces:read"); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	if err := act.requireWorkspace(workspaceID); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	members, err := s.store.ListWorkspaceMembers(r.Context(), workspaceID, act.user.ID)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"members": members})
+}
+
+func (s *Server) updateWorkspaceMemberModeration(w http.ResponseWriter, r *http.Request) {
+	act, err := s.currentActor(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	workspaceID := chi.URLParam(r, "workspace_id")
+	if err := act.requireScope("workspaces:write"); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	if err := act.requireWorkspace(workspaceID); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	var body struct {
+		Role           string  `json:"role"`
+		TimeoutUntil   string  `json:"timeout_until"`
+		TimeoutMinutes int     `json:"timeout_minutes"`
+		ClearTimeout   bool    `json:"clear_timeout"`
+		Blocked        *bool   `json:"blocked"`
+		ModerationNote *string `json:"moderation_note"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	timeoutUntil := optionalString(body.TimeoutUntil)
+	if timeoutUntil == nil && body.TimeoutMinutes > 0 {
+		value := time.Now().Add(time.Duration(body.TimeoutMinutes) * time.Minute).UTC().Format(time.RFC3339Nano)
+		timeoutUntil = &value
+	}
+	member, event, err := s.store.UpdateMemberModeration(r.Context(), store.UpdateMemberModerationInput{
+		WorkspaceID:    workspaceID,
+		TargetUserID:   chi.URLParam(r, "user_id"),
+		ActorUserID:    act.user.ID,
+		Role:           body.Role,
+		TimeoutUntil:   timeoutUntil,
+		ClearTimeout:   body.ClearTimeout,
+		Blocked:        body.Blocked,
+		ModerationNote: body.ModerationNote,
+	})
+	if err == nil && event.ID != "" {
+		s.hub.Publish(event)
+	}
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"member": member, "event": event})
 }
 
 func (s *Server) listChannels(w http.ResponseWriter, r *http.Request) {
@@ -628,7 +719,7 @@ func (s *Server) websocket(w http.ResponseWriter, r *http.Request) {
 		if event.ID != "" {
 			sent[event.ID] = struct{}{}
 		}
-		if !shouldDeliverEvent(event, act.user.ID) {
+		if !s.shouldDeliverEventToActor(ctx, event, act.user.ID) {
 			continue
 		}
 		if err := writeWS(ctx, conn, event); err != nil {
@@ -645,7 +736,7 @@ func (s *Server) websocket(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 			}
-			if !shouldDeliverEvent(event, act.user.ID) {
+			if !s.shouldDeliverEventToActor(ctx, event, act.user.ID) {
 				continue
 			}
 			if err := writeWS(ctx, conn, event); err != nil {
@@ -714,6 +805,33 @@ func filterEventsForUser(events []store.Event, userID string) []store.Event {
 		}
 	}
 	return filtered
+}
+
+func (s *Server) shouldDeliverEventToActor(ctx context.Context, event store.Event, userID string) bool {
+	if !shouldDeliverEvent(event, userID) {
+		return false
+	}
+	if conversationID := directConversationIDFromEvent(event); conversationID != "" {
+		_, err := s.store.GetDirectConversation(ctx, conversationID, userID)
+		return err == nil
+	}
+	if event.ChannelID == "" {
+		return true
+	}
+	_, err := s.store.GetChannel(ctx, event.ChannelID, userID)
+	return err == nil
+}
+
+func directConversationIDFromEvent(event store.Event) string {
+	switch payload := event.Payload.(type) {
+	case map[string]string:
+		return payload["direct_conversation_id"]
+	case map[string]any:
+		conversationID, _ := payload["direct_conversation_id"].(string)
+		return conversationID
+	default:
+		return ""
+	}
 }
 
 func (s *Server) currentActor(r *http.Request) (actor, error) {
@@ -819,7 +937,7 @@ func writeResult(w http.ResponseWriter, body any, err error) {
 
 func writeResultStatus(w http.ResponseWriter, status int, body any, err error) {
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
+		writeStoreError(w, err)
 		return
 	}
 	writeJSON(w, status, body)
@@ -827,7 +945,7 @@ func writeResultStatus(w http.ResponseWriter, status int, body any, err error) {
 
 func writeMessageCreateResult(w http.ResponseWriter, message store.Message, event store.Event, err error) {
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
+		writeStoreError(w, err)
 		return
 	}
 	body := map[string]any{"message": message}
@@ -841,7 +959,7 @@ func writeMessageCreateResult(w http.ResponseWriter, message store.Message, even
 
 func writeThreadReplyCreateResult(w http.ResponseWriter, message store.Message, state store.ThreadState, events []store.Event, err error) {
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
+		writeStoreError(w, err)
 		return
 	}
 	status := http.StatusOK
@@ -853,7 +971,7 @@ func writeThreadReplyCreateResult(w http.ResponseWriter, message store.Message, 
 
 func writeEventMutationResult(w http.ResponseWriter, changedStatus int, event store.Event, err error) {
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
+		writeStoreError(w, err)
 		return
 	}
 	status := http.StatusOK
@@ -871,6 +989,17 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 
 func writeError(w http.ResponseWriter, status int, err error) {
 	writeJSON(w, status, map[string]any{"error": err.Error()})
+}
+
+func writeStoreError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, store.ErrPostRateLimited):
+		writeError(w, http.StatusTooManyRequests, err)
+	case errors.Is(err, store.ErrModerationRestricted):
+		writeError(w, http.StatusForbidden, err)
+	default:
+		writeError(w, http.StatusBadRequest, err)
+	}
 }
 
 // optionalString returns a non-empty trimmed pointer or nil. Useful for JSON

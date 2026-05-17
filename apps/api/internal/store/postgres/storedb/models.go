@@ -201,3 +201,13 @@ type WorkspaceMember struct {
 	Role        string `json:"role"`
 	CreatedAt   string `json:"created_at"`
 }
+
+type WorkspaceMemberModeration struct {
+	WorkspaceID    string         `json:"workspace_id"`
+	UserID         string         `json:"user_id"`
+	TimeoutUntil   sql.NullString `json:"timeout_until"`
+	BlockedAt      sql.NullString `json:"blocked_at"`
+	ModerationNote string         `json:"moderation_note"`
+	ModerationBy   sql.NullString `json:"moderation_by"`
+	ModerationAt   string         `json:"moderation_at"`
+}

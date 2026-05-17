@@ -95,6 +95,8 @@ CLICKCLACK_GITHUB_CLIENT_ID=...
 CLICKCLACK_GITHUB_CLIENT_SECRET=...
 # Optional org gate:
 # CLICKCLACK_GITHUB_ALLOWED_ORG=openclaw
+# Optional moderator org for open guest login:
+# CLICKCLACK_GITHUB_MODERATOR_ORG=openclaw
 ```
 
 Without a client ID and client secret, `GET /api/auth/github/start` returns `501`.
@@ -104,16 +106,22 @@ Flow:
 1. `GET /api/auth/github/start` sets a state cookie and redirects to GitHub.
 2. GitHub redirects back to `GET /api/auth/github/callback?code&state`.
 3. The handler exchanges the code, fetches `/user` and primary `/user/emails`,
-   checks org membership when `CLICKCLACK_GITHUB_ALLOWED_ORG` is set, upserts a
-   user keyed by `(provider="github", provider_subject=<github id>)`, joins the
-   org-gated default workspace or the open `Guests` workspace, creates a
-   session, sets `cc_session`, redirects to `/`.
+   checks org membership when `CLICKCLACK_GITHUB_ALLOWED_ORG` is set, checks
+   moderator org membership when configured, upserts a user keyed by
+   `(provider="github", provider_subject=<github id>)`, joins the org-gated
+   default workspace or the open `Guests` workspace, creates a session, sets
+   `cc_session`, redirects to `/`.
 
 The redirect URL is derived from `CLICKCLACK_PUBLIC_URL` when set, otherwise
 from the request scheme/host. Configure GitHub with `<public-url>/api/auth/github/callback`.
 
 Without `CLICKCLACK_GITHUB_ALLOWED_ORG`, any GitHub account can sign in and is
-automatically joined to an isolated `Guests` workspace with a `guest` channel.
+automatically joined to an isolated `Guests` workspace. When
+`CLICKCLACK_GITHUB_MODERATOR_ORG` is set, non-members of that org start as
+waiting-room guests with a three-post daily budget until a moderator promotes
+them to `member`; matching GitHub org members become moderators in the guest
+workspace. If the moderator org is unset, open-login users join as normal
+members so the workspace cannot become ownerless.
 Org-gated
 deployments request `read:org`. GitHub only returns private org membership
 after the user grants that scope, so team-only hosting should set

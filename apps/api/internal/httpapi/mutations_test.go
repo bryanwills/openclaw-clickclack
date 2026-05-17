@@ -259,6 +259,107 @@ func readEventTypeWithin(t *testing.T, conn *websocket.Conn, eventType string, t
 	}
 }
 
+func TestPushNotificationsRespectModerationVisibility(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dataDir := t.TempDir()
+	st, err := sqlitestore.Open("sqlite://" + filepath.Join(dataDir, "clickclack.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	moderator, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: "Moderator", Email: "push-mod@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace, err := st.EnsureDefaultGuestWorkspaceMember(ctx, moderator.ID, store.WorkspaceRoleModerator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	guest, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: "Guest", Email: "push-guest@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.EnsureDefaultGuestWorkspaceMember(ctx, guest.ID, store.WorkspaceRoleGuest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.UpdateNotificationSettings(ctx, store.UpdateNotificationSettingsInput{
+		UserID:          guest.ID,
+		PushoverEnabled: true,
+		PushoverUserKey: "g12345678901234567890123456789",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	channels, err := st.ListChannels(ctx, workspace.ID, moderator.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var guestChannelID, generalChannelID string
+	for _, channel := range channels {
+		switch channel.Name {
+		case "guest":
+			guestChannelID = channel.ID
+		case "general":
+			generalChannelID = channel.ID
+		}
+	}
+	if guestChannelID == "" || generalChannelID == "" {
+		t.Fatalf("expected guest and general channels, got %#v", channels)
+	}
+	notifier := &recordingNotifier{}
+	server := New(st, realtime.NewHub(), Options{PushNotifier: notifier})
+	hidden, _, err := st.CreateMessage(ctx, store.CreateMessageInput{ChannelID: generalChannelID, AuthorID: moderator.ID, Body: "hidden"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.notifyMessageCreated(ctx, hidden)
+	if len(notifier.notifications) != 0 {
+		t.Fatalf("guest should not receive hidden channel push notifications: %#v", notifier.notifications)
+	}
+	visible, _, err := st.CreateMessage(ctx, store.CreateMessageInput{ChannelID: guestChannelID, AuthorID: moderator.ID, Body: "visible"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.notifyMessageCreated(ctx, visible)
+	if len(notifier.notifications) != 1 || notifier.notifications[0].RecipientKey != "g12345678901234567890123456789" {
+		t.Fatalf("guest should receive guest channel push notification, got %#v", notifier.notifications)
+	}
+
+	member, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: "Member", Email: "push-member@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.EnsureDefaultGuestWorkspaceMember(ctx, member.ID, store.WorkspaceRoleMember); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.UpdateNotificationSettings(ctx, store.UpdateNotificationSettingsInput{
+		UserID:          member.ID,
+		PushoverEnabled: true,
+		PushoverUserKey: "m12345678901234567890123456789",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	dm, err := st.CreateDirectConversation(ctx, store.CreateDirectConversationInput{WorkspaceID: workspace.ID, UserID: moderator.ID, MemberIDs: []string{member.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.UpdateMemberModeration(ctx, store.UpdateMemberModerationInput{WorkspaceID: workspace.ID, ActorUserID: moderator.ID, TargetUserID: member.ID, Role: store.WorkspaceRoleGuest}); err != nil {
+		t.Fatal(err)
+	}
+	notifier.notifications = nil
+	dmMessage, _, err := st.CreateDirectMessage(ctx, store.CreateDirectMessageInput{ConversationID: dm.ID, AuthorID: moderator.ID, Body: "hidden dm"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.notifyMessageCreated(ctx, dmMessage)
+	if len(notifier.notifications) != 0 {
+		t.Fatalf("demoted guest should not receive DM push notifications: %#v", notifier.notifications)
+	}
+}
+
 type recordingNotifier struct {
 	notifications []PushNotification
 	err           error

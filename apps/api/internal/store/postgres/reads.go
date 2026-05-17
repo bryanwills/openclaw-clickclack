@@ -29,6 +29,9 @@ func (s *Store) MarkChannelRead(ctx context.Context, channelID, userID string, s
 	if err := requireMembershipTx(ctx, tx, workspaceID, userID); err != nil {
 		return store.ReadReceipt{}, store.Event{}, err
 	}
+	if err := requireGuestChannelAccessTx(ctx, tx, workspaceID, channelID, userID); err != nil {
+		return store.ReadReceipt{}, store.Event{}, err
+	}
 	// Cap to the current channel last_seq so a buggy client can't push the
 	// pointer beyond reality.
 	lastSeq, err := qtx.ChannelLastSeq(ctx, channelID)
@@ -80,6 +83,9 @@ func (s *Store) MarkDirectRead(ctx context.Context, conversationID, userID strin
 		return store.ReadReceipt{}, store.Event{}, err
 	}
 	if err := requireDirectMembershipTx(ctx, tx, conversationID, userID); err != nil {
+		return store.ReadReceipt{}, store.Event{}, err
+	}
+	if err := requireNonGuestTx(ctx, tx, workspaceID, userID); err != nil {
 		return store.ReadReceipt{}, store.Event{}, err
 	}
 	lastSeq, err := qtx.DirectLastSeq(ctx, conversationID)

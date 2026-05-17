@@ -17,6 +17,13 @@ func (s *Store) ListDirectConversations(ctx context.Context, workspaceID, userID
 	if err := s.requireMembership(ctx, workspaceID, userID); err != nil {
 		return nil, err
 	}
+	role, err := s.memberRole(ctx, workspaceID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if role == store.WorkspaceRoleGuest {
+		return []store.DirectConversation{}, nil
+	}
 	rows, err := s.q.ListDirectConversations(ctx, storedb.ListDirectConversationsParams{ReaderUserID: userID, WorkspaceID: workspaceID})
 	if err != nil {
 		return nil, err
@@ -44,6 +51,13 @@ func (s *Store) GetDirectConversation(ctx context.Context, conversationID, userI
 	if err != nil {
 		return store.DirectConversation{}, err
 	}
+	role, err := s.memberRole(ctx, row.WorkspaceID, userID)
+	if err != nil {
+		return store.DirectConversation{}, err
+	}
+	if role == store.WorkspaceRoleGuest {
+		return store.DirectConversation{}, store.ErrModerationRestricted
+	}
 	dm := storeDirectConversationFromGet(row)
 	members, err := s.directConversationMembers(ctx, dm.ID)
 	if err != nil {
@@ -54,9 +68,6 @@ func (s *Store) GetDirectConversation(ctx context.Context, conversationID, userI
 }
 
 func (s *Store) CreateDirectConversation(ctx context.Context, input store.CreateDirectConversationInput) (store.DirectConversation, error) {
-	if err := s.requireMembership(ctx, input.WorkspaceID, input.UserID); err != nil {
-		return store.DirectConversation{}, err
-	}
 	memberIDs := append([]string{input.UserID}, input.MemberIDs...)
 	memberIDs = compactStrings(memberIDs)
 	if len(memberIDs) < 2 {
@@ -68,8 +79,11 @@ func (s *Store) CreateDirectConversation(ctx context.Context, input store.Create
 	}
 	defer tx.Rollback()
 	qtx := s.q.WithTx(tx)
+	if err := requireCanSendDirectTx(ctx, tx, input.WorkspaceID, input.UserID); err != nil {
+		return store.DirectConversation{}, err
+	}
 	for _, memberID := range memberIDs {
-		if err := requireMembershipTx(ctx, tx, input.WorkspaceID, memberID); err != nil {
+		if err := requireCanSendDirectTx(ctx, tx, input.WorkspaceID, memberID); err != nil {
 			return store.DirectConversation{}, err
 		}
 	}
@@ -115,7 +129,7 @@ func (s *Store) CreateDirectConversation(ctx context.Context, input store.Create
 }
 
 func (s *Store) ListDirectMessages(ctx context.Context, conversationID, userID string, page store.MessagePageRequest) (store.MessagePage, error) {
-	if err := s.requireDirectMembership(ctx, conversationID, userID); err != nil {
+	if err := s.requireDirectAccess(ctx, conversationID, userID); err != nil {
 		return store.MessagePage{}, err
 	}
 	return s.listMessagePage(ctx, messagePageScope{
@@ -136,6 +150,9 @@ func (s *Store) CreateDirectMessage(ctx context.Context, input store.CreateDirec
 		return store.Message{}, store.Event{}, err
 	}
 	if err := requireDirectMembershipTx(ctx, tx, input.ConversationID, input.AuthorID); err != nil {
+		return store.Message{}, store.Event{}, err
+	}
+	if err := requireCanSendDirectTx(ctx, tx, workspaceID, input.AuthorID); err != nil {
 		return store.Message{}, store.Event{}, err
 	}
 	if err := lockMessageSequenceTx(ctx, tx, "direct", input.ConversationID); err != nil {
@@ -218,6 +235,27 @@ func (s *Store) CreateDirectMessage(ctx context.Context, input store.CreateDirec
 func (s *Store) requireDirectMembership(ctx context.Context, conversationID, userID string) error {
 	_, err := s.q.RequireDirectMembership(ctx, storedb.RequireDirectMembershipParams{ConversationID: conversationID, UserID: userID})
 	return err
+}
+
+func (s *Store) requireDirectAccess(ctx context.Context, conversationID, userID string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	return requireDirectAccessTx(ctx, tx, conversationID, userID)
+}
+
+func requireDirectAccessTx(ctx context.Context, tx *sql.Tx, conversationID, userID string) error {
+	qtx := storedb.New(tx)
+	workspaceID, err := qtx.GetDirectConversationWorkspace(ctx, conversationID)
+	if err != nil {
+		return err
+	}
+	if err := requireDirectMembershipTx(ctx, tx, conversationID, userID); err != nil {
+		return err
+	}
+	return requireNonGuestTx(ctx, tx, workspaceID, userID)
 }
 
 func requireDirectMembershipTx(ctx context.Context, tx *sql.Tx, conversationID, userID string) error {

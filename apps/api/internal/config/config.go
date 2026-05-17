@@ -16,6 +16,7 @@ type Config struct {
 	GitHubClientID     string `json:"github_client_id"`
 	GitHubClientSecret string `json:"github_client_secret"`
 	GitHubAllowedOrg   string `json:"github_allowed_org"`
+	GitHubModeratorOrg string `json:"github_moderator_org"`
 	PushoverAPIToken   string `json:"pushover_api_token"`
 	R2AccountID        string `json:"r2_account_id"`
 	R2AccessKeyID      string `json:"r2_access_key_id"`
@@ -73,6 +74,9 @@ func Load(path string) (Config, error) {
 	}
 	if env := os.Getenv("CLICKCLACK_GITHUB_ALLOWED_ORG"); env != "" {
 		cfg.GitHubAllowedOrg = env
+	}
+	if env := os.Getenv("CLICKCLACK_GITHUB_MODERATOR_ORG"); env != "" {
+		cfg.GitHubModeratorOrg = env
 	}
 	if env := os.Getenv("CLICKCLACK_PUSHOVER_API_TOKEN"); env != "" {
 		cfg.PushoverAPIToken = env

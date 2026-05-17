@@ -9,7 +9,7 @@ import (
 )
 
 func (s *Store) CreateUpload(ctx context.Context, input store.CreateUploadInput) (store.Upload, error) {
-	if err := s.requireMembership(ctx, input.WorkspaceID, input.OwnerID); err != nil {
+	if err := s.CanCreateUpload(ctx, input.WorkspaceID, input.OwnerID); err != nil {
 		return store.Upload{}, err
 	}
 	upload := store.Upload{
@@ -38,6 +38,18 @@ func (s *Store) CreateUpload(ctx context.Context, input store.CreateUploadInput)
 		StoragePath: upload.StoragePath,
 		CreatedAt:   upload.CreatedAt,
 	})
+}
+
+func (s *Store) CanCreateUpload(ctx context.Context, workspaceID, userID string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := requireMembershipTx(ctx, tx, workspaceID, userID); err != nil {
+		return err
+	}
+	return requireNoModerationBlockTx(ctx, tx, workspaceID, userID)
 }
 
 func (s *Store) GetUpload(ctx context.Context, uploadID, userID string) (store.Upload, error) {
@@ -94,6 +106,9 @@ func (s *Store) AttachUpload(ctx context.Context, input store.AttachUploadInput)
 		return err
 	}
 	if err := requireMessageAccessTx(ctx, tx, msg, input.UserID); err != nil {
+		return err
+	}
+	if err := requireNoModerationBlockTx(ctx, tx, msg.WorkspaceID, input.UserID); err != nil {
 		return err
 	}
 	uploadWorkspace, err := qtx.GetUploadWorkspace(ctx, input.UploadID)

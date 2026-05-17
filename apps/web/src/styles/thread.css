@@ -288,6 +288,37 @@
   white-space: nowrap;
 }
 
+.moderation-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
+  gap: 8px;
+}
+
+.moderation-actions .primary-action,
+.moderation-actions .ghost-action,
+.moderation-actions .danger-action {
+  min-height: 40px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.danger-action {
+  border: 1px solid color-mix(in srgb, var(--danger), transparent 35%);
+  background: color-mix(in srgb, var(--danger), transparent 86%);
+  color: var(--danger);
+}
+
+.role-pill {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
 .profile-info {
   display: grid;
   gap: 12px;

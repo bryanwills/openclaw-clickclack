@@ -29,6 +29,9 @@ func (s *Server) notifyMessageCreated(ctx context.Context, message store.Message
 		return
 	}
 	for _, recipient := range recipients {
+		if !s.canNotifyMessageRecipient(ctx, message, recipient.UserID) {
+			continue
+		}
 		notification := PushNotification{
 			RecipientKey: recipient.PushoverUserKey,
 			Title:        notificationTitle(message),
@@ -38,6 +41,11 @@ func (s *Server) notifyMessageCreated(ctx context.Context, message store.Message
 			log.Printf("push notification failed for user %s: %v", recipient.UserID, err)
 		}
 	}
+}
+
+func (s *Server) canNotifyMessageRecipient(ctx context.Context, message store.Message, userID string) bool {
+	_, err := s.store.GetMessage(ctx, message.ID, userID)
+	return err == nil
 }
 
 func notificationTitle(message store.Message) string {

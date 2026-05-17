@@ -31,6 +31,8 @@ wsp_...` — the HTTP API does not yet expose member management.
 GET  /api/workspaces/{workspace_id}/channels  # list, ordered by name
 POST /api/workspaces/{workspace_id}/channels  # create
 PATCH /api/channels/{channel_id}              # rename, change kind, archive
+GET  /api/workspaces/{workspace_id}/moderation/members
+PATCH /api/workspaces/{workspace_id}/moderation/members/{user_id}
 ```
 
 Create body: `{name, kind?}`. `name` is slugified to keep `(workspace_id, name)`
@@ -38,6 +40,10 @@ unique. `kind` defaults to `public`.
 
 `PATCH` accepts any subset of `{name, kind, archived}`. Setting `archived=true`
 fills `archived_at`; `archived=false` clears it.
+
+Guest workspace members are waiting-room users. They can only see `#guest`, can
+post three messages per day, and cannot create rooms or DMs. Moderators and
+owners can promote them to `member`, time them out, or block them.
 
 Both endpoints emit a durable `channel.created` or `channel.updated` event into
 the workspace event stream so connected clients see the change without

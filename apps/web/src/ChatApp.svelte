@@ -35,7 +35,7 @@
   import ThreadEmptyState from "./components/thread/ThreadEmptyState.svelte";
   import ThreadPanel from "./components/thread/ThreadPanel.svelte";
   import Topbar from "./components/topbar/Topbar.svelte";
-  import type { Channel, DirectConversation, Message, MessagePage, RealtimeEvent, RouteTarget, SearchResult, ThreadState, Upload, User, Workspace } from "./lib/types";
+  import type { Channel, DirectConversation, MemberModeration, Message, MessagePage, RealtimeEvent, RouteTarget, SearchResult, ThreadState, Upload, User, Workspace } from "./lib/types";
 
   const LIVE_EDGE_TOLERANCE_PX = 96;
   const LAST_CHANNEL_STORAGE_PREFIX = "clickclack:last-channel:v1:";
@@ -55,6 +55,7 @@
   let selectedThread: Message | null = null;
   let selectedThreadState: ThreadState | null = null;
   let selectedProfile: User | null = null;
+  let moderationMembers: MemberModeration[] = [];
   let selectedImage: { url: string; title: string } | null = null;
   let messageBody = "";
   let replyBody = "";
@@ -126,6 +127,10 @@
   };
 
   $: selectedWorkspace = workspaces.find((workspace) => workspace.id === selectedWorkspaceID);
+  $: currentWorkspaceRole = selectedWorkspace?.role || "";
+  $: selectedProfileModeration = selectedProfile
+    ? moderationMembers.find((member) => member.user.id === selectedProfile?.id)
+    : undefined;
   $: selectedChannel = channels.find((channel) => channel.id === selectedChannelID);
   $: selectedDirect = directConversations.find((conversation) => conversation.id === selectedDirectID);
   $: activeConversationKey = selectedDirectID || selectedChannelID || "";
@@ -385,6 +390,7 @@
     if (workspaceChanged || channels.length === 0) await loadChannels(false, false);
     if (serial !== routeApplySerial) return;
     if (workspaceChanged || directConversations.length === 0) await loadDirectConversations();
+    if (workspaceChanged) await loadModerationMembers();
     if (serial !== routeApplySerial) return;
 
     if (routeTarget) {
@@ -555,6 +561,31 @@
       replies = [];
     }
     if (loadInitialMessages) await loadMessages();
+  }
+
+  async function loadModerationMembers() {
+    moderationMembers = [];
+    if (!selectedWorkspaceID || (currentWorkspaceRole !== "owner" && currentWorkspaceRole !== "moderator")) return;
+    try {
+      const data = await api<{ members: MemberModeration[] }>(`/api/workspaces/${selectedWorkspaceID}/moderation/members`);
+      moderationMembers = data.members;
+    } catch {
+      moderationMembers = [];
+    }
+  }
+
+  async function updateMemberModeration(userID: string, body: Record<string, unknown>) {
+    if (!selectedWorkspaceID) return;
+    const data = await api<{ member: MemberModeration }>(`/api/workspaces/${selectedWorkspaceID}/moderation/members/${userID}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+    moderationMembers = [
+      ...moderationMembers.filter((member) => member.user.id !== userID),
+      data.member,
+    ];
+    await loadChannels(false, false, false);
+    status = "ready";
   }
 
   async function createChannel() {
@@ -1720,6 +1751,30 @@
       await loadChannels(false, false, false);
       return;
     }
+    if (event.type === "member.moderation_updated" && event.workspace_id === selectedWorkspaceID) {
+      const selectedDirectBeforeModeration = selectedDirectID;
+      const affectsCurrentUser = event.payload.user_id === user?.id;
+      await loadWorkspaces();
+      await loadModerationMembers();
+      await loadChannels(false, affectsCurrentUser, affectsCurrentUser);
+      if (affectsCurrentUser) {
+        await loadDirectConversations();
+        if (selectedDirectBeforeModeration) {
+          if (directConversations.some((conversation) => conversation.id === selectedDirectBeforeModeration)) {
+            selectedDirectID = selectedDirectBeforeModeration;
+            selectedChannelID = "";
+          } else {
+            selectedDirectID = "";
+          }
+        }
+        if (!selectedChannelID && !selectedDirectID) {
+          commitMessageWindow("", pageToWindow({ messages: [], oldest_seq: 0, newest_seq: 0, has_older: false, has_newer: false }), "replace");
+          return;
+        }
+        await loadMessages();
+      }
+      return;
+    }
     if (messageEventAlreadyAccounted(event)) return;
     const affectsActiveView =
       event.channel_id === selectedChannelID || event.payload.direct_conversation_id === selectedDirectID;
@@ -1896,6 +1951,12 @@
     if (!profile) return;
     selectedThread = null;
     selectedProfile = profile;
+    if (
+      (currentWorkspaceRole === "owner" || currentWorkspaceRole === "moderator") &&
+      !moderationMembers.some((member) => member.user.id === profile.id)
+    ) {
+      void loadModerationMembers();
+    }
   }
 
   function handleComposerKey(event: KeyboardEvent) {
@@ -2244,9 +2305,15 @@
         profile={selectedProfile}
         currentUser={user}
         workspaceName={selectedWorkspace?.name}
+        currentUserRole={currentWorkspaceRole}
+        moderation={selectedProfileModeration}
         onClose={closeSidePanel}
         onEdit={openProfileSettings}
         onMessage={(memberID) => void startDirectWithUser(memberID)}
+        onApprove={(memberID) => void updateMemberModeration(memberID, { role: "member", clear_timeout: true, blocked: false })}
+        onTimeout={(memberID) => void updateMemberModeration(memberID, { timeout_minutes: 60 })}
+        onBlock={(memberID) => void updateMemberModeration(memberID, { blocked: true })}
+        onUnblock={(memberID) => void updateMemberModeration(memberID, { blocked: false, clear_timeout: true })}
         onSetStatus={() => (status = "status messages are coming soon")}
       />
     {:else}

@@ -139,6 +139,53 @@ paths:
       responses:
         "200":
           description: Workspace
+  /api/workspaces/{workspace_id}/moderation/members:
+    get:
+      operationId: listWorkspaceMembersForModeration
+      parameters:
+        - $ref: "#/components/parameters/workspace_id"
+      responses:
+        "200":
+          description: Workspace members with moderation state
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [members]
+                properties:
+                  members:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/MemberModeration"
+  /api/workspaces/{workspace_id}/moderation/members/{user_id}:
+    patch:
+      operationId: updateWorkspaceMemberModeration
+      parameters:
+        - $ref: "#/components/parameters/workspace_id"
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMemberModerationRequest"
+      responses:
+        "200":
+          description: Updated member moderation state
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [member]
+                properties:
+                  member:
+                    $ref: "#/components/schemas/MemberModeration"
+                  event:
+                    type: object
   /api/workspaces/{workspace_id}/channels:
     get:
       operationId: listChannels
@@ -576,6 +623,23 @@ components:
           type: string
         slug:
           type: string
+    UpdateMemberModerationRequest:
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [moderator, member, guest]
+        timeout_until:
+          type: string
+          format: date-time
+        timeout_minutes:
+          type: integer
+        clear_timeout:
+          type: boolean
+        blocked:
+          type: boolean
+        moderation_note:
+          type: string
     RequestMagicLinkRequest:
       type: object
       required: [email]
@@ -720,6 +784,37 @@ components:
         slug:
           type: string
         created_at:
+          type: string
+          format: date-time
+        role:
+          type: string
+          enum: [owner, moderator, member, guest, bot]
+    MemberModeration:
+      type: object
+      required: [workspace_id, user, role, posts_remaining, post_limit]
+      properties:
+        workspace_id:
+          type: string
+        user:
+          $ref: "#/components/schemas/User"
+        role:
+          type: string
+          enum: [owner, moderator, member, guest, bot]
+        posts_remaining:
+          type: integer
+        post_limit:
+          type: integer
+        timeout_until:
+          type: string
+          format: date-time
+        blocked_at:
+          type: string
+          format: date-time
+        moderation_note:
+          type: string
+        moderation_by:
+          type: string
+        moderation_at:
           type: string
           format: date-time
     Channel:

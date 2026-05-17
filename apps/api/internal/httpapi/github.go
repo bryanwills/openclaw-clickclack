@@ -26,6 +26,7 @@ type GitHubOAuthConfig struct {
 	EmailsURL     string
 	MembershipURL string
 	AllowedOrg    string
+	ModeratorOrg  string
 	HTTPClient    *http.Client
 }
 
@@ -97,7 +98,7 @@ func (s *Server) githubCallback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err)
 		return
 	}
-	if err := s.ensureGitHubOrgMembership(r.Context(), token); err != nil {
+	if err := s.ensureGitHubAllowedOrgMembership(r.Context(), token); err != nil {
 		if errors.Is(err, errGitHubOrgDenied) {
 			writeError(w, http.StatusForbidden, err)
 			return
@@ -116,7 +117,7 @@ func (s *Server) githubCallback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	if _, err := s.ensureGitHubWorkspace(r.Context(), user.ID); err != nil {
+	if _, err := s.ensureGitHubWorkspace(r.Context(), token, user.ID); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -142,11 +143,26 @@ func (s *Server) clearGitHubStateCookie(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-func (s *Server) ensureGitHubWorkspace(ctx context.Context, userID string) (store.Workspace, error) {
-	if strings.TrimSpace(s.githubOAuth.AllowedOrg) != "" {
+func (s *Server) ensureGitHubWorkspace(ctx context.Context, token, userID string) (store.Workspace, error) {
+	moderatorOrg := strings.TrimSpace(s.githubOAuth.ModeratorOrg)
+	if strings.TrimSpace(s.githubOAuth.AllowedOrg) != "" && moderatorOrg == "" {
 		return s.store.EnsureDefaultWorkspaceMember(ctx, userID)
 	}
-	return s.store.EnsureDefaultGuestWorkspaceMember(ctx, userID)
+	role := store.WorkspaceRoleMember
+	if moderatorOrg != "" {
+		role = store.WorkspaceRoleGuest
+		if strings.TrimSpace(s.githubOAuth.AllowedOrg) != "" {
+			role = store.WorkspaceRoleMember
+		}
+		ok, err := s.githubOrgMembership(ctx, token, moderatorOrg)
+		if err != nil {
+			return store.Workspace{}, err
+		}
+		if ok {
+			role = store.WorkspaceRoleModerator
+		}
+	}
+	return s.store.EnsureDefaultGuestWorkspaceMember(ctx, userID, role)
 }
 
 func (s *Server) exchangeGitHubCode(ctx context.Context, r *http.Request, code string) (string, error) {
@@ -238,28 +254,43 @@ func (s *Server) githubGetJSON(ctx context.Context, endpoint, token string, out 
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
-func (s *Server) ensureGitHubOrgMembership(ctx context.Context, token string) error {
+func (s *Server) ensureGitHubAllowedOrgMembership(ctx context.Context, token string) error {
 	org := strings.TrimSpace(s.githubOAuth.AllowedOrg)
 	if org == "" {
 		return nil
 	}
+	ok, err := s.githubOrgMembership(ctx, token, org)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errGitHubOrgDenied
+	}
+	return nil
+}
+
+func (s *Server) githubOrgMembership(ctx context.Context, token, org string) (bool, error) {
+	org = strings.TrimSpace(org)
+	if org == "" {
+		return false, nil
+	}
 	endpoint := strings.TrimRight(s.githubOAuth.MembershipURL, "/") + "/" + url.PathEscape(org)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return err
+		return false, err
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := s.githubOAuth.HTTPClient.Do(req)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusForbidden {
-		return errGitHubOrgDenied
+		return false, nil
 	}
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("github organization membership check failed: %s", resp.Status)
+		return false, fmt.Errorf("github organization membership check failed: %s", resp.Status)
 	}
 	var membership struct {
 		State        string `json:"state"`
@@ -268,17 +299,17 @@ func (s *Server) ensureGitHubOrgMembership(ctx context.Context, token string) er
 		} `json:"organization"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&membership); err != nil {
-		return err
+		return false, err
 	}
 	if !strings.EqualFold(membership.State, "active") || !strings.EqualFold(membership.Organization.Login, org) {
-		return errGitHubOrgDenied
+		return false, nil
 	}
-	return nil
+	return true, nil
 }
 
 func (s *Server) githubScope() string {
 	scope := "read:user user:email"
-	if strings.TrimSpace(s.githubOAuth.AllowedOrg) != "" {
+	if strings.TrimSpace(s.githubOAuth.AllowedOrg) != "" || strings.TrimSpace(s.githubOAuth.ModeratorOrg) != "" {
 		scope += " read:org"
 	}
 	return scope

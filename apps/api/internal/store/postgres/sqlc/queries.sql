@@ -112,6 +112,19 @@ INSERT INTO workspace_members (workspace_id, user_id, role, created_at)
 VALUES (sqlc.arg(workspace_id), sqlc.arg(user_id), sqlc.arg(role), sqlc.arg(created_at))
 ON CONFLICT DO NOTHING;
 
+-- name: UpsertGuestWorkspaceMemberRole :exec
+INSERT INTO workspace_members (workspace_id, user_id, role, created_at)
+VALUES (sqlc.arg(workspace_id), sqlc.arg(user_id), sqlc.arg(role), sqlc.arg(created_at))
+ON CONFLICT(workspace_id, user_id) DO UPDATE SET
+  role = CASE
+    WHEN workspace_members.role = 'owner' THEN workspace_members.role
+    WHEN excluded.role = 'moderator' THEN excluded.role
+    WHEN workspace_members.role = 'moderator' THEN excluded.role
+    WHEN workspace_members.role = 'member' AND excluded.role = 'moderator' THEN excluded.role
+    WHEN workspace_members.role = 'guest' AND excluded.role IN ('member', 'moderator') THEN excluded.role
+    ELSE workspace_members.role
+  END;
+
 -- name: InsertDefaultWorkspaceMember :exec
 INSERT INTO workspace_members (workspace_id, user_id, role, created_at)
 VALUES (sqlc.arg(workspace_id), sqlc.arg(user_id), 'member', sqlc.arg(created_at))
@@ -129,7 +142,7 @@ FROM workspaces
 WHERE route_id = sqlc.arg(route_id);
 
 -- name: ListWorkspaces :many
-SELECT w.id, COALESCE(w.route_id, '') AS route_id, w.name, w.slug, w.created_at
+SELECT w.id, COALESCE(w.route_id, '') AS route_id, w.name, w.slug, w.created_at, wm.role
 FROM workspaces w
 JOIN workspace_members wm ON wm.workspace_id = w.id
 WHERE wm.user_id = sqlc.arg(user_id)
@@ -140,7 +153,7 @@ INSERT INTO workspaces (id, route_id, name, slug, created_at)
 VALUES (sqlc.arg(id), sqlc.arg(route_id), sqlc.arg(name), sqlc.arg(slug), sqlc.arg(created_at));
 
 -- name: GetWorkspace :one
-SELECT w.id, COALESCE(w.route_id, '') AS route_id, w.name, w.slug, w.created_at
+SELECT w.id, COALESCE(w.route_id, '') AS route_id, w.name, w.slug, w.created_at, wm.role
 FROM workspaces w
 JOIN workspace_members wm ON wm.workspace_id = w.id
 WHERE w.id = sqlc.arg(workspace_id)
@@ -176,6 +189,25 @@ FROM workspace_members
 WHERE workspace_id = sqlc.arg(workspace_id)
   AND user_id = sqlc.arg(user_id);
 
+-- name: RequireMembershipRole :one
+SELECT role
+FROM workspace_members
+WHERE workspace_id = sqlc.arg(workspace_id)
+  AND user_id = sqlc.arg(user_id);
+
+-- name: UserHasNonGuestMembership :one
+SELECT workspace_id
+FROM workspace_members
+WHERE user_id = sqlc.arg(user_id)
+  AND role <> 'guest'
+LIMIT 1;
+
+-- name: ChannelNameForAccess :one
+SELECT name
+FROM channels
+WHERE id = sqlc.arg(id)
+  AND workspace_id = sqlc.arg(workspace_id);
+
 -- name: InsertBotUser :exec
 INSERT INTO users (id, kind, owner_user_id, display_name, handle, avatar_url, created_at)
 VALUES (sqlc.arg(id), 'bot', sqlc.arg(owner_user_id), sqlc.arg(display_name), sqlc.arg(handle), sqlc.arg(avatar_url), sqlc.arg(created_at));
@@ -196,6 +228,74 @@ WHERE bt.token_hash = sqlc.arg(token_hash)
 UPDATE bot_tokens
 SET last_used_at = sqlc.arg(last_used_at)
 WHERE id = sqlc.arg(id);
+
+-- name: CountRecentWorkspaceMessagesByAuthor :one
+SELECT COUNT(*)
+FROM messages m
+WHERE m.workspace_id = sqlc.arg(workspace_id)
+  AND m.author_id = sqlc.arg(author_id)
+  AND m.direct_conversation_id IS NULL
+  AND m.channel_id IN (SELECT c.id FROM channels c WHERE c.workspace_id = sqlc.arg(workspace_id) AND c.name = 'guest')
+  AND m.created_at >= sqlc.arg(cutoff);
+
+-- name: ListWorkspaceMembersForModeration :many
+SELECT u.id, u.kind, COALESCE(u.owner_user_id, '') AS owner_user_id, u.display_name, u.handle, u.avatar_url, u.created_at,
+       wm.role, COALESCE(m.timeout_until, '') AS timeout_until, COALESCE(m.blocked_at, '') AS blocked_at,
+       COALESCE(m.moderation_note, '') AS moderation_note, COALESCE(m.moderation_by, '') AS moderation_by,
+       COALESCE(m.moderation_at, '') AS moderation_at
+FROM workspace_members wm
+JOIN users u ON u.id = wm.user_id
+LEFT JOIN workspace_member_moderation m ON m.workspace_id = wm.workspace_id AND m.user_id = wm.user_id
+WHERE wm.workspace_id = sqlc.arg(workspace_id)
+ORDER BY CASE wm.role WHEN 'owner' THEN 4 WHEN 'moderator' THEN 3 WHEN 'member' THEN 2 ELSE 1 END DESC,
+         lower(u.display_name);
+
+-- name: UpdateWorkspaceMemberRole :exec
+UPDATE workspace_members
+SET role = sqlc.arg(role)
+WHERE workspace_id = sqlc.arg(workspace_id)
+  AND user_id = sqlc.arg(user_id);
+
+-- name: GetMemberModerationState :one
+SELECT timeout_until, blocked_at
+FROM workspace_member_moderation
+WHERE workspace_id = sqlc.arg(workspace_id)
+  AND user_id = sqlc.arg(user_id);
+
+-- name: UpsertMemberModeration :exec
+INSERT INTO workspace_member_moderation (workspace_id, user_id, timeout_until, blocked_at, moderation_note, moderation_by, moderation_at)
+VALUES (sqlc.arg(workspace_id), sqlc.arg(user_id), sqlc.arg(timeout_until), sqlc.arg(blocked_at), '', sqlc.arg(moderation_by), sqlc.arg(moderation_at))
+ON CONFLICT(workspace_id, user_id) DO UPDATE SET
+  timeout_until = CASE WHEN excluded.timeout_until <> '' THEN excluded.timeout_until ELSE workspace_member_moderation.timeout_until END,
+  blocked_at = CASE WHEN excluded.blocked_at <> '' THEN excluded.blocked_at ELSE workspace_member_moderation.blocked_at END,
+  moderation_by = excluded.moderation_by,
+  moderation_at = excluded.moderation_at;
+
+-- name: UpsertMemberModerationWithNote :exec
+INSERT INTO workspace_member_moderation (workspace_id, user_id, timeout_until, blocked_at, moderation_note, moderation_by, moderation_at)
+VALUES (sqlc.arg(workspace_id), sqlc.arg(user_id), sqlc.arg(timeout_until), sqlc.arg(blocked_at), sqlc.arg(moderation_note), sqlc.arg(moderation_by), sqlc.arg(moderation_at))
+ON CONFLICT(workspace_id, user_id) DO UPDATE SET
+  timeout_until = CASE WHEN excluded.timeout_until <> '' THEN excluded.timeout_until ELSE workspace_member_moderation.timeout_until END,
+  blocked_at = CASE WHEN excluded.blocked_at <> '' THEN excluded.blocked_at ELSE workspace_member_moderation.blocked_at END,
+  moderation_note = excluded.moderation_note,
+  moderation_by = excluded.moderation_by,
+  moderation_at = excluded.moderation_at;
+
+-- name: ClearMemberTimeout :exec
+UPDATE workspace_member_moderation
+SET timeout_until = NULL,
+    moderation_by = sqlc.arg(moderation_by),
+    moderation_at = sqlc.arg(moderation_at)
+WHERE workspace_id = sqlc.arg(workspace_id)
+  AND user_id = sqlc.arg(user_id);
+
+-- name: ClearMemberBlocked :exec
+UPDATE workspace_member_moderation
+SET blocked_at = NULL,
+    moderation_by = sqlc.arg(moderation_by),
+    moderation_at = sqlc.arg(moderation_at)
+WHERE workspace_id = sqlc.arg(workspace_id)
+  AND user_id = sqlc.arg(user_id);
 
 -- name: InsertUpload :exec
 INSERT INTO uploads (id, workspace_id, owner_id, filename, content_type, byte_size, width, height, duration_ms, storage_path, created_at)
@@ -459,11 +559,32 @@ WHERE message_id = sqlc.arg(message_id)
 -- name: ListEventsAfter :many
 SELECT e.id, e.cursor, e.workspace_id, COALESCE(e.channel_id, '') AS channel_id, e.type, e.seq, e.payload_json, e.created_at
 FROM events e
+JOIN workspace_members viewer ON viewer.workspace_id = e.workspace_id AND viewer.user_id = sqlc.arg(user_id)
+LEFT JOIN channels event_channel ON event_channel.id = e.channel_id AND event_channel.workspace_id = e.workspace_id
 WHERE e.workspace_id = sqlc.arg(workspace_id)
   AND e.cursor > sqlc.arg(cursor)
   AND (
     e.is_private = 0
     OR EXISTS (SELECT 1 FROM event_recipients er WHERE er.event_id = e.id AND er.user_id = sqlc.arg(user_id))
+  )
+  AND (
+    e.channel_id IS NULL
+    OR viewer.role <> 'guest'
+    OR event_channel.name = 'guest'
+  )
+  AND (
+    COALESCE(e.payload_json::jsonb ->> 'direct_conversation_id', '') = ''
+    OR (
+      viewer.role <> 'guest'
+      AND EXISTS (
+        SELECT 1
+        FROM direct_conversation_members dcm
+        JOIN direct_conversations dc ON dc.id = dcm.conversation_id
+        WHERE dc.workspace_id = e.workspace_id
+          AND dcm.conversation_id = e.payload_json::jsonb ->> 'direct_conversation_id'
+          AND dcm.user_id = sqlc.arg(user_id)
+      )
+    )
   )
 ORDER BY e.cursor
 LIMIT sqlc.arg(limit_count);

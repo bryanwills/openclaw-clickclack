@@ -65,6 +65,25 @@ func (q *Queries) ChannelLastSeq(ctx context.Context, channelID string) (int64, 
 	return last_seq, err
 }
 
+const channelNameForAccess = `-- name: ChannelNameForAccess :one
+SELECT name
+FROM channels
+WHERE id = ?1
+  AND workspace_id = ?2
+`
+
+type ChannelNameForAccessParams struct {
+	ID          string `json:"id"`
+	WorkspaceID string `json:"workspace_id"`
+}
+
+func (q *Queries) ChannelNameForAccess(ctx context.Context, arg ChannelNameForAccessParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, channelNameForAccess, arg.ID, arg.WorkspaceID)
+	var name string
+	err := row.Scan(&name)
+	return name, err
+}
+
 const channelNextSeq = `-- name: ChannelNextSeq :one
 SELECT CAST(COALESCE(MAX(channel_seq), 0) + 1 AS INTEGER) AS next_seq
 FROM messages
@@ -96,6 +115,81 @@ func (q *Queries) ChannelRouteID(ctx context.Context, arg ChannelRouteIDParams) 
 	var route_id string
 	err := row.Scan(&route_id)
 	return route_id, err
+}
+
+const clearMemberBlocked = `-- name: ClearMemberBlocked :exec
+UPDATE workspace_member_moderation
+SET blocked_at = NULL,
+    moderation_by = ?1,
+    moderation_at = ?2
+WHERE workspace_id = ?3
+  AND user_id = ?4
+`
+
+type ClearMemberBlockedParams struct {
+	ModerationBy sql.NullString `json:"moderation_by"`
+	ModerationAt string         `json:"moderation_at"`
+	WorkspaceID  string         `json:"workspace_id"`
+	UserID       string         `json:"user_id"`
+}
+
+func (q *Queries) ClearMemberBlocked(ctx context.Context, arg ClearMemberBlockedParams) error {
+	_, err := q.db.ExecContext(ctx, clearMemberBlocked,
+		arg.ModerationBy,
+		arg.ModerationAt,
+		arg.WorkspaceID,
+		arg.UserID,
+	)
+	return err
+}
+
+const clearMemberTimeout = `-- name: ClearMemberTimeout :exec
+UPDATE workspace_member_moderation
+SET timeout_until = NULL,
+    moderation_by = ?1,
+    moderation_at = ?2
+WHERE workspace_id = ?3
+  AND user_id = ?4
+`
+
+type ClearMemberTimeoutParams struct {
+	ModerationBy sql.NullString `json:"moderation_by"`
+	ModerationAt string         `json:"moderation_at"`
+	WorkspaceID  string         `json:"workspace_id"`
+	UserID       string         `json:"user_id"`
+}
+
+func (q *Queries) ClearMemberTimeout(ctx context.Context, arg ClearMemberTimeoutParams) error {
+	_, err := q.db.ExecContext(ctx, clearMemberTimeout,
+		arg.ModerationBy,
+		arg.ModerationAt,
+		arg.WorkspaceID,
+		arg.UserID,
+	)
+	return err
+}
+
+const countRecentWorkspaceMessagesByAuthor = `-- name: CountRecentWorkspaceMessagesByAuthor :one
+SELECT COUNT(*)
+FROM messages m
+WHERE m.workspace_id = ?1
+  AND m.author_id = ?2
+  AND m.direct_conversation_id IS NULL
+  AND m.channel_id IN (SELECT c.id FROM channels c WHERE c.workspace_id = ?1 AND c.name = 'guest')
+  AND m.created_at >= ?3
+`
+
+type CountRecentWorkspaceMessagesByAuthorParams struct {
+	WorkspaceID string `json:"workspace_id"`
+	AuthorID    string `json:"author_id"`
+	Cutoff      string `json:"cutoff"`
+}
+
+func (q *Queries) CountRecentWorkspaceMessagesByAuthor(ctx context.Context, arg CountRecentWorkspaceMessagesByAuthorParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countRecentWorkspaceMessagesByAuthor, arg.WorkspaceID, arg.AuthorID, arg.Cutoff)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const deleteMessageBody = `-- name: DeleteMessageBody :exec
@@ -618,6 +712,30 @@ func (q *Queries) GetMagicLinkByToken(ctx context.Context, tokenHash string) (Au
 	return i, err
 }
 
+const getMemberModerationState = `-- name: GetMemberModerationState :one
+SELECT timeout_until, blocked_at
+FROM workspace_member_moderation
+WHERE workspace_id = ?1
+  AND user_id = ?2
+`
+
+type GetMemberModerationStateParams struct {
+	WorkspaceID string `json:"workspace_id"`
+	UserID      string `json:"user_id"`
+}
+
+type GetMemberModerationStateRow struct {
+	TimeoutUntil sql.NullString `json:"timeout_until"`
+	BlockedAt    sql.NullString `json:"blocked_at"`
+}
+
+func (q *Queries) GetMemberModerationState(ctx context.Context, arg GetMemberModerationStateParams) (GetMemberModerationStateRow, error) {
+	row := q.db.QueryRowContext(ctx, getMemberModerationState, arg.WorkspaceID, arg.UserID)
+	var i GetMemberModerationStateRow
+	err := row.Scan(&i.TimeoutUntil, &i.BlockedAt)
+	return i, err
+}
+
 const getNotificationSettings = `-- name: GetNotificationSettings :one
 SELECT pushover_enabled, pushover_user_key
 FROM user_notification_settings
@@ -849,7 +967,7 @@ func (q *Queries) GetUserByIdentityProviderSubject(ctx context.Context, arg GetU
 }
 
 const getWorkspace = `-- name: GetWorkspace :one
-SELECT w.id, COALESCE(w.route_id, '') AS route_id, w.name, w.slug, w.created_at
+SELECT w.id, COALESCE(w.route_id, '') AS route_id, w.name, w.slug, w.created_at, wm.role
 FROM workspaces w
 JOIN workspace_members wm ON wm.workspace_id = w.id
 WHERE w.id = ?1
@@ -867,6 +985,7 @@ type GetWorkspaceRow struct {
 	Name      string `json:"name"`
 	Slug      string `json:"slug"`
 	CreatedAt string `json:"created_at"`
+	Role      string `json:"role"`
 }
 
 func (q *Queries) GetWorkspace(ctx context.Context, arg GetWorkspaceParams) (GetWorkspaceRow, error) {
@@ -878,6 +997,7 @@ func (q *Queries) GetWorkspace(ctx context.Context, arg GetWorkspaceParams) (Get
 		&i.Name,
 		&i.Slug,
 		&i.CreatedAt,
+		&i.Role,
 	)
 	return i, err
 }
@@ -1637,20 +1757,41 @@ func (q *Queries) ListDirectPushNotificationRecipients(ctx context.Context, arg 
 const listEventsAfter = `-- name: ListEventsAfter :many
 SELECT e.id, e.cursor, e.workspace_id, COALESCE(e.channel_id, '') AS channel_id, e.type, e.seq, e.payload_json, e.created_at
 FROM events e
-WHERE e.workspace_id = ?1
-  AND e.cursor > ?2
+JOIN workspace_members viewer ON viewer.workspace_id = e.workspace_id AND viewer.user_id = ?1
+LEFT JOIN channels event_channel ON event_channel.id = e.channel_id AND event_channel.workspace_id = e.workspace_id
+WHERE e.workspace_id = ?2
+  AND e.cursor > ?3
   AND (
     e.is_private = 0
-    OR EXISTS (SELECT 1 FROM event_recipients er WHERE er.event_id = e.id AND er.user_id = ?3)
+    OR EXISTS (SELECT 1 FROM event_recipients er WHERE er.event_id = e.id AND er.user_id = ?1)
+  )
+  AND (
+    e.channel_id IS NULL
+    OR viewer.role <> 'guest'
+    OR event_channel.name = 'guest'
+  )
+  AND (
+    COALESCE(json_extract(e.payload_json, '$.direct_conversation_id'), '') = ''
+    OR (
+      viewer.role <> 'guest'
+      AND EXISTS (
+        SELECT 1
+        FROM direct_conversation_members dcm
+        JOIN direct_conversations dc ON dc.id = dcm.conversation_id
+        WHERE dc.workspace_id = e.workspace_id
+          AND dcm.conversation_id = json_extract(e.payload_json, '$.direct_conversation_id')
+          AND dcm.user_id = ?1
+      )
+    )
   )
 ORDER BY e.cursor
 LIMIT ?4
 `
 
 type ListEventsAfterParams struct {
+	UserID      string `json:"user_id"`
 	WorkspaceID string `json:"workspace_id"`
 	Cursor      string `json:"cursor"`
-	UserID      string `json:"user_id"`
 	LimitCount  int64  `json:"limit_count"`
 }
 
@@ -1667,9 +1808,9 @@ type ListEventsAfterRow struct {
 
 func (q *Queries) ListEventsAfter(ctx context.Context, arg ListEventsAfterParams) ([]ListEventsAfterRow, error) {
 	rows, err := q.db.QueryContext(ctx, listEventsAfter,
+		arg.UserID,
 		arg.WorkspaceID,
 		arg.Cursor,
-		arg.UserID,
 		arg.LimitCount,
 	)
 	if err != nil {
@@ -1688,6 +1829,72 @@ func (q *Queries) ListEventsAfter(ctx context.Context, arg ListEventsAfterParams
 			&i.Seq,
 			&i.PayloadJson,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listWorkspaceMembersForModeration = `-- name: ListWorkspaceMembersForModeration :many
+SELECT u.id, u.kind, COALESCE(u.owner_user_id, '') AS owner_user_id, u.display_name, u.handle, u.avatar_url, u.created_at,
+       wm.role, COALESCE(m.timeout_until, '') AS timeout_until, COALESCE(m.blocked_at, '') AS blocked_at,
+       COALESCE(m.moderation_note, '') AS moderation_note, COALESCE(m.moderation_by, '') AS moderation_by,
+       COALESCE(m.moderation_at, '') AS moderation_at
+FROM workspace_members wm
+JOIN users u ON u.id = wm.user_id
+LEFT JOIN workspace_member_moderation m ON m.workspace_id = wm.workspace_id AND m.user_id = wm.user_id
+WHERE wm.workspace_id = ?1
+ORDER BY CASE wm.role WHEN 'owner' THEN 4 WHEN 'moderator' THEN 3 WHEN 'member' THEN 2 ELSE 1 END DESC,
+         u.display_name COLLATE NOCASE
+`
+
+type ListWorkspaceMembersForModerationRow struct {
+	ID             string `json:"id"`
+	Kind           string `json:"kind"`
+	OwnerUserID    string `json:"owner_user_id"`
+	DisplayName    string `json:"display_name"`
+	Handle         string `json:"handle"`
+	AvatarUrl      string `json:"avatar_url"`
+	CreatedAt      string `json:"created_at"`
+	Role           string `json:"role"`
+	TimeoutUntil   string `json:"timeout_until"`
+	BlockedAt      string `json:"blocked_at"`
+	ModerationNote string `json:"moderation_note"`
+	ModerationBy   string `json:"moderation_by"`
+	ModerationAt   string `json:"moderation_at"`
+}
+
+func (q *Queries) ListWorkspaceMembersForModeration(ctx context.Context, workspaceID string) ([]ListWorkspaceMembersForModerationRow, error) {
+	rows, err := q.db.QueryContext(ctx, listWorkspaceMembersForModeration, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListWorkspaceMembersForModerationRow
+	for rows.Next() {
+		var i ListWorkspaceMembersForModerationRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.OwnerUserID,
+			&i.DisplayName,
+			&i.Handle,
+			&i.AvatarUrl,
+			&i.CreatedAt,
+			&i.Role,
+			&i.TimeoutUntil,
+			&i.BlockedAt,
+			&i.ModerationNote,
+			&i.ModerationBy,
+			&i.ModerationAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1749,7 +1956,7 @@ func (q *Queries) ListWorkspacePushNotificationRecipients(ctx context.Context, a
 }
 
 const listWorkspaces = `-- name: ListWorkspaces :many
-SELECT w.id, COALESCE(w.route_id, '') AS route_id, w.name, w.slug, w.created_at
+SELECT w.id, COALESCE(w.route_id, '') AS route_id, w.name, w.slug, w.created_at, wm.role
 FROM workspaces w
 JOIN workspace_members wm ON wm.workspace_id = w.id
 WHERE wm.user_id = ?1
@@ -1762,6 +1969,7 @@ type ListWorkspacesRow struct {
 	Name      string `json:"name"`
 	Slug      string `json:"slug"`
 	CreatedAt string `json:"created_at"`
+	Role      string `json:"role"`
 }
 
 func (q *Queries) ListWorkspaces(ctx context.Context, userID string) ([]ListWorkspacesRow, error) {
@@ -1779,6 +1987,7 @@ func (q *Queries) ListWorkspaces(ctx context.Context, userID string) ([]ListWork
 			&i.Name,
 			&i.Slug,
 			&i.CreatedAt,
+			&i.Role,
 		); err != nil {
 			return nil, err
 		}
@@ -1951,6 +2160,25 @@ func (q *Queries) RequireMembership(ctx context.Context, arg RequireMembershipPa
 	return column_1, err
 }
 
+const requireMembershipRole = `-- name: RequireMembershipRole :one
+SELECT role
+FROM workspace_members
+WHERE workspace_id = ?1
+  AND user_id = ?2
+`
+
+type RequireMembershipRoleParams struct {
+	WorkspaceID string `json:"workspace_id"`
+	UserID      string `json:"user_id"`
+}
+
+func (q *Queries) RequireMembershipRole(ctx context.Context, arg RequireMembershipRoleParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, requireMembershipRole, arg.WorkspaceID, arg.UserID)
+	var role string
+	err := row.Scan(&role)
+	return role, err
+}
+
 const threadNextSeq = `-- name: ThreadNextSeq :one
 SELECT CAST(COALESCE(MAX(thread_seq), 0) + 1 AS INTEGER) AS next_seq
 FROM messages
@@ -2073,6 +2301,24 @@ func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfilePa
 	return err
 }
 
+const updateWorkspaceMemberRole = `-- name: UpdateWorkspaceMemberRole :exec
+UPDATE workspace_members
+SET role = ?1
+WHERE workspace_id = ?2
+  AND user_id = ?3
+`
+
+type UpdateWorkspaceMemberRoleParams struct {
+	Role        string `json:"role"`
+	WorkspaceID string `json:"workspace_id"`
+	UserID      string `json:"user_id"`
+}
+
+func (q *Queries) UpdateWorkspaceMemberRole(ctx context.Context, arg UpdateWorkspaceMemberRoleParams) error {
+	_, err := q.db.ExecContext(ctx, updateWorkspaceMemberRole, arg.Role, arg.WorkspaceID, arg.UserID)
+	return err
+}
+
 const upsertChannelRead = `-- name: UpsertChannelRead :exec
 INSERT INTO channel_reads (channel_id, user_id, last_read_seq, last_read_at)
 VALUES (?1, ?2, ?3, ?4)
@@ -2123,6 +2369,102 @@ func (q *Queries) UpsertDirectRead(ctx context.Context, arg UpsertDirectReadPara
 	return err
 }
 
+const upsertGuestWorkspaceMemberRole = `-- name: UpsertGuestWorkspaceMemberRole :exec
+INSERT INTO workspace_members (workspace_id, user_id, role, created_at)
+VALUES (?1, ?2, ?3, ?4)
+ON CONFLICT(workspace_id, user_id) DO UPDATE SET
+  role = CASE
+    WHEN workspace_members.role = 'owner' THEN workspace_members.role
+    WHEN excluded.role = 'moderator' THEN excluded.role
+    WHEN workspace_members.role = 'moderator' THEN excluded.role
+    WHEN workspace_members.role = 'member' AND excluded.role = 'moderator' THEN excluded.role
+    WHEN workspace_members.role = 'guest' AND excluded.role IN ('member', 'moderator') THEN excluded.role
+    ELSE workspace_members.role
+  END
+`
+
+type UpsertGuestWorkspaceMemberRoleParams struct {
+	WorkspaceID string `json:"workspace_id"`
+	UserID      string `json:"user_id"`
+	Role        string `json:"role"`
+	CreatedAt   string `json:"created_at"`
+}
+
+func (q *Queries) UpsertGuestWorkspaceMemberRole(ctx context.Context, arg UpsertGuestWorkspaceMemberRoleParams) error {
+	_, err := q.db.ExecContext(ctx, upsertGuestWorkspaceMemberRole,
+		arg.WorkspaceID,
+		arg.UserID,
+		arg.Role,
+		arg.CreatedAt,
+	)
+	return err
+}
+
+const upsertMemberModeration = `-- name: UpsertMemberModeration :exec
+INSERT INTO workspace_member_moderation (workspace_id, user_id, timeout_until, blocked_at, moderation_note, moderation_by, moderation_at)
+VALUES (?1, ?2, ?3, ?4, '', ?5, ?6)
+ON CONFLICT(workspace_id, user_id) DO UPDATE SET
+  timeout_until = CASE WHEN excluded.timeout_until <> '' THEN excluded.timeout_until ELSE workspace_member_moderation.timeout_until END,
+  blocked_at = CASE WHEN excluded.blocked_at <> '' THEN excluded.blocked_at ELSE workspace_member_moderation.blocked_at END,
+  moderation_by = excluded.moderation_by,
+  moderation_at = excluded.moderation_at
+`
+
+type UpsertMemberModerationParams struct {
+	WorkspaceID  string         `json:"workspace_id"`
+	UserID       string         `json:"user_id"`
+	TimeoutUntil sql.NullString `json:"timeout_until"`
+	BlockedAt    sql.NullString `json:"blocked_at"`
+	ModerationBy sql.NullString `json:"moderation_by"`
+	ModerationAt string         `json:"moderation_at"`
+}
+
+func (q *Queries) UpsertMemberModeration(ctx context.Context, arg UpsertMemberModerationParams) error {
+	_, err := q.db.ExecContext(ctx, upsertMemberModeration,
+		arg.WorkspaceID,
+		arg.UserID,
+		arg.TimeoutUntil,
+		arg.BlockedAt,
+		arg.ModerationBy,
+		arg.ModerationAt,
+	)
+	return err
+}
+
+const upsertMemberModerationWithNote = `-- name: UpsertMemberModerationWithNote :exec
+INSERT INTO workspace_member_moderation (workspace_id, user_id, timeout_until, blocked_at, moderation_note, moderation_by, moderation_at)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+ON CONFLICT(workspace_id, user_id) DO UPDATE SET
+  timeout_until = CASE WHEN excluded.timeout_until <> '' THEN excluded.timeout_until ELSE workspace_member_moderation.timeout_until END,
+  blocked_at = CASE WHEN excluded.blocked_at <> '' THEN excluded.blocked_at ELSE workspace_member_moderation.blocked_at END,
+  moderation_note = excluded.moderation_note,
+  moderation_by = excluded.moderation_by,
+  moderation_at = excluded.moderation_at
+`
+
+type UpsertMemberModerationWithNoteParams struct {
+	WorkspaceID    string         `json:"workspace_id"`
+	UserID         string         `json:"user_id"`
+	TimeoutUntil   sql.NullString `json:"timeout_until"`
+	BlockedAt      sql.NullString `json:"blocked_at"`
+	ModerationNote string         `json:"moderation_note"`
+	ModerationBy   sql.NullString `json:"moderation_by"`
+	ModerationAt   string         `json:"moderation_at"`
+}
+
+func (q *Queries) UpsertMemberModerationWithNote(ctx context.Context, arg UpsertMemberModerationWithNoteParams) error {
+	_, err := q.db.ExecContext(ctx, upsertMemberModerationWithNote,
+		arg.WorkspaceID,
+		arg.UserID,
+		arg.TimeoutUntil,
+		arg.BlockedAt,
+		arg.ModerationNote,
+		arg.ModerationBy,
+		arg.ModerationAt,
+	)
+	return err
+}
+
 const upsertNotificationSettings = `-- name: UpsertNotificationSettings :exec
 INSERT INTO user_notification_settings (user_id, pushover_enabled, pushover_user_key)
 VALUES (?1, ?2, ?3)
@@ -2140,4 +2482,19 @@ type UpsertNotificationSettingsParams struct {
 func (q *Queries) UpsertNotificationSettings(ctx context.Context, arg UpsertNotificationSettingsParams) error {
 	_, err := q.db.ExecContext(ctx, upsertNotificationSettings, arg.UserID, arg.PushoverEnabled, arg.PushoverUserKey)
 	return err
+}
+
+const userHasNonGuestMembership = `-- name: UserHasNonGuestMembership :one
+SELECT workspace_id
+FROM workspace_members
+WHERE user_id = ?1
+  AND role <> 'guest'
+LIMIT 1
+`
+
+func (q *Queries) UserHasNonGuestMembership(ctx context.Context, userID string) (string, error) {
+	row := q.db.QueryRowContext(ctx, userHasNonGuestMembership, userID)
+	var workspace_id string
+	err := row.Scan(&workspace_id)
+	return workspace_id, err
 }

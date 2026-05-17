@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/openclaw/clickclack/apps/api/internal/realtime"
+	"github.com/openclaw/clickclack/apps/api/internal/store"
 	sqlitestore "github.com/openclaw/clickclack/apps/api/internal/store/sqlite"
 )
 
@@ -165,6 +166,7 @@ func TestGitHubOAuthFlow(t *testing.T) {
 			ID   string `json:"id"`
 			Name string `json:"name"`
 			Slug string `json:"slug"`
+			Role string `json:"role"`
 		} `json:"workspaces"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&openWorkspaces); err != nil {
@@ -173,6 +175,9 @@ func TestGitHubOAuthFlow(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK || len(openWorkspaces.Workspaces) != 1 || openWorkspaces.Workspaces[0].Name != "Guests" || openWorkspaces.Workspaces[0].Slug != "guests" {
 		t.Fatalf("expected open github login to join guest workspace, got %s %#v", resp.Status, openWorkspaces.Workspaces)
+	}
+	if openWorkspaces.Workspaces[0].Role != store.WorkspaceRoleMember {
+		t.Fatalf("expected open github login without moderator org to be a member, got %#v", openWorkspaces.Workspaces[0])
 	}
 	req, err = http.NewRequest(http.MethodGet, server.URL+"/api/workspaces/"+openWorkspaces.Workspaces[0].ID+"/channels", nil)
 	if err != nil {
@@ -192,8 +197,8 @@ func TestGitHubOAuthFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK || len(guestChannels.Channels) != 1 || guestChannels.Channels[0].Name != "guest" {
-		t.Fatalf("expected open github login to land in guest channel, got %s %#v", resp.Status, guestChannels.Channels)
+	if resp.StatusCode != http.StatusOK || len(guestChannels.Channels) < 2 {
+		t.Fatalf("expected open github login without moderator org to see guest workspace rooms, got %s %#v", resp.Status, guestChannels.Channels)
 	}
 
 	for _, tc := range []struct {
@@ -241,6 +246,162 @@ func TestGitHubOAuthFlow(t *testing.T) {
 	srv := New(st, realtime.NewHub(), Options{GitHubOAuth: GitHubOAuthConfig{PublicURL: "https://public.example"}})
 	if got := srv.githubRedirectURL(req); got != "https://public.example/api/auth/github/callback" {
 		t.Fatalf("unexpected public redirect url %q", got)
+	}
+}
+
+func TestGitHubOAuthModeratorOrgJoinsGuestWorkspaceAsModerator(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	st, err := sqlitestore.Open("sqlite://" + filepath.Join(t.TempDir(), "clickclack.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/token":
+			_ = json.NewEncoder(w).Encode(map[string]string{"access_token": "mod-token"})
+		case "/user":
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": 43, "login": "mod", "email": "mod@example.com"})
+		case "/memberships/orgs/openclaw":
+			_ = json.NewEncoder(w).Encode(map[string]any{"state": "active", "organization": map[string]any{"login": "openclaw"}})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(provider.Close)
+
+	server := httptest.NewServer(New(st, realtime.NewHub(), Options{GitHubOAuth: GitHubOAuthConfig{
+		ClientID:      "client",
+		ClientSecret:  "secret",
+		AuthURL:       provider.URL + "/authorize",
+		TokenURL:      provider.URL + "/token",
+		UserURL:       provider.URL + "/user",
+		EmailsURL:     provider.URL + "/emails",
+		MembershipURL: provider.URL + "/memberships/orgs/",
+		ModeratorOrg:  "openclaw",
+	}}).Handler())
+	t.Cleanup(server.Close)
+	client := &http.Client{CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
+
+	resp, err := client.Get(server.URL + "/api/auth/github/start")
+	if err != nil {
+		t.Fatal(err)
+	}
+	location, err := url.Parse(resp.Header.Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scope := location.Query().Get("scope"); scope != "read:user user:email read:org" {
+		t.Fatalf("unexpected scope %q", scope)
+	}
+	stateCookie := findCookie(resp.Cookies(), "cc_github_state")
+	resp.Body.Close()
+	if stateCookie == nil {
+		t.Fatal("expected state cookie")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/api/auth/github/callback?code=ok&state="+stateCookie.Value, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.AddCookie(stateCookie)
+	resp, err = client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionCookie := findCookie(resp.Cookies(), "cc_session")
+	resp.Body.Close()
+	if sessionCookie == nil {
+		t.Fatal("expected session cookie")
+	}
+
+	req, err = http.NewRequest(http.MethodGet, server.URL+"/api/workspaces", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.AddCookie(sessionCookie)
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var workspaces struct {
+		Workspaces []struct {
+			ID   string `json:"id"`
+			Role string `json:"role"`
+			Slug string `json:"slug"`
+		} `json:"workspaces"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&workspaces); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || len(workspaces.Workspaces) != 1 || workspaces.Workspaces[0].Slug != "guests" || workspaces.Workspaces[0].Role != store.WorkspaceRoleModerator {
+		t.Fatalf("expected moderator guest workspace membership, got %s %#v", resp.Status, workspaces.Workspaces)
+	}
+	req, err = http.NewRequest(http.MethodGet, server.URL+"/api/workspaces/"+workspaces.Workspaces[0].ID+"/channels", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.AddCookie(sessionCookie)
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var channels struct {
+		Channels []struct {
+			Name string `json:"name"`
+		} `json:"channels"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&channels); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if len(channels.Channels) < 2 {
+		t.Fatalf("expected moderator to see guest and approved rooms, got %#v", channels.Channels)
+	}
+}
+
+func TestGitHubOAuthAllowedOrgStillMapsModeratorOrg(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	st, err := sqlitestore.Open("sqlite://" + filepath.Join(t.TempDir(), "clickclack.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	user, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: "Mod", Email: "allowed-mod@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/memberships/orgs/openclaw" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"state": "active", "organization": map[string]any{"login": "openclaw"}})
+	}))
+	t.Cleanup(provider.Close)
+
+	srv := New(st, realtime.NewHub(), Options{GitHubOAuth: GitHubOAuthConfig{
+		MembershipURL: provider.URL + "/memberships/orgs/",
+		AllowedOrg:    "openclaw",
+		ModeratorOrg:  "openclaw",
+	}})
+	workspace, err := srv.ensureGitHubWorkspace(ctx, "active", user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if workspace.Slug != "guests" || workspace.Role != store.WorkspaceRoleModerator {
+		t.Fatalf("expected allowed moderator to join guest workspace as moderator, got %#v", workspace)
 	}
 }
 
@@ -424,11 +585,11 @@ func TestGitHubOrgMembershipChecks(t *testing.T) {
 		MembershipURL: provider.URL + "/memberships/orgs/",
 		AllowedOrg:    "openclaw",
 	}})
-	if err := srv.ensureGitHubOrgMembership(context.Background(), "active"); err != nil {
+	if err := srv.ensureGitHubAllowedOrgMembership(context.Background(), "active"); err != nil {
 		t.Fatalf("expected active membership, got %v", err)
 	}
 	noOrg := New(st, realtime.NewHub(), Options{})
-	if err := noOrg.ensureGitHubOrgMembership(context.Background(), "token"); err != nil {
+	if err := noOrg.ensureGitHubAllowedOrgMembership(context.Background(), "token"); err != nil {
 		t.Fatalf("expected empty org to skip check, got %v", err)
 	}
 
@@ -448,7 +609,7 @@ func TestGitHubOrgMembershipChecks(t *testing.T) {
 				MembershipURL: provider.URL + "/memberships/orgs/",
 				AllowedOrg:    "openclaw",
 			}})
-			err := srv.ensureGitHubOrgMembership(context.Background(), tc.token)
+			err := srv.ensureGitHubAllowedOrgMembership(context.Background(), tc.token)
 			if err == nil {
 				t.Fatal("expected membership error")
 			}
@@ -459,7 +620,7 @@ func TestGitHubOrgMembershipChecks(t *testing.T) {
 	}
 
 	badURL := New(st, realtime.NewHub(), Options{GitHubOAuth: GitHubOAuthConfig{MembershipURL: "://bad", AllowedOrg: "openclaw"}})
-	if err := badURL.ensureGitHubOrgMembership(context.Background(), "token"); err == nil {
+	if err := badURL.ensureGitHubAllowedOrgMembership(context.Background(), "token"); err == nil {
 		t.Fatal("expected bad membership url error")
 	}
 }

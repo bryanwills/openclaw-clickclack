@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added a guest waiting-room moderation flow with three-post daily guest limits, OpenClaw GitHub org moderator mapping, member approval, timeouts, blocks, and moderator profile controls.
 - Added first-page thumbnail previews for PDF uploads, thumbnail cards for text uploads, inline audio controls in chat messages, and open GitHub guest-room sign-in.
 - Redacted stored token hashes and upload storage paths from JSON exports, and constrained local upload serving/deletion to the configured upload directory.
 - Bounded outbound upload and GitHub OAuth HTTP calls with default timeouts, streamed R2 upload saves without full in-memory buffering, and constrained R2 object access to the configured prefix.
