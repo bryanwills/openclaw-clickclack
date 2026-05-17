@@ -314,3 +314,45 @@ func TestEnsureDefaultWorkspaceMemberCreatesWorkspace(t *testing.T) {
 		t.Fatalf("unexpected owner workspaces: %#v", ownerWorkspaces)
 	}
 }
+
+func TestEnsureDefaultWorkspaceMemberUsesExplicitDefaultSlug(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	st := newTestStore(t)
+	owner, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: "Private Owner", Email: "private-owner@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	privateWorkspace, err := st.CreateWorkspace(ctx, store.CreateWorkspaceInput{Name: "Private", Slug: "private"}, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	allowedUser, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: "Allowed Org", Email: "allowed-org@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined, err := st.EnsureDefaultWorkspaceMember(ctx, allowedUser.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if joined.Slug != "clickclack" || joined.ID == privateWorkspace.ID {
+		t.Fatalf("expected explicit clickclack default workspace, got %#v private=%#v", joined, privateWorkspace)
+	}
+	workspaces, err := st.ListWorkspaces(ctx, allowedUser.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(workspaces) != 1 || workspaces[0].ID != joined.ID {
+		t.Fatalf("expected allowed user to join only default workspace, got %#v", workspaces)
+	}
+	channels, err := st.ListChannels(ctx, joined.ID, allowedUser.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(channels) != 1 {
+		t.Fatalf("expected default channel, got %#v", channels)
+	}
+	if updated, _, err := st.UpdateChannel(ctx, store.UpdateChannelInput{ChannelID: channels[0].ID, UserID: allowedUser.ID, Name: "default-admin"}); err != nil || updated.Name != "default-admin" {
+		t.Fatalf("expected first default workspace member to administer new default workspace, got %#v %v", updated, err)
+	}
+}

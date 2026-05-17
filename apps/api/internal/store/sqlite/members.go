@@ -29,15 +29,14 @@ func (s *Store) EnsureDefaultWorkspaceMember(ctx context.Context, userID string)
 	defer tx.Rollback()
 	qtx := s.q.WithTx(tx)
 
-	row, err := qtx.FirstWorkspace(ctx)
-	workspace := storeWorkspaceFromFirstWorkspace(row)
+	workspace, err := sqliteWorkspaceBySlugTx(ctx, tx, "clickclack")
 	memberRole := "member"
 	if err != nil && err != sql.ErrNoRows {
 		return store.Workspace{}, err
 	}
 	if err == sql.ErrNoRows {
-		workspace = store.Workspace{ID: newID("wsp"), Name: "ClickClack", Slug: "clickclack", CreatedAt: now()}
 		memberRole = "owner"
+		workspace = store.Workspace{ID: newID("wsp"), Name: "ClickClack", Slug: "clickclack", CreatedAt: now()}
 		insertedWorkspace := false
 		for attempt := 0; attempt < routeIDInsertAttempts; attempt++ {
 			workspaceRouteID, err := newRouteID('T')
