@@ -759,31 +759,26 @@ func (q *Queries) GetNotificationSettings(ctx context.Context, userID string) (G
 }
 
 const getSessionUser = `-- name: GetSessionUser :one
-SELECT u.id, u.kind, u.owner_user_id, u.display_name, u.handle, u.avatar_url, u.created_at
+SELECT u.id, u.kind, u.owner_user_id, u.display_name, u.handle, u.avatar_url, u.created_at, s.expires_at AS session_expires_at
 FROM sessions s
 JOIN users u ON u.id = s.user_id
 WHERE s.token_hash = ?1
   AND s.revoked_at IS NULL
-  AND s.expires_at > ?2
 `
 
-type GetSessionUserParams struct {
-	TokenHash string `json:"token_hash"`
-	Now       string `json:"now"`
-}
-
 type GetSessionUserRow struct {
-	ID          string         `json:"id"`
-	Kind        string         `json:"kind"`
-	OwnerUserID sql.NullString `json:"owner_user_id"`
-	DisplayName string         `json:"display_name"`
-	Handle      string         `json:"handle"`
-	AvatarUrl   string         `json:"avatar_url"`
-	CreatedAt   string         `json:"created_at"`
+	ID               string         `json:"id"`
+	Kind             string         `json:"kind"`
+	OwnerUserID      sql.NullString `json:"owner_user_id"`
+	DisplayName      string         `json:"display_name"`
+	Handle           string         `json:"handle"`
+	AvatarUrl        string         `json:"avatar_url"`
+	CreatedAt        string         `json:"created_at"`
+	SessionExpiresAt string         `json:"session_expires_at"`
 }
 
-func (q *Queries) GetSessionUser(ctx context.Context, arg GetSessionUserParams) (GetSessionUserRow, error) {
-	row := q.db.QueryRowContext(ctx, getSessionUser, arg.TokenHash, arg.Now)
+func (q *Queries) GetSessionUser(ctx context.Context, tokenHash string) (GetSessionUserRow, error) {
+	row := q.db.QueryRowContext(ctx, getSessionUser, tokenHash)
 	var i GetSessionUserRow
 	err := row.Scan(
 		&i.ID,
@@ -793,6 +788,7 @@ func (q *Queries) GetSessionUser(ctx context.Context, arg GetSessionUserParams) 
 		&i.Handle,
 		&i.AvatarUrl,
 		&i.CreatedAt,
+		&i.SessionExpiresAt,
 	)
 	return i, err
 }
@@ -2017,7 +2013,21 @@ UPDATE auth_magic_links
 SET used_at = ?1
 WHERE id = ?2
   AND used_at IS NULL
-  AND expires_at > ?3
+  AND (
+    CASE
+      WHEN instr(expires_at, '.') = 0 THEN replace(expires_at, 'Z', '.000000000Z')
+      ELSE substr(expires_at, 1, instr(expires_at, '.')) ||
+           substr(substr(expires_at, instr(expires_at, '.') + 1, instr(expires_at, 'Z') - instr(expires_at, '.') - 1) || '000000000', 1, 9) ||
+           'Z'
+    END
+  ) > (
+    CASE
+      WHEN instr(CAST(?3 AS TEXT), '.') = 0 THEN replace(CAST(?3 AS TEXT), 'Z', '.000000000Z')
+      ELSE substr(CAST(?3 AS TEXT), 1, instr(CAST(?3 AS TEXT), '.')) ||
+           substr(substr(CAST(?3 AS TEXT), instr(CAST(?3 AS TEXT), '.') + 1, instr(CAST(?3 AS TEXT), 'Z') - instr(CAST(?3 AS TEXT), '.') - 1) || '000000000', 1, 9) ||
+           'Z'
+    END
+  )
 `
 
 type MarkMagicLinkUsedParams struct {

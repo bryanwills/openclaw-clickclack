@@ -78,11 +78,19 @@ func (s *Store) ConsumeMagicLink(ctx context.Context, token string) (store.User,
 
 func (s *Store) GetSessionUser(ctx context.Context, token string) (store.User, error) {
 	token = strings.TrimSpace(token)
-	row, err := s.q.GetSessionUser(ctx, storedb.GetSessionUserParams{TokenHash: tokenHash(token), Now: now()})
+	row, err := s.q.GetSessionUser(ctx, tokenHash(token))
 	if err != nil {
 		return store.User{}, err
 	}
+	if authTimestampExpired(row.SessionExpiresAt, time.Now()) {
+		return store.User{}, errors.New("session expired")
+	}
 	return storeUserFromGetSessionUser(row), nil
+}
+
+func authTimestampExpired(value string, current time.Time) bool {
+	expiresAt, err := time.Parse(time.RFC3339Nano, value)
+	return err != nil || !current.UTC().Before(expiresAt)
 }
 
 func (s *Store) CreateSession(ctx context.Context, userID string) (store.Session, error) {

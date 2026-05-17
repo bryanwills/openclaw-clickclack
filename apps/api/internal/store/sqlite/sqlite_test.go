@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/openclaw/clickclack/apps/api/internal/store"
+	"github.com/openclaw/clickclack/apps/api/internal/store/sqlite/storedb"
 )
 
 func TestStoreValidationAndAdminHelpers(t *testing.T) {
@@ -231,6 +232,90 @@ func TestStoreValidationAndAdminHelpers(t *testing.T) {
 	}
 	if _, _, err := st.CreateDirectMessage(ctx, store.CreateDirectMessageInput{ConversationID: dm.ID, AuthorID: second.ID}); err == nil {
 		t.Fatal("expected empty dm message error")
+	}
+}
+
+func TestAuthTimestampComparisonsParseRFC3339Nano(t *testing.T) {
+	t.Parallel()
+	current, err := time.Parse(time.RFC3339Nano, "2026-01-01T00:00:00.123Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if authTimestampExpired("2026-01-01T00:00:00.1234Z", current) {
+		t.Fatal("expected nanosecond-precision expiration to remain valid")
+	}
+	later, err := time.Parse(time.RFC3339Nano, "2026-01-01T00:00:00.1234Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !authTimestampExpired("2026-01-01T00:00:00.123Z", later) {
+		t.Fatal("expected older nanosecond-precision expiration to be expired")
+	}
+
+	ctx := context.Background()
+	st := newTestStore(t)
+	user, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: "Fractional Time", Email: "fractional@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expiresAt := time.Now().UTC().Add(time.Hour).Format(time.RFC3339Nano)
+	sessionToken := "fractional-session-token"
+	if err := st.q.InsertSession(ctx, storedb.InsertSessionParams{
+		ID:        "ses_fractional",
+		Token:     "ses_fractional",
+		TokenHash: tokenHash(sessionToken),
+		UserID:    user.ID,
+		CreatedAt: "2026-01-01T00:00:00Z",
+		ExpiresAt: expiresAt,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sessionUser, err := st.GetSessionUser(ctx, sessionToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sessionUser.ID != user.ID {
+		t.Fatalf("expected session user %s, got %s", user.ID, sessionUser.ID)
+	}
+
+	magicToken := "fractional-magic-token"
+	magicExpiresAt := "2026-01-01T00:00:00.1234Z"
+	if err := st.q.InsertMagicLink(ctx, storedb.InsertMagicLinkParams{
+		ID:          "mln_fractional",
+		Token:       "mln_fractional",
+		TokenHash:   tokenHash(magicToken),
+		Email:       "fractional@example.com",
+		DisplayName: "Fractional Time",
+		CreatedAt:   "2026-01-01T00:00:00Z",
+		ExpiresAt:   magicExpiresAt,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := st.q.MarkMagicLinkUsed(ctx, storedb.MarkMagicLinkUsedParams{UsedAt: sqlText("2026-01-01T00:00:00.123Z"), ID: "mln_fractional", Now: "2026-01-01T00:00:00.123Z"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rows != 1 {
+		t.Fatalf("expected magic link to be marked used, got %d rows", rows)
+	}
+
+	if err := st.q.InsertMagicLink(ctx, storedb.InsertMagicLinkParams{
+		ID:          "mln_fractional_expired",
+		Token:       "mln_fractional_expired",
+		TokenHash:   tokenHash("fractional-expired-token"),
+		Email:       "fractional-expired@example.com",
+		DisplayName: "Fractional Expired",
+		CreatedAt:   "2026-01-01T00:00:00Z",
+		ExpiresAt:   "2026-01-01T00:00:00.123Z",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rows, err = st.q.MarkMagicLinkUsed(ctx, storedb.MarkMagicLinkUsedParams{UsedAt: sqlText("2026-01-01T00:00:00.1234Z"), ID: "mln_fractional_expired", Now: "2026-01-01T00:00:00.1234Z"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rows != 0 {
+		t.Fatalf("expected expired magic link to remain unused, got %d rows", rows)
 	}
 }
 

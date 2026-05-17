@@ -12,15 +12,28 @@ UPDATE auth_magic_links
 SET used_at = sqlc.arg(used_at)
 WHERE id = sqlc.arg(id)
   AND used_at IS NULL
-  AND expires_at > sqlc.arg(now);
+  AND (
+    CASE
+      WHEN strpos(expires_at, '.') = 0 THEN replace(expires_at, 'Z', '.000000000Z')
+      ELSE substring(expires_at from 1 for strpos(expires_at, '.')) ||
+           substring(substring(expires_at from strpos(expires_at, '.') + 1 for strpos(expires_at, 'Z') - strpos(expires_at, '.') - 1) || '000000000' from 1 for 9) ||
+           'Z'
+    END
+  ) > (
+    CASE
+      WHEN strpos(sqlc.arg(now)::text, '.') = 0 THEN replace(sqlc.arg(now)::text, 'Z', '.000000000Z')
+      ELSE substring(sqlc.arg(now)::text from 1 for strpos(sqlc.arg(now)::text, '.')) ||
+           substring(substring(sqlc.arg(now)::text from strpos(sqlc.arg(now)::text, '.') + 1 for strpos(sqlc.arg(now)::text, 'Z') - strpos(sqlc.arg(now)::text, '.') - 1) || '000000000' from 1 for 9) ||
+           'Z'
+    END
+  );
 
 -- name: GetSessionUser :one
-SELECT u.id, u.kind, u.owner_user_id, u.display_name, u.handle, u.avatar_url, u.created_at
+SELECT u.id, u.kind, u.owner_user_id, u.display_name, u.handle, u.avatar_url, u.created_at, s.expires_at AS session_expires_at
 FROM sessions s
 JOIN users u ON u.id = s.user_id
 WHERE s.token_hash = sqlc.arg(token_hash)
-  AND s.revoked_at IS NULL
-  AND s.expires_at > sqlc.arg(now);
+  AND s.revoked_at IS NULL;
 
 -- name: InsertSession :exec
 INSERT INTO sessions (id, token, token_hash, user_id, created_at, expires_at)
@@ -610,7 +623,24 @@ VALUES (sqlc.arg(event_id), sqlc.arg(user_id));
 -- name: PruneEvents :execrows
 DELETE FROM events AS e
 WHERE e.workspace_id = sqlc.arg(workspace_id_arg)
-  AND (sqlc.arg(before)::text = '' OR e.created_at < sqlc.arg(before)::text)
+  AND (
+    NULLIF(sqlc.arg(before)::text, '') IS NULL
+    OR (
+      CASE
+        WHEN strpos(e.created_at, '.') = 0 THEN replace(e.created_at, 'Z', '.000000000Z')
+        ELSE substring(e.created_at from 1 for strpos(e.created_at, '.')) ||
+             substring(substring(e.created_at from strpos(e.created_at, '.') + 1 for strpos(e.created_at, 'Z') - strpos(e.created_at, '.') - 1) || '000000000' from 1 for 9) ||
+             'Z'
+      END
+    ) < (
+      CASE
+        WHEN strpos(NULLIF(sqlc.arg(before)::text, ''), '.') = 0 THEN replace(NULLIF(sqlc.arg(before)::text, ''), 'Z', '.000000000Z')
+        ELSE substring(NULLIF(sqlc.arg(before)::text, '') from 1 for strpos(NULLIF(sqlc.arg(before)::text, ''), '.')) ||
+             substring(substring(NULLIF(sqlc.arg(before)::text, '') from strpos(NULLIF(sqlc.arg(before)::text, ''), '.') + 1 for strpos(NULLIF(sqlc.arg(before)::text, ''), 'Z') - strpos(NULLIF(sqlc.arg(before)::text, ''), '.') - 1) || '000000000' from 1 for 9) ||
+             'Z'
+      END
+    )
+  )
   AND e.id NOT IN (
     SELECT kept.id
     FROM events AS kept

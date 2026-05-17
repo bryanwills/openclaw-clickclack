@@ -12,15 +12,28 @@ UPDATE auth_magic_links
 SET used_at = sqlc.arg(used_at)
 WHERE id = sqlc.arg(id)
   AND used_at IS NULL
-  AND expires_at > sqlc.arg(now);
+  AND (
+    CASE
+      WHEN instr(expires_at, '.') = 0 THEN replace(expires_at, 'Z', '.000000000Z')
+      ELSE substr(expires_at, 1, instr(expires_at, '.')) ||
+           substr(substr(expires_at, instr(expires_at, '.') + 1, instr(expires_at, 'Z') - instr(expires_at, '.') - 1) || '000000000', 1, 9) ||
+           'Z'
+    END
+  ) > (
+    CASE
+      WHEN instr(CAST(sqlc.arg(now) AS TEXT), '.') = 0 THEN replace(CAST(sqlc.arg(now) AS TEXT), 'Z', '.000000000Z')
+      ELSE substr(CAST(sqlc.arg(now) AS TEXT), 1, instr(CAST(sqlc.arg(now) AS TEXT), '.')) ||
+           substr(substr(CAST(sqlc.arg(now) AS TEXT), instr(CAST(sqlc.arg(now) AS TEXT), '.') + 1, instr(CAST(sqlc.arg(now) AS TEXT), 'Z') - instr(CAST(sqlc.arg(now) AS TEXT), '.') - 1) || '000000000', 1, 9) ||
+           'Z'
+    END
+  );
 
 -- name: GetSessionUser :one
-SELECT u.id, u.kind, u.owner_user_id, u.display_name, u.handle, u.avatar_url, u.created_at
+SELECT u.id, u.kind, u.owner_user_id, u.display_name, u.handle, u.avatar_url, u.created_at, s.expires_at AS session_expires_at
 FROM sessions s
 JOIN users u ON u.id = s.user_id
 WHERE s.token_hash = sqlc.arg(token_hash)
-  AND s.revoked_at IS NULL
-  AND s.expires_at > sqlc.arg(now);
+  AND s.revoked_at IS NULL;
 
 -- name: InsertSession :exec
 INSERT INTO sessions (id, token, token_hash, user_id, created_at, expires_at)

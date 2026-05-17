@@ -761,31 +761,26 @@ func (q *Queries) GetNotificationSettings(ctx context.Context, userID string) (G
 }
 
 const getSessionUser = `-- name: GetSessionUser :one
-SELECT u.id, u.kind, u.owner_user_id, u.display_name, u.handle, u.avatar_url, u.created_at
+SELECT u.id, u.kind, u.owner_user_id, u.display_name, u.handle, u.avatar_url, u.created_at, s.expires_at AS session_expires_at
 FROM sessions s
 JOIN users u ON u.id = s.user_id
 WHERE s.token_hash = $1
   AND s.revoked_at IS NULL
-  AND s.expires_at > $2
 `
 
-type GetSessionUserParams struct {
-	TokenHash string `json:"token_hash"`
-	Now       string `json:"now"`
-}
-
 type GetSessionUserRow struct {
-	ID          string         `json:"id"`
-	Kind        string         `json:"kind"`
-	OwnerUserID sql.NullString `json:"owner_user_id"`
-	DisplayName string         `json:"display_name"`
-	Handle      string         `json:"handle"`
-	AvatarUrl   string         `json:"avatar_url"`
-	CreatedAt   string         `json:"created_at"`
+	ID               string         `json:"id"`
+	Kind             string         `json:"kind"`
+	OwnerUserID      sql.NullString `json:"owner_user_id"`
+	DisplayName      string         `json:"display_name"`
+	Handle           string         `json:"handle"`
+	AvatarUrl        string         `json:"avatar_url"`
+	CreatedAt        string         `json:"created_at"`
+	SessionExpiresAt string         `json:"session_expires_at"`
 }
 
-func (q *Queries) GetSessionUser(ctx context.Context, arg GetSessionUserParams) (GetSessionUserRow, error) {
-	row := q.db.QueryRowContext(ctx, getSessionUser, arg.TokenHash, arg.Now)
+func (q *Queries) GetSessionUser(ctx context.Context, tokenHash string) (GetSessionUserRow, error) {
+	row := q.db.QueryRowContext(ctx, getSessionUser, tokenHash)
 	var i GetSessionUserRow
 	err := row.Scan(
 		&i.ID,
@@ -795,6 +790,7 @@ func (q *Queries) GetSessionUser(ctx context.Context, arg GetSessionUserParams) 
 		&i.Handle,
 		&i.AvatarUrl,
 		&i.CreatedAt,
+		&i.SessionExpiresAt,
 	)
 	return i, err
 }
@@ -2021,7 +2017,21 @@ UPDATE auth_magic_links
 SET used_at = $1
 WHERE id = $2
   AND used_at IS NULL
-  AND expires_at > $3
+  AND (
+    CASE
+      WHEN strpos(expires_at, '.') = 0 THEN replace(expires_at, 'Z', '.000000000Z')
+      ELSE substring(expires_at from 1 for strpos(expires_at, '.')) ||
+           substring(substring(expires_at from strpos(expires_at, '.') + 1 for strpos(expires_at, 'Z') - strpos(expires_at, '.') - 1) || '000000000' from 1 for 9) ||
+           'Z'
+    END
+  ) > (
+    CASE
+      WHEN strpos($3::text, '.') = 0 THEN replace($3::text, 'Z', '.000000000Z')
+      ELSE substring($3::text from 1 for strpos($3::text, '.')) ||
+           substring(substring($3::text from strpos($3::text, '.') + 1 for strpos($3::text, 'Z') - strpos($3::text, '.') - 1) || '000000000' from 1 for 9) ||
+           'Z'
+    END
+  )
 `
 
 type MarkMagicLinkUsedParams struct {
@@ -2041,7 +2051,24 @@ func (q *Queries) MarkMagicLinkUsed(ctx context.Context, arg MarkMagicLinkUsedPa
 const pruneEvents = `-- name: PruneEvents :execrows
 DELETE FROM events AS e
 WHERE e.workspace_id = $1
-  AND ($2::text = '' OR e.created_at < $2::text)
+  AND (
+    NULLIF($2::text, '') IS NULL
+    OR (
+      CASE
+        WHEN strpos(e.created_at, '.') = 0 THEN replace(e.created_at, 'Z', '.000000000Z')
+        ELSE substring(e.created_at from 1 for strpos(e.created_at, '.')) ||
+             substring(substring(e.created_at from strpos(e.created_at, '.') + 1 for strpos(e.created_at, 'Z') - strpos(e.created_at, '.') - 1) || '000000000' from 1 for 9) ||
+             'Z'
+      END
+    ) < (
+      CASE
+        WHEN strpos(NULLIF($2::text, ''), '.') = 0 THEN replace(NULLIF($2::text, ''), 'Z', '.000000000Z')
+        ELSE substring(NULLIF($2::text, '') from 1 for strpos(NULLIF($2::text, ''), '.')) ||
+             substring(substring(NULLIF($2::text, '') from strpos(NULLIF($2::text, ''), '.') + 1 for strpos(NULLIF($2::text, ''), 'Z') - strpos(NULLIF($2::text, ''), '.') - 1) || '000000000' from 1 for 9) ||
+             'Z'
+      END
+    )
+  )
   AND e.id NOT IN (
     SELECT kept.id
     FROM events AS kept
