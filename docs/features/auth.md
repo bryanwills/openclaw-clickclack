@@ -16,16 +16,16 @@ resolver lives in `apps/api/internal/httpapi/server.go` (`currentActor`).
    GitHub OAuth callback.
 3. `X-ClickClack-User: usr_...` header — explicit user impersonation for local
    development and tests.
-4. Dev fallback — the very first user in the database. Enabled by default by
-   `clickclack serve --dev-bootstrap=true` so a fresh checkout boots into a
+4. Dev fallback — the very first user in the database. Enabled only by
+   `clickclack serve --dev-bootstrap=true` so a fresh checkout can boot into a
    working app without any token plumbing.
 
-The dev fallback is the one to disable in any non-local deployment. Set
-`--dev-bootstrap=false` and require real sessions.
+The dev fallback must stay off in any non-local deployment. `--dev-bootstrap=false`
+is the default; require real sessions.
 
 ## Local owner bootstrap
 
-`clickclack serve` calls `Store.EnsureBootstrap` when `--dev-bootstrap` is on.
+`clickclack serve --dev-bootstrap=true` calls `Store.EnsureBootstrap`.
 That helper:
 
 - Returns the first user if one exists.
@@ -107,7 +107,7 @@ from the request scheme/host. Configure GitHub with `<public-url>/api/auth/githu
 
 Org-gated deployments request `read:org`. GitHub only returns private org
 membership after the user grants that scope, so OpenClaw-only hosting should set
-`CLICKCLACK_GITHUB_ALLOWED_ORG=openclaw` and `CLICKCLACK_DEV_BOOTSTRAP=false`.
+`CLICKCLACK_GITHUB_ALLOWED_ORG=openclaw`.
 When the org check passes, the user is automatically joined to the first
 workspace; if no workspace exists yet, ClickClack creates a default workspace
 with a `general` channel.

@@ -3,6 +3,7 @@ package httpapi
 import (
 	"errors"
 	"io"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -15,8 +16,8 @@ import (
 
 const maxUploadBytes = 64 << 20
 
-func formInt(r *http.Request, key string) int {
-	v, err := strconv.Atoi(r.FormValue(key))
+func formInt(values map[string]string, key string) int {
+	v, err := strconv.Atoi(values[key])
 	if err != nil || v < 0 {
 		return 0
 	}
@@ -106,74 +107,130 @@ func (s *Server) createUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, errors.New("uploads are not configured"))
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	workspaceID := r.FormValue("workspace_id")
 	if err := act.requireScope("uploads:write"); err != nil {
 		writeError(w, http.StatusForbidden, err)
 		return
 	}
-	if err := act.requireWorkspace(workspaceID); err != nil {
-		writeError(w, http.StatusForbidden, err)
-		return
-	}
-	if _, err := s.store.GetWorkspace(r.Context(), workspaceID, act.user.ID); err != nil {
-		writeError(w, http.StatusForbidden, err)
-		return
-	}
-	file, header, err := r.FormFile("file")
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
+	reader, err := r.MultipartReader()
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	defer file.Close()
-	if err := os.MkdirAll(s.uploadDir, 0o755); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	tmp, err := os.CreateTemp(s.uploadDir, "upload-*")
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
+	fields := map[string]string{}
+	var workspaceID string
+	var upload store.CreateUploadInput
+	var tmp *os.File
+	var size int64
 	committed := false
 	defer func() {
-		_ = tmp.Close()
-		if !committed {
-			_ = os.Remove(tmp.Name())
+		if tmp != nil {
+			_ = tmp.Close()
+			if !committed {
+				_ = os.Remove(tmp.Name())
+			}
 		}
 	}()
-	size, err := io.Copy(tmp, file)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
+	for {
+		part, err := reader.NextPart()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			writeUploadBodyError(w, err, http.StatusBadRequest)
+			return
+		}
+		name := part.FormName()
+		if name == "" {
+			continue
+		}
+		if name != "file" {
+			body, err := io.ReadAll(io.LimitReader(part, 1024))
+			if err != nil {
+				writeUploadBodyError(w, err, http.StatusBadRequest)
+				return
+			}
+			fields[name] = string(body)
+			if name == "workspace_id" && workspaceID == "" {
+				workspaceID = strings.TrimSpace(fields[name])
+				if err := act.requireWorkspace(workspaceID); err != nil {
+					writeError(w, http.StatusForbidden, err)
+					return
+				}
+				if _, err := s.store.GetWorkspace(r.Context(), workspaceID, act.user.ID); err != nil {
+					writeError(w, http.StatusForbidden, err)
+					return
+				}
+			}
+			continue
+		}
+		if workspaceID == "" {
+			writeError(w, http.StatusBadRequest, errors.New("workspace_id must precede file"))
+			return
+		}
+		if tmp != nil {
+			writeError(w, http.StatusBadRequest, errors.New("only one file is supported"))
+			return
+		}
+		if err := os.MkdirAll(s.uploadDir, 0o755); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		tmp, err = os.CreateTemp(s.uploadDir, "upload-*")
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		size, err = io.Copy(tmp, part)
+		if err != nil {
+			writeUploadBodyError(w, err, http.StatusInternalServerError)
+			return
+		}
+		if err := tmp.Close(); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		contentType := part.Header.Get("Content-Type")
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+		upload = store.CreateUploadInput{
+			WorkspaceID: workspaceID,
+			OwnerID:     act.user.ID,
+			Filename:    filepath.Base(part.FileName()),
+			ContentType: contentType,
+			ByteSize:    size,
+			Width:       formInt(fields, "width"),
+			Height:      formInt(fields, "height"),
+			DurationMS:  formInt(fields, "duration_ms"),
+			StoragePath: tmp.Name(),
+		}
+	}
+	if tmp == nil {
+		writeError(w, http.StatusBadRequest, errors.New("file is required"))
 		return
 	}
-	if err := tmp.Close(); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
+	upload.Width = formInt(fields, "width")
+	upload.Height = formInt(fields, "height")
+	upload.DurationMS = formInt(fields, "duration_ms")
+	if err := act.requireWorkspace(workspaceID); err != nil {
+		writeError(w, http.StatusForbidden, err)
 		return
 	}
-	contentType := header.Header.Get("Content-Type")
-	if contentType == "" {
-		contentType = "application/octet-stream"
-	}
-	upload, err := s.store.CreateUpload(r.Context(), store.CreateUploadInput{
-		WorkspaceID: workspaceID,
-		OwnerID:     act.user.ID,
-		Filename:    filepath.Base(header.Filename),
-		ContentType: contentType,
-		ByteSize:    size,
-		Width:       formInt(r, "width"),
-		Height:      formInt(r, "height"),
-		DurationMS:  formInt(r, "duration_ms"),
-		StoragePath: tmp.Name(),
-	})
+	created, err := s.store.CreateUpload(r.Context(), upload)
 	if err == nil {
 		committed = true
 	}
-	writeResultStatus(w, http.StatusCreated, map[string]any{"upload": upload}, err)
+	writeResultStatus(w, http.StatusCreated, map[string]any{"upload": created}, err)
+}
+
+func writeUploadBodyError(w http.ResponseWriter, err error, fallbackStatus int) {
+	var maxBytesErr *http.MaxBytesError
+	if errors.As(err, &maxBytesErr) {
+		writeError(w, http.StatusRequestEntityTooLarge, err)
+		return
+	}
+	writeError(w, fallbackStatus, err)
 }
 
 func (s *Server) getUpload(w http.ResponseWriter, r *http.Request) {
@@ -194,7 +251,34 @@ func (s *Server) getUpload(w http.ResponseWriter, r *http.Request) {
 	if !s.requireBotWorkspace(w, act, upload.WorkspaceID, nil) {
 		return
 	}
+	setUploadResponseHeaders(w, upload)
 	http.ServeFile(w, r, upload.StoragePath)
+}
+
+func setUploadResponseHeaders(w http.ResponseWriter, upload store.Upload) {
+	contentType := safeUploadContentType(upload.ContentType)
+	disposition := "attachment"
+	if isInlineUploadContentType(contentType) {
+		disposition = "inline"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", mime.FormatMediaType(disposition, map[string]string{"filename": upload.Filename}))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "sandbox")
+}
+
+func safeUploadContentType(value string) string {
+	contentType := strings.ToLower(strings.TrimSpace(strings.Split(value, ";")[0]))
+	switch contentType {
+	case "image/png", "image/jpeg", "image/gif", "image/webp", "video/mp4", "video/webm", "audio/mpeg", "audio/ogg", "audio/wav", "text/plain", "application/pdf":
+		return contentType
+	default:
+		return "application/octet-stream"
+	}
+}
+
+func isInlineUploadContentType(contentType string) bool {
+	return strings.HasPrefix(contentType, "image/") || strings.HasPrefix(contentType, "video/") || strings.HasPrefix(contentType, "audio/") || contentType == "application/pdf" || contentType == "text/plain"
 }
 
 func (s *Server) attachUpload(w http.ResponseWriter, r *http.Request) {

@@ -110,8 +110,6 @@ payload with `user_id` from the caller before publishing.
 
 ## Implementation pointers
 
-- `coder/websocket` is the WebSocket library. The current accept call passes
-  `InsecureSkipVerify` for the local dev case; production should put the
-  server behind a reverse proxy that validates `Origin`, or harden the accept
-  options.
+- `coder/websocket` is the WebSocket library. The accept call validates
+  `Origin` against the request host and configured public URL.
 - The hub is single-process. Multi-node fanout is out of V1 scope.

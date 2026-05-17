@@ -246,7 +246,7 @@ type Upload struct {
 	Width       int    `json:"width"`
 	Height      int    `json:"height"`
 	DurationMS  int    `json:"duration_ms"`
-	StoragePath string `json:"storage_path,omitempty"`
+	StoragePath string `json:"-"`
 	CreatedAt   string `json:"created_at"`
 }
 

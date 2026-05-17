@@ -78,7 +78,7 @@ func serve(args []string) error {
 	flags.String("data", defaultData(), "data directory")
 	flags.String("db", defaultDB(), "database URL")
 	configPath := flags.String("config", "", "config file")
-	flags.Bool("dev-bootstrap", true, "create a local owner/workspace/channel if no user exists")
+	flags.Bool("dev-bootstrap", false, "create a local owner/workspace/channel if no user exists")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}

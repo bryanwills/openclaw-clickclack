@@ -35,7 +35,7 @@ first hit.
 
 ```sh
 # terminal 1
-pnpm dev:api                                        # go run ./apps/api/cmd/clickclack serve
+pnpm dev:api                                        # go run ... serve --dev-bootstrap=true
 
 # terminal 2
 pnpm dev:web                                        # vite dev server with API proxy
@@ -52,7 +52,7 @@ The Vite dev server proxies `/api` and `/api/realtime/ws` to `localhost:8080`.
 | `pnpm build:sdk`       | Builds the TypeScript SDK. |
 | `pnpm check`           | Full local gate: `pnpm test`, root/workspace `tsgo`, `oxlint`, and format checks. |
 | `pnpm coverage`        | Go tests with coverage; fails under 90% line coverage. |
-| `pnpm dev:api`         | `go run ./apps/api/cmd/clickclack serve`. |
+| `pnpm dev:api`         | `go run ./apps/api/cmd/clickclack serve --dev-bootstrap=true`. |
 | `pnpm dev:web`         | `vite dev` for the SPA. |
 | `pnpm fmt`             | `gofmt` + `oxfmt` over Go and TS/Svelte. |
 | `pnpm fmt:check`       | CI-compatible formatting check with `gofmt -l` and `oxfmt --check`. |

@@ -18,8 +18,8 @@ The server resolves callers in this order (see
 1. `Authorization: Bearer <token>` (session token, magic-link result).
 2. `cc_session` cookie.
 3. `X-ClickClack-User: usr_...` header (local/dev impersonation for tests).
-4. Dev fallback to the first user in the DB (disable in production via
-   `--dev-bootstrap=false`).
+4. Dev fallback to the first user in the DB (only with
+   `--dev-bootstrap=true`).
 
 ## Endpoint groups
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -27,6 +28,8 @@ type Server struct {
 	disableDevAuth bool
 	pushNotifier   PushNotifier
 }
+
+const websocketBearerProtocolPrefix = "clickclack.bearer."
 
 type actor struct {
 	user        store.User
@@ -530,6 +533,12 @@ func (s *Server) listEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) websocket(w http.ResponseWriter, r *http.Request) {
+	bearerProtocol := websocketBearerProtocol(r)
+	if r.Header.Get("Authorization") == "" {
+		if bearerProtocol != "" {
+			r.Header.Set("Authorization", "Bearer "+strings.TrimPrefix(bearerProtocol, websocketBearerProtocolPrefix))
+		}
+	}
 	act, err := s.currentActor(r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err)
@@ -554,7 +563,11 @@ func (s *Server) websocket(w http.ResponseWriter, r *http.Request) {
 	}
 	events, unsubscribe := s.hub.Subscribe(workspaceID)
 	defer unsubscribe()
-	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+	acceptOptions := &websocket.AcceptOptions{OriginPatterns: s.websocketOriginPatterns(r)}
+	if bearerProtocol != "" {
+		acceptOptions.Subprotocols = []string{bearerProtocol}
+	}
+	conn, err := websocket.Accept(w, r, acceptOptions)
 	if err != nil {
 		return
 	}
@@ -595,6 +608,28 @@ func (s *Server) websocket(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+func websocketBearerToken(r *http.Request) string {
+	return strings.TrimPrefix(websocketBearerProtocol(r), websocketBearerProtocolPrefix)
+}
+
+func websocketBearerProtocol(r *http.Request) string {
+	for _, protocol := range strings.Split(r.Header.Get("Sec-WebSocket-Protocol"), ",") {
+		protocol = strings.TrimSpace(protocol)
+		if strings.HasPrefix(protocol, websocketBearerProtocolPrefix) {
+			return protocol
+		}
+	}
+	return ""
+}
+
+func (s *Server) websocketOriginPatterns(r *http.Request) []string {
+	publicURL, err := url.Parse(strings.TrimSpace(s.githubOAuth.PublicURL))
+	if err != nil || publicURL.Host == "" {
+		return nil
+	}
+	return []string{publicURL.Scheme + "://" + publicURL.Host}
 }
 
 // shouldDeliverEvent gates per-user-private events so they only reach allowed

@@ -113,7 +113,6 @@ Postgres layout:
 
 ```sh
 CLICKCLACK_DB='postgres://user:pass@db.example.com:5432/clickclack?sslmode=require' \
-CLICKCLACK_DEV_BOOTSTRAP=false \
 clickclack serve --addr :8080 --data /var/lib/clickclack
 ```
 
@@ -125,15 +124,16 @@ Postgres backups; `clickclack backup` is SQLite-only.
 
 ## Reverse proxy
 
-Required for TLS, `Origin` enforcement, and request size limits. The
-WebSocket endpoint accepts upgrades with `InsecureSkipVerify=true` today, so
-the proxy is the right place to enforce origin policy.
+Required for TLS and request size limits. The WebSocket endpoint enforces the
+request host by default and also allows `CLICKCLACK_PUBLIC_URL` as an origin
+when configured.
 
 A minimal nginx block:
 
 ```nginx
 location / {
   proxy_pass http://127.0.0.1:8080;
+  proxy_set_header Host $host;
   proxy_http_version 1.1;
   proxy_set_header Upgrade $http_upgrade;
   proxy_set_header Connection "upgrade";
@@ -150,7 +150,6 @@ CLICKCLACK_PUBLIC_URL=https://chat.example.com
 CLICKCLACK_GITHUB_CLIENT_ID=...
 CLICKCLACK_GITHUB_CLIENT_SECRET=...
 CLICKCLACK_GITHUB_ALLOWED_ORG=openclaw
-CLICKCLACK_DEV_BOOTSTRAP=false
 ```
 
 Configure the GitHub OAuth app callback to

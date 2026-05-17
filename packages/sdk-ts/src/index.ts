@@ -402,7 +402,8 @@ export class ClickClackClient {
       url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
       url.searchParams.set("workspace_id", options.workspaceId);
       if (options.afterCursor) url.searchParams.set("after_cursor", options.afterCursor);
-      const socket = new WebSocket(url);
+      const protocols = this.token ? [`clickclack.bearer.${this.token}`] : undefined;
+      const socket = protocols ? new WebSocket(url, protocols) : new WebSocket(url);
       socket.addEventListener("message", (message) =>
         options.onEvent(JSON.parse(String(message.data))),
       );

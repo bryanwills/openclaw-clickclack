@@ -10,7 +10,7 @@
     "check": "pnpm test && pnpm typecheck && pnpm -r typecheck && pnpm lint && pnpm fmt:check",
     "coverage": "go test ./apps/api/internal/... -coverprofile=coverage.out && grep -v -e '/storedb/' -e '/store/postgres/' coverage.out > coverage.filtered.out && go tool cover -func=coverage.filtered.out > coverage.txt && cat coverage.txt && awk 'BEGIN { found=0 } /^total:/ { found=1; sub(/%/, \"\", $3); if ($3 + 0 < 90) exit 1 } END { if (!found) exit 1 }' coverage.txt",
     "dev:web": "pnpm --filter @clickclack/web dev",
-    "dev:api": "go run ./apps/api/cmd/clickclack serve",
+    "dev:api": "go run ./apps/api/cmd/clickclack serve --dev-bootstrap=true",
     "fmt": "gofmt -w apps/api && pnpm fmt:ts",
     "fmt:check": "pnpm fmt:go:check && pnpm fmt:ts:check",
     "fmt:go:check": "files=$(gofmt -l apps/api) && test -z \"$files\" || (printf '%s\n' \"$files\" && exit 1)",

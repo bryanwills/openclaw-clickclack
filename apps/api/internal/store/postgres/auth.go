@@ -62,8 +62,12 @@ func (s *Store) ConsumeMagicLink(ctx context.Context, token string) (store.User,
 		return store.User{}, store.Session{}, err
 	}
 	usedAt := now()
-	if err := qtx.MarkMagicLinkUsed(ctx, storedb.MarkMagicLinkUsedParams{UsedAt: sqlText(usedAt), ID: link.ID}); err != nil {
+	rows, err := qtx.MarkMagicLinkUsed(ctx, storedb.MarkMagicLinkUsedParams{UsedAt: sqlText(usedAt), ID: link.ID, Now: usedAt})
+	if err != nil {
 		return store.User{}, store.Session{}, err
+	}
+	if rows != 1 {
+		return store.User{}, store.Session{}, errors.New("magic link already used")
 	}
 	session, err := createSessionTx(ctx, qtx, user.ID)
 	if err != nil {

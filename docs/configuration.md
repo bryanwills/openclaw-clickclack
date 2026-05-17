@@ -25,7 +25,7 @@ hook in `cmd/clickclack/main.go`.
 | `--data`              | `CLICKCLACK_DATA`                | `./data`    | Data root for DB, uploads, logs. |
 | `--db`                | `CLICKCLACK_DB`                  | derived     | DB URL. Defaults to `sqlite://<data>/clickclack.db`. |
 | `--config`            | —                                | unset       | JSON config file. |
-| `--dev-bootstrap`     | `CLICKCLACK_DEV_BOOTSTRAP`       | `true`      | `serve` only. Creates a default user/workspace/channel and enables local dev auth fallbacks. |
+| `--dev-bootstrap`     | `CLICKCLACK_DEV_BOOTSTRAP`       | `false`     | `serve` only. Creates a default user/workspace/channel and enables local dev auth fallbacks when explicitly set to `true`. |
 | —                     | `CLICKCLACK_PUBLIC_URL`          | unset       | External URL. Used to build the GitHub OAuth callback. |
 | —                     | `CLICKCLACK_GITHUB_CLIENT_ID`    | unset       | GitHub OAuth app client ID. |
 | —                     | `CLICKCLACK_GITHUB_CLIENT_SECRET`| unset       | GitHub OAuth app client secret. |
@@ -85,5 +85,5 @@ clickclack serve \
 ```
 
 Combine with real auth (magic links or GitHub OAuth) so the
-"first-user-in-DB" dev auth fallback never kicks in. In containers,
-`CLICKCLACK_DEV_BOOTSTRAP=false` is the easiest way to enforce the same mode.
+"first-user-in-DB" dev auth fallback never kicks in. In containers, this is
+already the default; `CLICKCLACK_DEV_BOOTSTRAP=false` is only an explicit guard.

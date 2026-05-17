@@ -1797,20 +1797,26 @@ func (q *Queries) ListWorkspaces(ctx context.Context, userID string) ([]ListWork
 	return items, nil
 }
 
-const markMagicLinkUsed = `-- name: MarkMagicLinkUsed :exec
+const markMagicLinkUsed = `-- name: MarkMagicLinkUsed :execrows
 UPDATE auth_magic_links
 SET used_at = $1
 WHERE id = $2
+  AND used_at IS NULL
+  AND expires_at > $3
 `
 
 type MarkMagicLinkUsedParams struct {
 	UsedAt sql.NullString `json:"used_at"`
 	ID     string         `json:"id"`
+	Now    string         `json:"now"`
 }
 
-func (q *Queries) MarkMagicLinkUsed(ctx context.Context, arg MarkMagicLinkUsedParams) error {
-	_, err := q.db.ExecContext(ctx, markMagicLinkUsed, arg.UsedAt, arg.ID)
-	return err
+func (q *Queries) MarkMagicLinkUsed(ctx context.Context, arg MarkMagicLinkUsedParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, markMagicLinkUsed, arg.UsedAt, arg.ID, arg.Now)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const pruneEvents = `-- name: PruneEvents :execrows

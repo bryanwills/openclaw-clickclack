@@ -370,6 +370,37 @@ func TestHTTPMalformedJSONRoutes(t *testing.T) {
 	}
 	resp.Body.Close()
 
+	{
+		var body bytes.Buffer
+		writer := multipart.NewWriter(&body)
+		part, err := writer.CreateFormFile("file", "early.txt")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := part.Write([]byte("early")); err != nil {
+			t.Fatal(err)
+		}
+		if err := writer.WriteField("workspace_id", workspaces[0].ID); err != nil {
+			t.Fatal(err)
+		}
+		if err := writer.Close(); err != nil {
+			t.Fatal(err)
+		}
+		req, err := http.NewRequest(http.MethodPost, server.URL+"/api/uploads", &body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("expected file-before-workspace upload to be bad request, got %s", resp.Status)
+		}
+	}
+
 	resp, err = http.PostForm(server.URL+"/api/hooks/slash/"+channels[0].ID, nil)
 	if err != nil {
 		t.Fatal(err)

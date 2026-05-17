@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -179,6 +180,9 @@ func TestChatAPIVerticalSlice(t *testing.T) {
 	}
 
 	upload := uploadFile(t, server.URL+"/api/uploads", workspace.ID, "note.txt", "hello upload")
+	if upload.StoragePath != "" {
+		t.Fatalf("upload response leaked storage path: %#v", upload)
+	}
 	attach := postJSON[map[string]bool](t, server.URL+"/api/messages/"+created.Message.ID+"/attachments", map[string]string{"upload_id": upload.ID})
 	if !attach["ok"] {
 		t.Fatal("expected attachment success")
@@ -186,6 +190,14 @@ func TestChatAPIVerticalSlice(t *testing.T) {
 	body := getBody(t, server.URL+"/api/uploads/"+upload.ID)
 	if body != "hello upload" {
 		t.Fatalf("unexpected upload body %q", body)
+	}
+	resp, err := http.Get(server.URL + "/api/uploads/" + upload.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.Header.Get("X-Content-Type-Options") != "nosniff" || !strings.HasPrefix(resp.Header.Get("Content-Disposition"), "attachment;") {
+		t.Fatalf("unexpected upload headers: %s %s", resp.Header.Get("X-Content-Type-Options"), resp.Header.Get("Content-Disposition"))
 	}
 	rawUpload := uploadFileWithoutPartContentType(t, server.URL+"/api/uploads", workspace.ID)
 	if rawUpload.ContentType != "application/octet-stream" || rawUpload.Width != 33 || rawUpload.Height != 0 || rawUpload.DurationMS != 0 {
@@ -1275,6 +1287,206 @@ func TestDisableDevAuthRequiresSession(t *testing.T) {
 	}
 }
 
+func TestSecureCookiesFollowPublicURL(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dataDir := t.TempDir()
+	st, err := sqlitestore.Open("sqlite://" + filepath.Join(dataDir, "clickclack.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.EnsureBootstrap(ctx, "Owner", "owner@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(New(st, realtime.NewHub(), Options{
+		GitHubOAuth: GitHubOAuthConfig{PublicURL: "https://app.clickclack.test"},
+	}).Handler())
+	t.Cleanup(server.Close)
+	link := postJSON[struct {
+		Token string `json:"token"`
+	}](t, server.URL+"/api/auth/magic/request", map[string]string{"email": "secure-cookie@example.com"})
+	resp, err := http.Post(server.URL+"/api/auth/magic/consume", "application/json", strings.NewReader(`{"token":"`+link.Token+`"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	cookie := findCookie(resp.Cookies(), "cc_session")
+	if cookie == nil || !cookie.Secure {
+		t.Fatalf("expected secure session cookie, got %#v", cookie)
+	}
+}
+
+func TestRealtimeWebSocketOriginAndBearerProtocol(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dataDir := t.TempDir()
+	st, err := sqlitestore.Open("sqlite://" + filepath.Join(dataDir, "clickclack.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := st.EnsureBootstrap(ctx, "Owner", "owner@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaces, err := st.ListWorkspaces(ctx, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, token, err := st.CreateBot(ctx, store.CreateBotInput{
+		WorkspaceID: workspaces[0].ID,
+		DisplayName: "Realtime Bot",
+		Scopes:      []string{"realtime:read"},
+		CreatedBy:   owner.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(New(st, realtime.NewHub(), Options{}).Handler())
+	t.Cleanup(server.Close)
+	wsURL := strings.Replace(server.URL, "http://", "ws://", 1) + "/api/realtime/ws?workspace_id=" + url.QueryEscape(workspaces[0].ID)
+	if conn, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
+		HTTPHeader: http.Header{"Origin": []string{"https://evil.example"}, "X-ClickClack-User": []string{owner.ID}},
+	}); err == nil {
+		_ = conn.Close(websocket.StatusNormalClosure, "done")
+		t.Fatal("expected cross-origin websocket dial to fail")
+	}
+	conn, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
+		Subprotocols: []string{websocketBearerProtocolPrefix + token.Token},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conn.Subprotocol() != websocketBearerProtocolPrefix+token.Token {
+		t.Fatalf("expected bearer subprotocol echo, got %q", conn.Subprotocol())
+	}
+	_ = conn.Close(websocket.StatusNormalClosure, "done")
+}
+
+func TestUploadResponseHeadersUseSafeContentTypes(t *testing.T) {
+	t.Parallel()
+	image := httptest.NewRecorder()
+	setUploadResponseHeaders(image, store.Upload{Filename: "photo.png", ContentType: "Image/PNG; charset=utf-8"})
+	if image.Header().Get("Content-Type") != "image/png" || !strings.HasPrefix(image.Header().Get("Content-Disposition"), "inline;") {
+		t.Fatalf("unexpected image headers: %#v", image.Header())
+	}
+
+	html := httptest.NewRecorder()
+	setUploadResponseHeaders(html, store.Upload{Filename: "index.html", ContentType: "text/html"})
+	if html.Header().Get("Content-Type") != "application/octet-stream" || !strings.HasPrefix(html.Header().Get("Content-Disposition"), "attachment;") {
+		t.Fatalf("unexpected html headers: %#v", html.Header())
+	}
+	if html.Header().Get("X-Content-Type-Options") != "nosniff" || html.Header().Get("Content-Security-Policy") != "sandbox" {
+		t.Fatalf("missing hardening headers: %#v", html.Header())
+	}
+}
+
+func TestUploadBodyErrorsClassifyOversizedRequests(t *testing.T) {
+	t.Parallel()
+	tooLarge := httptest.NewRecorder()
+	writeUploadBodyError(tooLarge, &http.MaxBytesError{Limit: maxUploadBytes}, http.StatusInternalServerError)
+	if tooLarge.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected oversized upload to be 413, got %d", tooLarge.Code)
+	}
+
+	readFailure := httptest.NewRecorder()
+	writeUploadBodyError(readFailure, errors.New("copy failed"), http.StatusInternalServerError)
+	if readFailure.Code != http.StatusInternalServerError {
+		t.Fatalf("expected fallback status, got %d", readFailure.Code)
+	}
+}
+
+func TestUploadRejectsInvalidMultipartShapes(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dataDir := t.TempDir()
+	st, err := sqlitestore.Open("sqlite://" + filepath.Join(dataDir, "clickclack.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := st.EnsureBootstrap(ctx, "Owner", "owner@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaces, err := st.ListWorkspaces(ctx, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(New(st, realtime.NewHub(), Options{UploadDir: filepath.Join(dataDir, "uploads")}).Handler())
+	t.Cleanup(server.Close)
+
+	postUpload := func(t *testing.T, body *bytes.Buffer, contentType string) int {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodPost, server.URL+"/api/uploads", body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", contentType)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	var fileFirst bytes.Buffer
+	fileFirstWriter := multipart.NewWriter(&fileFirst)
+	part, err := fileFirstWriter.CreateFormFile("file", "early.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write([]byte("early")); err != nil {
+		t.Fatal(err)
+	}
+	if err := fileFirstWriter.WriteField("workspace_id", workspaces[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := fileFirstWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got := postUpload(t, &fileFirst, fileFirstWriter.FormDataContentType()); got != http.StatusBadRequest {
+		t.Fatalf("file before workspace_id: got %d", got)
+	}
+
+	var duplicate bytes.Buffer
+	duplicateWriter := multipart.NewWriter(&duplicate)
+	if err := duplicateWriter.WriteField("workspace_id", workspaces[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"one.txt", "two.txt"} {
+		part, err := duplicateWriter.CreateFormFile("file", name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := part.Write([]byte(name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := duplicateWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got := postUpload(t, &duplicate, duplicateWriter.FormDataContentType()); got != http.StatusBadRequest {
+		t.Fatalf("duplicate file: got %d", got)
+	}
+
+	invalid := bytes.NewBufferString("not a multipart body")
+	if got := postUpload(t, invalid, "multipart/form-data; boundary=missing"); got != http.StatusBadRequest {
+		t.Fatalf("invalid multipart: got %d", got)
+	}
+}
+
 func TestQueryHelpersParseValues(t *testing.T) {
 	t.Parallel()
 	req := httptest.NewRequest(http.MethodGet, "/?limit=42&after_seq=123", nil)
@@ -1287,6 +1499,17 @@ func TestQueryHelpersParseValues(t *testing.T) {
 	req = httptest.NewRequest(http.MethodGet, "/?after_seq=bad", nil)
 	if got := queryInt64(req, "after_seq", 10); got != 10 {
 		t.Fatalf("unexpected fallback int64 query value %d", got)
+	}
+	if got := websocketBearerToken(httptest.NewRequest(http.MethodGet, "/", nil)); got != "" {
+		t.Fatalf("unexpected bearer token %q", got)
+	}
+	server := New(nil, nil, Options{GitHubOAuth: GitHubOAuthConfig{PublicURL: "https://app.clickclack.test/path"}})
+	patterns := server.websocketOriginPatterns(httptest.NewRequest(http.MethodGet, "/", nil))
+	if len(patterns) != 1 || patterns[0] != "https://app.clickclack.test" {
+		t.Fatalf("unexpected websocket origin patterns: %#v", patterns)
+	}
+	if patterns := New(nil, nil, Options{GitHubOAuth: GitHubOAuthConfig{PublicURL: "%"}}).websocketOriginPatterns(httptest.NewRequest(http.MethodGet, "/", nil)); patterns != nil {
+		t.Fatalf("unexpected invalid websocket origin patterns: %#v", patterns)
 	}
 }
 

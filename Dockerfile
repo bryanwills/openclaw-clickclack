@@ -1,4 +1,4 @@
-FROM node:25-alpine AS web
+FROM node:25-alpine@sha256:bdf2cca6fe3dabd014ea60163eca3f0f7015fbd5c7ee1b0e9ccb4ced6eb02ef4 AS web
 ARG CLICKCLACK_WEB_VERSION=dev
 ENV CLICKCLACK_WEB_VERSION=$CLICKCLACK_WEB_VERSION
 WORKDIR /src
@@ -13,7 +13,7 @@ COPY packages packages
 COPY scripts scripts
 RUN pnpm build
 
-FROM golang:1.26-alpine AS api
+FROM golang:1.26-alpine@sha256:91eda9776261207ea25fd06b5b7fed8d397dd2c0a283e77f2ab6e91bfa71079d AS api
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -22,7 +22,7 @@ COPY infra infra
 COPY --from=web /src/apps/api/internal/webassets/dist apps/api/internal/webassets/dist
 RUN go build -o /out/clickclack ./apps/api/cmd/clickclack
 
-FROM alpine:3.23
+FROM alpine:3.23@sha256:5b10f432ef3da1b8d4c7eb6c487f2f5a8f096bc91145e68878dd4a5019afde11
 RUN adduser -D -H clickclack
 WORKDIR /app
 COPY --from=api /out/clickclack /usr/local/bin/clickclack

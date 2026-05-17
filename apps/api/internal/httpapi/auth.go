@@ -48,6 +48,6 @@ func (s *Server) consumeMagicLink(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	setSessionCookie(w, session)
+	s.setSessionCookie(w, r, session)
 	writeJSON(w, http.StatusOK, map[string]any{"user": user, "session": session, "token": session.Token})
 }

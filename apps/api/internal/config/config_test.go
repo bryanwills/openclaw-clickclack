@@ -53,7 +53,7 @@ func TestLoadDefaultsEnvAndFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Addr != ":8080" || cfg.Data != "./data" {
+	if cfg.Addr != ":8080" || cfg.Data != "./data" || cfg.DevBootstrap {
 		t.Fatalf("unexpected fallback config: %#v", cfg)
 	}
 	if _, err := Load(filepath.Join(t.TempDir(), "missing.json")); err == nil {

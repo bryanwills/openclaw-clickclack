@@ -75,8 +75,8 @@ clickclack serve \
 - Creates `<data>`, `<data>/uploads`, `<data>/logs`.
 - Opens SQLite (modernc) with WAL, foreign keys, and `busy_timeout=5000`,
   then runs migrations.
-- When `--dev-bootstrap=true` (the default), creates a `Local Captain` user
-  and a `ClickClack` workspace if the DB is empty. Disable in production.
+- When `--dev-bootstrap=true`, creates a `Local Captain` user and a
+  `ClickClack` workspace if the DB is empty. The default is `false`.
 - Logs the resolved listen URL and the dev-auth user ID.
 
 ## `migrate`

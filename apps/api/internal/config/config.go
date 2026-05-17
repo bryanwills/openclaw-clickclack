@@ -19,7 +19,7 @@ type Config struct {
 }
 
 func Defaults() Config {
-	return Config{Addr: ":8080", Data: "./data", DevBootstrap: true}
+	return Config{Addr: ":8080", Data: "./data", DevBootstrap: false}
 }
 
 func Load(path string) (Config, error) {

@@ -7,10 +7,12 @@ SELECT id, token, token_hash, email, display_name, created_at, expires_at, used_
 FROM auth_magic_links
 WHERE token_hash = sqlc.arg(token_hash);
 
--- name: MarkMagicLinkUsed :exec
+-- name: MarkMagicLinkUsed :execrows
 UPDATE auth_magic_links
 SET used_at = sqlc.arg(used_at)
-WHERE id = sqlc.arg(id);
+WHERE id = sqlc.arg(id)
+  AND used_at IS NULL
+  AND expires_at > sqlc.arg(now);
 
 -- name: GetSessionUser :one
 SELECT u.id, u.kind, u.owner_user_id, u.display_name, u.handle, u.avatar_url, u.created_at

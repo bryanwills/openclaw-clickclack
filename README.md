@@ -77,18 +77,18 @@ in [SPEC.md](SPEC.md).
 ```sh
 pnpm install                                        # JS deps for SPA + SDK
 pnpm build                                          # builds SPA, copies dist into the Go binary
-go run ./apps/api/cmd/clickclack serve              # http://localhost:8080
+go run ./apps/api/cmd/clickclack serve --dev-bootstrap=true
 ```
 
-The dev fallback boots a default user, workspace, and channel so the SPA
-loads into something useful at `/app`. The root path is the public product
-website. Disable it with `--dev-bootstrap=false` for anything that isn't a
-local checkout.
+For a fresh local checkout, `--dev-bootstrap=true` boots a default user,
+workspace, and channel so the SPA loads into something useful at `/app`. The
+root path is the public product website. Production and Docker defaults leave
+dev auth disabled.
 
 ### Two-process dev loop
 
 ```sh
-pnpm dev:api                                        # Go server with hot rebuild via go run
+pnpm dev:api                                        # Go server with dev bootstrap enabled
 pnpm dev:web                                        # Vite dev server proxied to /api
 ```
 
@@ -141,7 +141,6 @@ CLICKCLACK_PUBLIC_URL=https://chat.example.com
 CLICKCLACK_GITHUB_CLIENT_ID=...
 CLICKCLACK_GITHUB_CLIENT_SECRET=...
 CLICKCLACK_GITHUB_ALLOWED_ORG=openclaw
-CLICKCLACK_DEV_BOOTSTRAP=false
 ```
 
 Details and trade-offs in [docs/features/auth.md](docs/features/auth.md).

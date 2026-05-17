@@ -13,7 +13,7 @@ export default defineConfig({
   },
   webServer: {
     command:
-      "rm -rf data/e2e && pnpm build && go run ./apps/api/cmd/clickclack serve --addr 127.0.0.1:18082 --data ./data/e2e",
+      "rm -rf data/e2e && pnpm build && go run ./apps/api/cmd/clickclack serve --addr 127.0.0.1:18082 --data ./data/e2e --dev-bootstrap=true",
     url: "http://127.0.0.1:18082",
     reuseExistingServer: false,
     timeout: 120_000,

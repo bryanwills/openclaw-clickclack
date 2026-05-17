@@ -63,7 +63,7 @@ func (s *Server) githubStart(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: "cc_github_state", Value: state, Path: "/", MaxAge: 600, HttpOnly: true, SameSite: http.SameSiteLaxMode})
+	http.SetCookie(w, &http.Cookie{Name: "cc_github_state", Value: state, Path: "/", MaxAge: 600, HttpOnly: true, Secure: s.secureCookies(r), SameSite: http.SameSiteLaxMode})
 	values := url.Values{
 		"client_id":    {s.githubOAuth.ClientID},
 		"redirect_uri": {s.githubRedirectURL(r)},
@@ -124,7 +124,7 @@ func (s *Server) githubCallback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	setSessionCookie(w, session)
+	s.setSessionCookie(w, r, session)
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
@@ -275,9 +275,16 @@ func (s *Server) githubRedirectURL(r *http.Request) string {
 	return base + "/api/auth/github/callback"
 }
 
-func setSessionCookie(w http.ResponseWriter, session store.Session) {
+func (s *Server) setSessionCookie(w http.ResponseWriter, r *http.Request, session store.Session) {
 	expires, _ := time.Parse(time.RFC3339Nano, session.ExpiresAt)
-	http.SetCookie(w, &http.Cookie{Name: "cc_session", Value: session.Token, Path: "/", Expires: expires, HttpOnly: true, SameSite: http.SameSiteLaxMode})
+	http.SetCookie(w, &http.Cookie{Name: "cc_session", Value: session.Token, Path: "/", Expires: expires, HttpOnly: true, Secure: s.secureCookies(r), SameSite: http.SameSiteLaxMode})
+}
+
+func (s *Server) secureCookies(r *http.Request) bool {
+	if publicURL, err := url.Parse(strings.TrimSpace(s.githubOAuth.PublicURL)); err == nil && publicURL.Scheme == "https" {
+		return true
+	}
+	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }
 
 func randomToken() (string, error) {
