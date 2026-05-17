@@ -414,9 +414,12 @@ export class ClickClackClient {
 
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const headers = new Headers(init.headers);
+    const method = (init.method ?? "GET").toUpperCase();
     headers.set("Accept", "application/json");
     if (init.body && !(init.body instanceof FormData))
       headers.set("Content-Type", "application/json");
+    if (!this.token && !["GET", "HEAD", "OPTIONS", "TRACE"].includes(method))
+      headers.set("X-ClickClack-CSRF", "1");
     if (this.token) headers.set("Authorization", `Bearer ${this.token}`);
     if (this.userId) headers.set("X-ClickClack-User", this.userId);
     const response = await this.fetcher(`${this.baseUrl}${path}`, { ...init, headers });

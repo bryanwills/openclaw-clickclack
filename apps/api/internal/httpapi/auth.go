@@ -73,19 +73,22 @@ func (s *Server) requireSameOriginJSON(w http.ResponseWriter, r *http.Request) b
 		writeError(w, http.StatusUnsupportedMediaType, errors.New("content-type must be application/json"))
 		return false
 	}
-	if fetchSite := strings.ToLower(strings.TrimSpace(r.Header.Get("Sec-Fetch-Site"))); fetchSite != "" && fetchSite != "same-origin" && fetchSite != "none" {
+	if !s.sameOriginBrowserRequest(r) {
 		writeError(w, http.StatusForbidden, errors.New("cross-site login requests are not allowed"))
+		return false
+	}
+	return true
+}
+
+func (s *Server) sameOriginBrowserRequest(r *http.Request) bool {
+	if fetchSite := strings.ToLower(strings.TrimSpace(r.Header.Get("Sec-Fetch-Site"))); fetchSite != "" && fetchSite != "same-origin" && fetchSite != "none" {
 		return false
 	}
 	origin := strings.TrimSpace(r.Header.Get("Origin"))
 	if origin == "" {
 		return true
 	}
-	if !s.sameOrigin(r, origin) {
-		writeError(w, http.StatusForbidden, errors.New("cross-site login requests are not allowed"))
-		return false
-	}
-	return true
+	return s.sameOrigin(r, origin)
 }
 
 func (s *Server) sameOrigin(r *http.Request, origin string) bool {

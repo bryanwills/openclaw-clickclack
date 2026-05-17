@@ -288,6 +288,72 @@ func TestHTTPUploadNotConfiguredAndCookieAuth(t *testing.T) {
 	}
 }
 
+func TestCookieSessionMutationsRequireCSRF(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	st := newHTTPStore(t)
+	owner, err := st.EnsureBootstrap(ctx, "Owner", "owner@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := st.CreateSession(ctx, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := New(st, realtime.NewHub(), Options{DisableDevAuth: true}).Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "http://chat.example.com/api/me", nil)
+	req.AddCookie(&http.Cookie{Name: "cc_session", Value: session.Token})
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected safe cookie request to pass, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPatch, "http://chat.example.com/api/me", strings.NewReader(`{"display_name":"No CSRF"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://chat.example.com")
+	req.AddCookie(&http.Cookie{Name: "cc_session", Value: session.Token})
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("expected missing csrf header to fail, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPatch, "http://chat.example.com/api/me", strings.NewReader(`{"display_name":"Cross Site"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(csrfHeaderName, "1")
+	req.Header.Set("Origin", "https://evil.example")
+	req.AddCookie(&http.Cookie{Name: "cc_session", Value: session.Token})
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("expected cross-site csrf request to fail, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPatch, "http://chat.example.com/api/me", strings.NewReader(`{"display_name":"Same Origin"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(csrfHeaderName, "1")
+	req.Header.Set("Origin", "http://chat.example.com")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	req.AddCookie(&http.Cookie{Name: "cc_session", Value: session.Token})
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected same-origin csrf request to pass, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPatch, "http://chat.example.com/api/me", strings.NewReader(`{"display_name":"Bearer"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+session.Token)
+	req.Header.Set("Origin", "https://evil.example")
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected bearer mutation to bypass cookie csrf, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestHTTPMalformedJSONRoutes(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

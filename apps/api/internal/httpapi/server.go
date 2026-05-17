@@ -35,6 +35,7 @@ type Server struct {
 
 const (
 	websocketBearerProtocolPrefix = "clickclack.bearer."
+	csrfHeaderName                = "X-ClickClack-CSRF"
 	maxJSONBodyBytes              = 1 << 20
 	readHeaderTimeout             = 5 * time.Second
 	httpRequestTimeout            = 30 * time.Second
@@ -79,6 +80,7 @@ func (s *Server) Handler() http.Handler {
 	r.Use(middleware.Recoverer)
 
 	r.Route("/api", func(r chi.Router) {
+		r.Use(s.requireCookieCSRF)
 		r.Post("/auth/magic/request", s.requestMagicLink)
 		r.Post("/auth/magic/consume", s.consumeMagicLink)
 		r.Get("/auth/github/start", s.githubStart)
@@ -124,6 +126,38 @@ func (s *Server) Handler() http.Handler {
 	r.Head("/*", s.serveSPA)
 	r.Get("/*", s.serveSPA)
 	return r
+}
+
+func (s *Server) requireCookieCSRF(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isSafeMethod(r.Method) || hasBearerAuth(r) || !hasSessionCookie(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if r.Header.Get(csrfHeaderName) != "1" || !s.sameOriginBrowserRequest(r) {
+			writeError(w, http.StatusForbidden, errors.New("cross-site session requests are not allowed"))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func isSafeMethod(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodTrace:
+		return true
+	default:
+		return false
+	}
+}
+
+func hasBearerAuth(r *http.Request) bool {
+	return strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ")
+}
+
+func hasSessionCookie(r *http.Request) bool {
+	cookie, err := r.Cookie("cc_session")
+	return err == nil && cookie.Value != ""
 }
 
 type pathOnlyLogFormatter struct {
