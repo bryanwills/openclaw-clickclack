@@ -176,36 +176,38 @@
   </div>
 {:else if canPreviewDocument}
   <div class="document-attachment">
-    <div class="document-attachment__bar">
-      <span class="document-attachment__badge">{documentLabel}</span>
+    <a
+      class="document-attachment__thumbnail"
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      aria-label={`Open ${upload.filename}`}
+    >
+      <span>{documentLabel}</span>
+    </a>
+    <div class="document-attachment__meta">
       <a class="document-attachment__title" href={url} target="_blank" rel="noreferrer">
         {upload.filename}
       </a>
       <small>{formatBytes(upload.byte_size)}</small>
-      <a
-        class="document-attachment__download"
-        href={url}
-        download={upload.filename}
-        aria-label={`Download ${upload.filename}`}
-      >
-        <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
-          <path
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M12 4v12m0 0 4-4m-4 4-4-4M5 20h14"
-          />
-        </svg>
-      </a>
     </div>
-    <iframe
-      class="document-attachment__preview"
-      src={url}
-      title={`${documentLabel} preview: ${upload.filename}`}
-      loading="lazy"
-    ></iframe>
+    <a
+      class="document-attachment__download"
+      href={url}
+      download={upload.filename}
+      aria-label={`Download ${upload.filename}`}
+    >
+      <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+        <path
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M12 4v12m0 0 4-4m-4 4-4-4M5 20h14"
+        />
+      </svg>
+    </a>
   </div>
 {:else}
   <a class="file-attachment" href={url} target="_blank" rel="noreferrer">

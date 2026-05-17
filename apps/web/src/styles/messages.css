@@ -1150,9 +1150,9 @@
 
 .audio-attachment,
 .document-attachment {
-  width: min(100%, 560px);
+  width: min(100%, 420px);
   border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius);
   background: var(--panel);
   overflow: hidden;
 }
@@ -1177,33 +1177,54 @@
 
 .document-attachment {
   display: grid;
-  grid-template-rows: auto minmax(220px, 360px);
-  background: #0a0c12;
-}
-
-.document-attachment__bar {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 8px 10px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--line);
+  gap: 12px;
+  padding: 10px;
 }
 
-.document-attachment__badge {
+.document-attachment__thumbnail {
+  position: relative;
   display: inline-grid;
   place-items: center;
-  min-width: 38px;
-  height: 26px;
-  padding: 0 8px;
-  border-radius: 7px;
-  background: var(--accent-soft);
+  width: 64px;
+  height: 82px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background:
+    linear-gradient(135deg, transparent 0 76%, var(--panel-3) 76% 100%),
+    linear-gradient(180deg, #fff 0%, #f0f2f7 100%);
   color: var(--accent);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 800;
   letter-spacing: 0;
+  text-decoration: none;
+  box-shadow: 0 8px 18px -16px rgba(0, 0, 0, 0.6);
+}
+
+.document-attachment__thumbnail::before,
+.document-attachment__thumbnail::after {
+  content: "";
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  height: 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 36%, transparent);
+}
+
+.document-attachment__thumbnail::before {
+  top: 48px;
+}
+
+.document-attachment__thumbnail::after {
+  top: 56px;
+}
+
+.document-attachment__meta {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
 }
 
 .document-attachment__title {
@@ -1222,7 +1243,7 @@
   text-underline-offset: 3px;
 }
 
-.document-attachment__bar small {
+.document-attachment__meta small {
   color: var(--muted);
   font-size: 11px;
   white-space: nowrap;
@@ -1244,12 +1265,4 @@
 .document-attachment__download:hover {
   background: var(--panel-2);
   color: var(--text-strong);
-}
-
-.document-attachment__preview {
-  display: block;
-  width: 100%;
-  height: 100%;
-  border: 0;
-  background: white;
 }
