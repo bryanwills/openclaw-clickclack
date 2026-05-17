@@ -368,19 +368,21 @@ FROM direct_reads
 WHERE conversation_id = sqlc.arg(conversation_id)
   AND user_id = sqlc.arg(user_id);
 
--- name: UpsertChannelRead :exec
+-- name: UpsertChannelRead :execrows
 INSERT INTO channel_reads (channel_id, user_id, last_read_seq, last_read_at)
 VALUES (sqlc.arg(channel_id), sqlc.arg(user_id), sqlc.arg(last_read_seq), sqlc.arg(last_read_at))
 ON CONFLICT(channel_id, user_id) DO UPDATE SET
   last_read_seq = excluded.last_read_seq,
-  last_read_at = excluded.last_read_at;
+  last_read_at = excluded.last_read_at
+WHERE excluded.last_read_seq > channel_reads.last_read_seq;
 
--- name: UpsertDirectRead :exec
+-- name: UpsertDirectRead :execrows
 INSERT INTO direct_reads (conversation_id, user_id, last_read_seq, last_read_at)
 VALUES (sqlc.arg(conversation_id), sqlc.arg(user_id), sqlc.arg(last_read_seq), sqlc.arg(last_read_at))
 ON CONFLICT(conversation_id, user_id) DO UPDATE SET
   last_read_seq = excluded.last_read_seq,
-  last_read_at = excluded.last_read_at;
+  last_read_at = excluded.last_read_at
+WHERE excluded.last_read_seq > direct_reads.last_read_seq;
 
 -- name: ListDirectConversations :many
 SELECT dc.id, COALESCE(dc.route_id, '') AS route_id, dc.workspace_id, dc.created_at,

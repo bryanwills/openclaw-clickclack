@@ -49,13 +49,21 @@ func (s *Store) MarkChannelRead(ctx context.Context, channelID, userID string, s
 		return store.ReadReceipt{ScopeID: channelID, UserID: userID, LastReadSeq: current, LastReadAt: currentAt}, store.Event{}, nil
 	}
 	at := now()
-	if err := qtx.UpsertChannelRead(ctx, storedb.UpsertChannelReadParams{
+	rows, err := qtx.UpsertChannelRead(ctx, storedb.UpsertChannelReadParams{
 		ChannelID:   channelID,
 		UserID:      userID,
 		LastReadSeq: seq,
 		LastReadAt:  at,
-	}); err != nil {
+	})
+	if err != nil {
 		return store.ReadReceipt{}, store.Event{}, err
+	}
+	if rows == 0 {
+		storedSeq, storedAt, err := readChannelRead(ctx, qtx, channelID, userID)
+		if err != nil {
+			return store.ReadReceipt{}, store.Event{}, err
+		}
+		return store.ReadReceipt{ScopeID: channelID, UserID: userID, LastReadSeq: storedSeq, LastReadAt: storedAt}, store.Event{}, tx.Commit()
 	}
 	event, err := insertEventWithRecipients(ctx, tx, workspaceID, channelID, "channel.read", &seq, map[string]string{
 		"channel_id": channelID,
@@ -103,13 +111,21 @@ func (s *Store) MarkDirectRead(ctx context.Context, conversationID, userID strin
 		return store.ReadReceipt{ScopeID: conversationID, UserID: userID, LastReadSeq: current, LastReadAt: currentAt}, store.Event{}, nil
 	}
 	at := now()
-	if err := qtx.UpsertDirectRead(ctx, storedb.UpsertDirectReadParams{
+	rows, err := qtx.UpsertDirectRead(ctx, storedb.UpsertDirectReadParams{
 		ConversationID: conversationID,
 		UserID:         userID,
 		LastReadSeq:    seq,
 		LastReadAt:     at,
-	}); err != nil {
+	})
+	if err != nil {
 		return store.ReadReceipt{}, store.Event{}, err
+	}
+	if rows == 0 {
+		storedSeq, storedAt, err := readDirectRead(ctx, qtx, conversationID, userID)
+		if err != nil {
+			return store.ReadReceipt{}, store.Event{}, err
+		}
+		return store.ReadReceipt{ScopeID: conversationID, UserID: userID, LastReadSeq: storedSeq, LastReadAt: storedAt}, store.Event{}, tx.Commit()
 	}
 	event, err := insertEventWithRecipients(ctx, tx, workspaceID, "", "dm.read", &seq, map[string]string{
 		"direct_conversation_id": conversationID,

@@ -2345,12 +2345,13 @@ func (q *Queries) UpdateWorkspaceMemberRole(ctx context.Context, arg UpdateWorks
 	return err
 }
 
-const upsertChannelRead = `-- name: UpsertChannelRead :exec
+const upsertChannelRead = `-- name: UpsertChannelRead :execrows
 INSERT INTO channel_reads (channel_id, user_id, last_read_seq, last_read_at)
 VALUES (?1, ?2, ?3, ?4)
 ON CONFLICT(channel_id, user_id) DO UPDATE SET
   last_read_seq = excluded.last_read_seq,
   last_read_at = excluded.last_read_at
+WHERE excluded.last_read_seq > channel_reads.last_read_seq
 `
 
 type UpsertChannelReadParams struct {
@@ -2360,22 +2361,26 @@ type UpsertChannelReadParams struct {
 	LastReadAt  string `json:"last_read_at"`
 }
 
-func (q *Queries) UpsertChannelRead(ctx context.Context, arg UpsertChannelReadParams) error {
-	_, err := q.db.ExecContext(ctx, upsertChannelRead,
+func (q *Queries) UpsertChannelRead(ctx context.Context, arg UpsertChannelReadParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, upsertChannelRead,
 		arg.ChannelID,
 		arg.UserID,
 		arg.LastReadSeq,
 		arg.LastReadAt,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
-const upsertDirectRead = `-- name: UpsertDirectRead :exec
+const upsertDirectRead = `-- name: UpsertDirectRead :execrows
 INSERT INTO direct_reads (conversation_id, user_id, last_read_seq, last_read_at)
 VALUES (?1, ?2, ?3, ?4)
 ON CONFLICT(conversation_id, user_id) DO UPDATE SET
   last_read_seq = excluded.last_read_seq,
   last_read_at = excluded.last_read_at
+WHERE excluded.last_read_seq > direct_reads.last_read_seq
 `
 
 type UpsertDirectReadParams struct {
@@ -2385,14 +2390,17 @@ type UpsertDirectReadParams struct {
 	LastReadAt     string `json:"last_read_at"`
 }
 
-func (q *Queries) UpsertDirectRead(ctx context.Context, arg UpsertDirectReadParams) error {
-	_, err := q.db.ExecContext(ctx, upsertDirectRead,
+func (q *Queries) UpsertDirectRead(ctx context.Context, arg UpsertDirectReadParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, upsertDirectRead,
 		arg.ConversationID,
 		arg.UserID,
 		arg.LastReadSeq,
 		arg.LastReadAt,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const upsertGuestWorkspaceMemberRole = `-- name: UpsertGuestWorkspaceMemberRole :exec

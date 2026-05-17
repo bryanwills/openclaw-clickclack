@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/openclaw/clickclack/apps/api/internal/store"
+	"github.com/openclaw/clickclack/apps/api/internal/store/sqlite/storedb"
 )
 
 func TestMarkChannelReadAndUnreadCounts(t *testing.T) {
@@ -231,5 +232,80 @@ func TestMarkDirectReadAndUnreadCounts(t *testing.T) {
 	}
 	if _, _, err := st.MarkDirectRead(ctx, "dm_missing", owner.ID, 1); err == nil {
 		t.Fatal("expected missing direct read to be rejected")
+	}
+}
+
+func TestReadReceiptUpsertsAreMonotonic(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	st := newTestStore(t)
+	owner, err := st.EnsureBootstrap(ctx, "Owner", "owner@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: "Other", Email: "other-monotonic@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaces, err := st.ListWorkspaces(ctx, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace := workspaces[0]
+	if err := st.AddWorkspaceMember(ctx, workspace.ID, other.ID, "member"); err != nil {
+		t.Fatal(err)
+	}
+	channels, err := st.ListChannels(ctx, workspace.ID, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	channel := channels[0]
+	dm, err := st.CreateDirectConversation(ctx, store.CreateDirectConversationInput{WorkspaceID: workspace.ID, UserID: owner.ID, MemberIDs: []string{other.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := st.q.UpsertChannelRead(ctx, storedb.UpsertChannelReadParams{ChannelID: channel.ID, UserID: owner.ID, LastReadSeq: 5, LastReadAt: "newer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rows != 1 {
+		t.Fatalf("expected channel read insert to affect 1 row, got %d", rows)
+	}
+	rows, err = st.q.UpsertChannelRead(ctx, storedb.UpsertChannelReadParams{ChannelID: channel.ID, UserID: owner.ID, LastReadSeq: 3, LastReadAt: "older"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rows != 0 {
+		t.Fatalf("expected regressing channel read to affect 0 rows, got %d", rows)
+	}
+	seq, at, err := readChannelRead(ctx, st.q, channel.ID, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if seq != 5 || at != "newer" {
+		t.Fatalf("channel read regressed: seq=%d at=%q", seq, at)
+	}
+
+	rows, err = st.q.UpsertDirectRead(ctx, storedb.UpsertDirectReadParams{ConversationID: dm.ID, UserID: owner.ID, LastReadSeq: 4, LastReadAt: "newer-dm"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rows != 1 {
+		t.Fatalf("expected direct read insert to affect 1 row, got %d", rows)
+	}
+	rows, err = st.q.UpsertDirectRead(ctx, storedb.UpsertDirectReadParams{ConversationID: dm.ID, UserID: owner.ID, LastReadSeq: 2, LastReadAt: "older-dm"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rows != 0 {
+		t.Fatalf("expected regressing direct read to affect 0 rows, got %d", rows)
+	}
+	seq, at, err = readDirectRead(ctx, st.q, dm.ID, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if seq != 4 || at != "newer-dm" {
+		t.Fatalf("direct read regressed: seq=%d at=%q", seq, at)
 	}
 }
