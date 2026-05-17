@@ -6,7 +6,7 @@
   "compatibility_date": "2026-05-17",
   "workers_dev": true,
   "vars": {
-    "CLICKCLACK_PUBLIC_URL": "https://clickclack.services-91b.workers.dev",
+    "CLICKCLACK_PUBLIC_URL": "https://app.clickclack.chat",
     "CLICKCLACK_GITHUB_ALLOWED_ORG": "openclaw",
     "CLICKCLACK_UPLOADS": "r2://clickclack-uploads/prod",
     "CLICKCLACK_R2_ACCOUNT_ID": "91b59577e757131d68d55a471fe32aca"
