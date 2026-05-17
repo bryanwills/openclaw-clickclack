@@ -701,6 +701,13 @@ func TestHTTPErrorPathsAndSPA(t *testing.T) {
 	if auth.User.DisplayName != "Auth User" || auth.Session.Token == "" {
 		t.Fatalf("unexpected auth payload: %#v", auth)
 	}
+	if _, err := st.UpdateNotificationSettings(ctx, store.UpdateNotificationSettingsInput{
+		UserID:          auth.User.ID,
+		PushoverEnabled: true,
+		PushoverUserKey: "abcdefghijklmnopqrstuvwxyz1234",
+	}); err != nil {
+		t.Fatal(err)
+	}
 	req, err = http.NewRequest(http.MethodGet, server.URL+"/api/me", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -714,6 +721,15 @@ func TestHTTPErrorPathsAndSPA(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		t.Fatalf("expected bearer auth success, got %s %s", resp.Status, string(body))
+	}
+	var sessionMe struct {
+		User store.User `json:"user"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&sessionMe); err != nil {
+		t.Fatal(err)
+	}
+	if sessionMe.User.NotificationSettings == nil || !sessionMe.User.NotificationSettings.PushoverEnabled || sessionMe.User.NotificationSettings.PushoverUserKey == "" {
+		t.Fatalf("expected bearer /me notification settings, got %#v", sessionMe.User.NotificationSettings)
 	}
 
 	bot, botToken, err := st.CreateBot(context.Background(), store.CreateBotInput{

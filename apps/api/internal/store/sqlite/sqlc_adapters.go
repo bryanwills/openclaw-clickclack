@@ -69,7 +69,12 @@ func storeUserFromGetUser(row storedb.GetUserRow) store.User {
 }
 
 func storeUserFromGetSessionUser(row storedb.GetSessionUserRow) store.User {
-	return storeUserFromDB(row.ID, row.Kind, row.OwnerUserID, row.DisplayName, row.Handle, row.AvatarUrl, row.CreatedAt)
+	user := storeUserFromDB(row.ID, row.Kind, row.OwnerUserID, row.DisplayName, row.Handle, row.AvatarUrl, row.CreatedAt)
+	user.NotificationSettings = &store.NotificationSettings{
+		PushoverEnabled: row.PushoverEnabled != 0,
+		PushoverUserKey: row.PushoverUserKey,
+	}
+	return user
 }
 
 func storeUserFromIdentityEmail(row storedb.GetUserByIdentityEmailRow) store.User {

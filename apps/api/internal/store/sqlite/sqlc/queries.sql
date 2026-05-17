@@ -29,9 +29,12 @@ WHERE id = sqlc.arg(id)
   );
 
 -- name: GetSessionUser :one
-SELECT u.id, u.kind, u.owner_user_id, u.display_name, u.handle, u.avatar_url, u.created_at, s.expires_at AS session_expires_at
+SELECT u.id, u.kind, u.owner_user_id, u.display_name, u.handle, u.avatar_url, u.created_at, s.expires_at AS session_expires_at,
+       COALESCE(uns.pushover_enabled, 0) AS pushover_enabled,
+       COALESCE(uns.pushover_user_key, '') AS pushover_user_key
 FROM sessions s
 JOIN users u ON u.id = s.user_id
+LEFT JOIN user_notification_settings uns ON uns.user_id = u.id
 WHERE s.token_hash = sqlc.arg(token_hash)
   AND s.revoked_at IS NULL;
 

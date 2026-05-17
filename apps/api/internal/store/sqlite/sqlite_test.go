@@ -77,12 +77,22 @@ func TestStoreValidationAndAdminHelpers(t *testing.T) {
 	if magicUser.DisplayName != "Magic User" || session.Token == "" {
 		t.Fatalf("unexpected magic auth result: %#v %#v", magicUser, session)
 	}
+	if _, err := st.UpdateNotificationSettings(ctx, store.UpdateNotificationSettingsInput{
+		UserID:          magicUser.ID,
+		PushoverEnabled: true,
+		PushoverUserKey: "abcdefghijklmnopqrstuvwxyz1234",
+	}); err != nil {
+		t.Fatal(err)
+	}
 	sessionUser, err := st.GetSessionUser(ctx, session.Token)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if sessionUser.ID != magicUser.ID {
 		t.Fatalf("expected session user %s, got %s", magicUser.ID, sessionUser.ID)
+	}
+	if sessionUser.NotificationSettings == nil || !sessionUser.NotificationSettings.PushoverEnabled || sessionUser.NotificationSettings.PushoverUserKey == "" {
+		t.Fatalf("expected session user notification settings, got %#v", sessionUser.NotificationSettings)
 	}
 	if err := st.AddWorkspaceMember(ctx, workspace.ID, magicUser.ID, "member"); err != nil {
 		t.Fatal(err)

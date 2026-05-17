@@ -761,9 +761,12 @@ func (q *Queries) GetNotificationSettings(ctx context.Context, userID string) (G
 }
 
 const getSessionUser = `-- name: GetSessionUser :one
-SELECT u.id, u.kind, u.owner_user_id, u.display_name, u.handle, u.avatar_url, u.created_at, s.expires_at AS session_expires_at
+SELECT u.id, u.kind, u.owner_user_id, u.display_name, u.handle, u.avatar_url, u.created_at, s.expires_at AS session_expires_at,
+       COALESCE(uns.pushover_enabled, 0) AS pushover_enabled,
+       COALESCE(uns.pushover_user_key, '') AS pushover_user_key
 FROM sessions s
 JOIN users u ON u.id = s.user_id
+LEFT JOIN user_notification_settings uns ON uns.user_id = u.id
 WHERE s.token_hash = $1
   AND s.revoked_at IS NULL
 `
@@ -777,6 +780,8 @@ type GetSessionUserRow struct {
 	AvatarUrl        string         `json:"avatar_url"`
 	CreatedAt        string         `json:"created_at"`
 	SessionExpiresAt string         `json:"session_expires_at"`
+	PushoverEnabled  int64          `json:"pushover_enabled"`
+	PushoverUserKey  string         `json:"pushover_user_key"`
 }
 
 func (q *Queries) GetSessionUser(ctx context.Context, tokenHash string) (GetSessionUserRow, error) {
@@ -791,6 +796,8 @@ func (q *Queries) GetSessionUser(ctx context.Context, tokenHash string) (GetSess
 		&i.AvatarUrl,
 		&i.CreatedAt,
 		&i.SessionExpiresAt,
+		&i.PushoverEnabled,
+		&i.PushoverUserKey,
 	)
 	return i, err
 }
