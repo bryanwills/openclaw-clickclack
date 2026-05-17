@@ -32,6 +32,8 @@ func validWorkspaceRole(role string) bool {
 func roleRank(role string) int {
 	switch role {
 	case store.WorkspaceRoleOwner:
+		return 5
+	case store.WorkspaceRoleBot:
 		return 4
 	case store.WorkspaceRoleModerator:
 		return 3

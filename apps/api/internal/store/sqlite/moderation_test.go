@@ -44,6 +44,10 @@ func TestGuestWaitingRoomModeration(t *testing.T) {
 	if _, err := st.EnsureDefaultGuestWorkspaceMember(ctx, peerModerator.ID, store.WorkspaceRoleModerator); err != nil {
 		t.Fatal(err)
 	}
+	adminBot, _, err := st.CreateBot(ctx, store.CreateBotInput{WorkspaceID: workspace.ID, DisplayName: "Admin Bot", Scopes: []string{"bot:admin"}})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	guestChannels, err := st.ListChannels(ctx, workspace.ID, guest.ID)
 	if err != nil {
@@ -132,6 +136,9 @@ func TestGuestWaitingRoomModeration(t *testing.T) {
 	blocked := true
 	if _, _, err := st.UpdateMemberModeration(ctx, store.UpdateMemberModerationInput{WorkspaceID: workspace.ID, ActorUserID: moderator.ID, TargetUserID: peerModerator.ID, Blocked: &blocked}); err == nil {
 		t.Fatal("expected peer moderator moderation to fail")
+	}
+	if _, _, err := st.UpdateMemberModeration(ctx, store.UpdateMemberModerationInput{WorkspaceID: workspace.ID, ActorUserID: moderator.ID, TargetUserID: adminBot.ID, Blocked: &blocked}); err == nil {
+		t.Fatal("expected bot moderation by moderator to fail")
 	}
 	if _, _, err := st.UpdateMemberModeration(ctx, store.UpdateMemberModerationInput{WorkspaceID: workspace.ID, ActorUserID: moderator.ID, TargetUserID: guest.ID, Role: "blocked"}); err == nil {
 		t.Fatal("expected invalid moderation role to fail")
