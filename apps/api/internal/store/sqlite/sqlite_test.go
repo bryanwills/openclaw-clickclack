@@ -104,6 +104,17 @@ func TestStoreValidationAndAdminHelpers(t *testing.T) {
 	if _, _, err := st.CreateBot(ctx, store.CreateBotInput{WorkspaceID: workspace.ID, DisplayName: "Duplicate Handle", Handle: "owner-bot"}); err == nil {
 		t.Fatal("expected duplicate bot handle rejection")
 	}
+	upload, err := st.CreateUpload(ctx, store.CreateUploadInput{
+		WorkspaceID: workspace.ID,
+		OwnerID:     owner.ID,
+		Filename:    "secret.txt",
+		ContentType: "text/plain",
+		ByteSize:    6,
+		StoragePath: "/tmp/clickclack-secret-upload",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	var exported bytes.Buffer
 	if err := st.ExportJSON(ctx, &exported); err != nil {
 		t.Fatal(err)
@@ -118,8 +129,25 @@ func TestStoreValidationAndAdminHelpers(t *testing.T) {
 	if string(exported.Bytes()) == "" || bytes.Contains(exported.Bytes(), []byte(link.Token)) || bytes.Contains(exported.Bytes(), []byte(session.Token)) {
 		t.Fatalf("export leaked bearer token: %s", exported.String())
 	}
+	for _, secret := range []string{tokenHash(link.Token), tokenHash(session.Token), tokenHash(botToken.Token), upload.StoragePath} {
+		if bytes.Contains(exported.Bytes(), []byte(secret)) {
+			t.Fatalf("export leaked sensitive stored value %q: %s", secret, exported.String())
+		}
+	}
+	if exportBody["auth_magic_links"][0]["token"] != "[redacted]" || exportBody["auth_magic_links"][0]["token_hash"] != "[redacted]" {
+		t.Fatalf("magic link export was not redacted: %#v", exportBody["auth_magic_links"][0])
+	}
+	if exportBody["sessions"][0]["token"] != "[redacted]" || exportBody["sessions"][0]["token_hash"] != "[redacted]" {
+		t.Fatalf("session export was not redacted: %#v", exportBody["sessions"][0])
+	}
 	if len(exportBody["bot_tokens"]) == 0 {
 		t.Fatalf("expected bot_tokens in export, got keys %#v", exportBody)
+	}
+	if exportBody["bot_tokens"][0]["token_hash"] != "[redacted]" {
+		t.Fatalf("bot token export was not redacted: %#v", exportBody["bot_tokens"][0])
+	}
+	if exportBody["uploads"][0]["storage_path"] != "[redacted]" {
+		t.Fatalf("upload export was not redacted: %#v", exportBody["uploads"][0])
 	}
 	if err := st.Backup(ctx, filepath.Join(t.TempDir(), "backup.db")); err != nil {
 		t.Fatal(err)

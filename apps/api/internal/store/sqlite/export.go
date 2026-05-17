@@ -71,5 +71,14 @@ func rowsToMaps(table string, rows *sql.Rows) ([]map[string]any, error) {
 }
 
 func shouldRedactExportColumn(table, column string) bool {
-	return column == "token" && (table == "auth_magic_links" || table == "sessions")
+	switch table {
+	case "auth_magic_links", "sessions":
+		return column == "token" || column == "token_hash"
+	case "bot_tokens":
+		return column == "token_hash"
+	case "uploads":
+		return column == "storage_path"
+	default:
+		return false
+	}
 }
