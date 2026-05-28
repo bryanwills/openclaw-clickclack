@@ -260,6 +260,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workspaces/{workspace_id}/slash-commands": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listSlashCommands"];
+        put?: never;
+        post: operations["createSlashCommand"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/slash-commands/{command_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["revokeSlashCommand"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/channels/{channel_id}": {
         parameters: {
             query?: never;
@@ -686,6 +718,32 @@ export interface components {
             config?: {
                 [key: string]: unknown;
             };
+        };
+        SlashCommand: {
+            id: string;
+            workspace_id: string;
+            app_installation_id?: string;
+            /** @description Slash command name, normalized with a leading slash. */
+            command: string;
+            description: string;
+            /** Format: uri */
+            callback_url: string;
+            /** @description One-time callback signing secret. Present only immediately after registration. */
+            signing_secret?: string;
+            bot_user_id: string;
+            created_by?: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            revoked_at?: string;
+        };
+        CreateSlashCommandRequest: {
+            app_installation_id?: string;
+            command: string;
+            description?: string;
+            /** Format: uri */
+            callback_url: string;
+            bot_user_id: string;
         };
         NotificationSettings: {
             pushover_enabled: boolean;
@@ -1405,6 +1463,70 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Revoked app installation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listSlashCommands: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: components["parameters"]["workspace_id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active registered slash commands */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    createSlashCommand: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: components["parameters"]["workspace_id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSlashCommandRequest"];
+            };
+        };
+        responses: {
+            /** @description Registered slash command and one-time signing secret */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    revokeSlashCommand: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                command_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked slash command */
             200: {
                 headers: {
                     [name: string]: unknown;

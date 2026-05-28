@@ -62,7 +62,50 @@ Mattermost's full incoming webhook schema (`username`, `icon_emoji`,
 `attachments`, etc.) is not honored — only `text`. Field names match so
 existing senders don't crash.
 
-## Slash command callback
+## Registered slash commands
+
+Use registered slash commands when an app owns the command and needs a signed
+callback:
+
+```http
+POST /api/workspaces/{workspace_id}/slash-commands
+Content-Type: application/json
+
+{
+  "app_installation_id": "app_...",
+  "command": "/deploy",
+  "description": "Deploy an environment",
+  "callback_url": "https://example.com/clickclack/deploy",
+  "bot_user_id": "usr_..."
+}
+```
+
+Behavior:
+
+- Requires a human session. Bot tokens cannot create, list, or revoke slash
+  command registrations.
+- `bot_user_id` must be a bot member of the same workspace.
+- `command` is normalized to a lowercase leading-slash command such as
+  `/deploy`.
+- `POST /api/workspaces/{workspace_id}/slash-commands` returns a one-time
+  `signing_secret`; list calls redact it.
+- Invoking the command through `/api/hooks/slash/{channel_id}` sends JSON to
+  `callback_url` with `X-ClickClack-Timestamp` and
+  `X-ClickClack-Signature: sha256=<hex hmac>`, where the signed string is
+  `<timestamp>.<raw-json-body>`.
+- If the callback returns `{"response_type":"in_channel","text":"..."}`, the
+  server posts that text as the command's bot user. `response_type` defaults to
+  `in_channel`.
+
+The callback payload includes `command_id`, `command`, `text`, `workspace_id`,
+`channel_id`, `user_id`, `bot_user_id`, and `trigger_id`. Each invocation is
+stored with callback status/body/error metadata for later audit.
+
+The TypeScript SDK exposes this as `client.slashCommands.list(workspaceId)`,
+`client.slashCommands.create(workspaceId, input)`, and
+`client.slashCommands.revoke(id)`.
+
+## Compatibility slash command callback
 
 ```http
 POST /api/hooks/slash/{channel_id}
@@ -85,9 +128,10 @@ Behavior:
 }
 ```
 
-This is intentionally thin: there is no command registry, no permission
-matrix, no ephemeral response mode. Bots that need richer behavior should
-post directly through `/api/channels/{id}/messages` with the SDK.
+If the posted `command` is not registered, ClickClack falls back to the legacy
+Mattermost-shaped behavior above and posts `<command> <text>` directly as the
+caller. This keeps simple scripts working while registered commands handle real
+app callbacks.
 
 ## What is intentionally missing
 

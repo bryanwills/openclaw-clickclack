@@ -68,6 +68,7 @@ See [features/auth.md](features/auth.md).
 | `workspaces`  | `list`, `create` |
 | `bots`        | `list`, `create`, `listTokens`, `createToken`, `revokeToken` |
 | `apps`        | `list`, `install`, `revoke` |
+| `slashCommands` | `list`, `create`, `revoke` |
 | `channels`    | `list`, `create`, `update`, `messages`, `sendMessage`, `markRead` |
 | `messages`    | `get`, `update`, `delete` |
 | `threads`     | `get`, `reply` |

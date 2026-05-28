@@ -31,6 +31,7 @@ The server resolves callers in this order (see
 | Moderation    | `/api/workspaces/{id}/moderation/members` | [moderation](../features/moderation.md) |
 | Bots          | `/api/workspaces/{id}/bots`, `/api/bots/{id}/tokens`, `/api/bot-tokens/{id}/revoke` | [bots](../features/bots.md) |
 | App installs  | `/api/workspaces/{id}/app-installations`, `/api/app-installations/{id}/revoke` | [integrations](../features/integrations.md) |
+| Slash commands | `/api/workspaces/{id}/slash-commands`, `/api/slash-commands/{id}/revoke`, `/api/hooks/slash/{channel}` | [integrations](../features/integrations.md) |
 | Channels      | `/api/workspaces/{id}/channels`, `/api/channels/{id}` | [workspaces](../features/workspaces.md) |
 | Messages      | `/api/channels/{id}/messages`, `/api/messages/{id}` | [messages](../features/messages.md) |
 | Threads       | `/api/messages/{id}/thread`, `/api/messages/{id}/thread/replies` | [threads](../features/threads.md) |
@@ -40,7 +41,7 @@ The server resolves callers in this order (see
 | Search        | `/api/search` | [search](../features/search.md) |
 | Uploads       | `/api/uploads`, `/api/messages/{id}/attachments` | [uploads](../features/uploads.md) |
 | DMs           | `/api/dms`, `/api/dms/{id}/messages` | [dms](../features/dms.md) |
-| Integrations  | `/api/hooks/mattermost/{channel}`, `/api/hooks/slash/{channel}` | [integrations](../features/integrations.md) |
+| Integrations  | `/api/hooks/mattermost/{channel}` | [integrations](../features/integrations.md) |
 
 ## Conventions
 

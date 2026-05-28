@@ -1,7 +1,13 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io"
 	"mime"
@@ -439,7 +445,7 @@ func (s *Server) createBot(w http.ResponseWriter, r *http.Request) {
 		TokenName   string   `json:"token_name"`
 		Scopes      []string `json:"scopes"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -484,7 +490,7 @@ func (s *Server) createBotToken(w http.ResponseWriter, r *http.Request) {
 		Name   string   `json:"name"`
 		Scopes []string `json:"scopes"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -541,7 +547,7 @@ func (s *Server) createAppInstallation(w http.ResponseWriter, r *http.Request) {
 		BotUserID   string         `json:"bot_user_id"`
 		Config      map[string]any `json:"config"`
 	}
-	if err := readJSON(r, &body); err != nil {
+	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -568,6 +574,67 @@ func (s *Server) revokeAppInstallation(w http.ResponseWriter, r *http.Request) {
 	}
 	installation, err := s.store.RevokeAppInstallation(r.Context(), chi.URLParam(r, "installation_id"), act.user.ID)
 	writeResult(w, map[string]any{"app_installation": installation}, err)
+}
+
+func (s *Server) listSlashCommands(w http.ResponseWriter, r *http.Request) {
+	act, err := s.currentActor(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if act.botTokenID != "" {
+		writeError(w, http.StatusForbidden, errors.New("bot tokens cannot manage slash commands"))
+		return
+	}
+	commands, err := s.store.ListSlashCommands(r.Context(), chi.URLParam(r, "workspace_id"), act.user.ID)
+	writeResult(w, map[string]any{"slash_commands": commands}, err)
+}
+
+func (s *Server) createSlashCommand(w http.ResponseWriter, r *http.Request) {
+	act, err := s.currentActor(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if act.botTokenID != "" {
+		writeError(w, http.StatusForbidden, errors.New("bot tokens cannot create slash commands"))
+		return
+	}
+	var body struct {
+		AppInstallationID string `json:"app_installation_id"`
+		Command           string `json:"command"`
+		Description       string `json:"description"`
+		CallbackURL       string `json:"callback_url"`
+		BotUserID         string `json:"bot_user_id"`
+	}
+	if err := readJSON(w, r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	command, err := s.store.CreateSlashCommand(r.Context(), store.CreateSlashCommandInput{
+		WorkspaceID:       chi.URLParam(r, "workspace_id"),
+		AppInstallationID: body.AppInstallationID,
+		Command:           body.Command,
+		Description:       body.Description,
+		CallbackURL:       body.CallbackURL,
+		BotUserID:         body.BotUserID,
+		CreatedBy:         act.user.ID,
+	})
+	writeResultStatus(w, http.StatusCreated, map[string]any{"slash_command": command}, err)
+}
+
+func (s *Server) revokeSlashCommand(w http.ResponseWriter, r *http.Request) {
+	act, err := s.currentActor(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if act.botTokenID != "" {
+		writeError(w, http.StatusForbidden, errors.New("bot tokens cannot revoke slash commands"))
+		return
+	}
+	command, err := s.store.RevokeSlashCommand(r.Context(), chi.URLParam(r, "command_id"), act.user.ID)
+	writeResult(w, map[string]any{"slash_command": command}, err)
 }
 
 func (s *Server) listDirectConversations(w http.ResponseWriter, r *http.Request) {
@@ -718,6 +785,15 @@ func (s *Server) slashCommand(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("slash command text is required"))
 		return
 	}
+	registered, err := s.store.GetSlashCommandForChannel(r.Context(), chi.URLParam(r, "channel_id"), command, act.user.ID)
+	if err == nil {
+		s.invokeRegisteredSlashCommand(w, r, act, registered, text)
+		return
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
 	body := strings.TrimSpace(command + " " + text)
 	message, event, err := s.store.CreateMessage(r.Context(), store.CreateMessageInput{ChannelID: chi.URLParam(r, "channel_id"), AuthorID: act.user.ID, Body: body})
 	if err == nil {
@@ -730,4 +806,112 @@ func (s *Server) slashCommand(w http.ResponseWriter, r *http.Request) {
 		"message":       message,
 		"event":         event,
 	}, err)
+}
+
+func (s *Server) invokeRegisteredSlashCommand(w http.ResponseWriter, r *http.Request, act actor, command store.SlashCommand, text string) {
+	payload := map[string]any{
+		"command_id":   command.ID,
+		"command":      command.Command,
+		"text":         text,
+		"workspace_id": command.WorkspaceID,
+		"channel_id":   chi.URLParam(r, "channel_id"),
+		"user_id":      act.user.ID,
+		"bot_user_id":  command.BotUserID,
+	}
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	invocation, err := s.store.CreateSlashCommandInvocation(r.Context(), store.CreateSlashCommandInvocationInput{
+		CommandID:   command.ID,
+		WorkspaceID: command.WorkspaceID,
+		ChannelID:   chi.URLParam(r, "channel_id"),
+		UserID:      act.user.ID,
+		Text:        text,
+		PayloadJSON: string(payloadJSON),
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	payload["trigger_id"] = invocation.ID
+	payloadJSON, err = json.Marshal(payload)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	status, responseBody, callbackErr := postSlashCallback(r.Context(), command, payloadJSON)
+	invokeErr := ""
+	if callbackErr != nil {
+		invokeErr = callbackErr.Error()
+	}
+	_, _ = s.store.CompleteSlashCommandInvocation(r.Context(), invocation.ID, status, responseBody, invokeErr)
+	if callbackErr != nil {
+		writeError(w, http.StatusBadGateway, callbackErr)
+		return
+	}
+	var callback struct {
+		ResponseType string `json:"response_type"`
+		Text         string `json:"text"`
+	}
+	if err := json.Unmarshal([]byte(responseBody), &callback); err != nil {
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	callback.Text = strings.TrimSpace(callback.Text)
+	if callback.ResponseType == "" {
+		callback.ResponseType = "in_channel"
+	}
+	var message store.Message
+	var event store.Event
+	if callback.Text != "" && callback.ResponseType == "in_channel" {
+		message, event, err = s.store.CreateMessage(r.Context(), store.CreateMessageInput{ChannelID: chi.URLParam(r, "channel_id"), AuthorID: command.BotUserID, Body: callback.Text})
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		s.hub.Publish(event)
+		s.notifyMessageCreated(r.Context(), message)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"response_type": callback.ResponseType,
+		"text":          callback.Text,
+		"message":       message,
+		"event":         event,
+		"invocation":    invocation,
+	})
+}
+
+func postSlashCallback(ctx context.Context, command store.SlashCommand, payload []byte) (int, string, error) {
+	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, command.CallbackURL, bytes.NewReader(payload))
+	if err != nil {
+		return 0, "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-ClickClack-Timestamp", timestamp)
+	req.Header.Set("X-ClickClack-Signature", signSlashCallback(command.SigningSecret, timestamp, payload))
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, "", err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	if err != nil {
+		return resp.StatusCode, "", err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return resp.StatusCode, string(body), errors.New("slash command callback failed")
+	}
+	return resp.StatusCode, string(body), nil
+}
+
+func signSlashCallback(secret, timestamp string, payload []byte) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(timestamp))
+	mac.Write([]byte("."))
+	mac.Write(payload)
+	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
 }

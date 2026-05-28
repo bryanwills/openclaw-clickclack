@@ -302,6 +302,39 @@ paths:
       responses:
         "200":
           description: Revoked app installation
+  /api/workspaces/{workspace_id}/slash-commands:
+    get:
+      operationId: listSlashCommands
+      parameters:
+        - $ref: "#/components/parameters/workspace_id"
+      responses:
+        "200":
+          description: Active registered slash commands
+    post:
+      operationId: createSlashCommand
+      parameters:
+        - $ref: "#/components/parameters/workspace_id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSlashCommandRequest"
+      responses:
+        "201":
+          description: Registered slash command and one-time signing secret
+  /api/slash-commands/{command_id}/revoke:
+    post:
+      operationId: revokeSlashCommand
+      parameters:
+        - name: command_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Revoked slash command
   /api/channels/{channel_id}:
     patch:
       operationId: updateChannel
@@ -900,6 +933,53 @@ components:
         config:
           type: object
           additionalProperties: true
+    SlashCommand:
+      type: object
+      required: [id, workspace_id, command, description, callback_url, bot_user_id, created_at]
+      properties:
+        id:
+          type: string
+        workspace_id:
+          type: string
+        app_installation_id:
+          type: string
+        command:
+          type: string
+          description: Slash command name, normalized with a leading slash.
+        description:
+          type: string
+        callback_url:
+          type: string
+          format: uri
+        signing_secret:
+          type: string
+          description: One-time callback signing secret. Present only immediately after registration.
+        bot_user_id:
+          type: string
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        revoked_at:
+          type: string
+          format: date-time
+    CreateSlashCommandRequest:
+      type: object
+      required: [command, callback_url, bot_user_id]
+      properties:
+        app_installation_id:
+          type: string
+        command:
+          type: string
+        description:
+          type: string
+          maxLength: 500
+        callback_url:
+          type: string
+          format: uri
+        bot_user_id:
+          type: string
     NotificationSettings:
       type: object
       required: [pushover_enabled, pushover_user_key]

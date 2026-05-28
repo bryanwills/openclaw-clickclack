@@ -864,6 +864,61 @@ func TestHTTPErrorPathsAndSPA(t *testing.T) {
 	if len(listedInstalls.AppInstallations) != 1 || listedInstalls.AppInstallations[0].ID != createdInstall.AppInstallation.ID {
 		t.Fatalf("expected active app installation in list, got %#v", listedInstalls.AppInstallations)
 	}
+	var signingSecret string
+	var callbackPayload map[string]any
+	callbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		timestamp := r.Header.Get("X-ClickClack-Timestamp")
+		if timestamp == "" || r.Header.Get("X-ClickClack-Signature") != signSlashCallback(signingSecret, timestamp, body) {
+			t.Fatalf("callback signature mismatch: timestamp=%q signature=%q body=%s", timestamp, r.Header.Get("X-ClickClack-Signature"), string(body))
+		}
+		if err := json.Unmarshal(body, &callbackPayload); err != nil {
+			t.Fatal(err)
+		}
+		writeJSON(w, http.StatusOK, map[string]string{
+			"response_type": "in_channel",
+			"text":          "deployed " + strings.TrimSpace(callbackPayload["text"].(string)),
+		})
+	}))
+	defer callbackServer.Close()
+	registeredCommand := postJSONAsUser[struct {
+		SlashCommand store.SlashCommand `json:"slash_command"`
+	}](t, owner.ID, server.URL+"/api/workspaces/"+workspace.ID+"/slash-commands", map[string]any{
+		"app_installation_id": createdInstall.AppInstallation.ID,
+		"command":             "/deploy",
+		"description":         "Deploy something",
+		"callback_url":        callbackServer.URL,
+		"bot_user_id":         createdBot.Bot.ID,
+	})
+	signingSecret = registeredCommand.SlashCommand.SigningSecret
+	if signingSecret == "" || registeredCommand.SlashCommand.Command != "/deploy" {
+		t.Fatalf("unexpected registered slash command: %#v", registeredCommand.SlashCommand)
+	}
+	listedCommands := getJSONAsUser[struct {
+		SlashCommands []store.SlashCommand `json:"slash_commands"`
+	}](t, owner.ID, server.URL+"/api/workspaces/"+workspace.ID+"/slash-commands")
+	if len(listedCommands.SlashCommands) != 1 || listedCommands.SlashCommands[0].SigningSecret != "" {
+		t.Fatalf("expected one redacted slash command, got %#v", listedCommands.SlashCommands)
+	}
+	signedSlash := postForm[struct {
+		Text    string        `json:"text"`
+		Message store.Message `json:"message"`
+	}](t, server.URL+"/api/hooks/slash/"+channel.ID, url.Values{"command": {"/deploy"}, "text": {"prod"}})
+	if signedSlash.Text != "deployed prod" || signedSlash.Message.AuthorID != createdBot.Bot.ID {
+		t.Fatalf("unexpected registered slash response: %#v", signedSlash)
+	}
+	if callbackPayload["trigger_id"] == "" || callbackPayload["channel_id"] != channel.ID {
+		t.Fatalf("unexpected callback payload: %#v", callbackPayload)
+	}
+	revokedCommand := postJSONAsUser[struct {
+		SlashCommand store.SlashCommand `json:"slash_command"`
+	}](t, owner.ID, server.URL+"/api/slash-commands/"+registeredCommand.SlashCommand.ID+"/revoke", map[string]any{})
+	if revokedCommand.SlashCommand.RevokedAt == nil {
+		t.Fatalf("expected revoked_at on slash command, got %#v", revokedCommand.SlashCommand)
+	}
 	revokedInstall := postJSONAsUser[struct {
 		AppInstallation store.AppInstallation `json:"app_installation"`
 	}](t, owner.ID, server.URL+"/api/app-installations/"+createdInstall.AppInstallation.ID+"/revoke", map[string]any{})

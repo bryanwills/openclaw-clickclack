@@ -41,6 +41,20 @@ export type AppInstallation = {
 	revoked_at?: string;
 };
 
+export type SlashCommand = {
+	id: string;
+	workspace_id: string;
+	app_installation_id?: string;
+	command: string;
+	description: string;
+	callback_url: string;
+	signing_secret?: string;
+	bot_user_id: string;
+	created_by?: string;
+	created_at: string;
+	revoked_at?: string;
+};
+
 export type BotEventHandler = (
   event: RealtimeEvent,
   client: ClickClackClient,
@@ -326,6 +340,44 @@ export class ClickClackClient {
         },
       );
       return data.app_installation;
+    },
+  };
+
+  slashCommands = {
+    list: async (workspaceId: string): Promise<SlashCommand[]> => {
+      const data = await this.request<{ slash_commands: SlashCommand[] }>(
+        `/api/workspaces/${workspaceId}/slash-commands`,
+      );
+      return data.slash_commands;
+    },
+    create: async (
+      workspaceId: string,
+      input: {
+        command: string;
+        callback_url: string;
+        bot_user_id: string;
+        app_installation_id?: string;
+        description?: string;
+      },
+    ): Promise<SlashCommand> => {
+      const data = await this.request<{ slash_command: SlashCommand }>(
+        `/api/workspaces/${workspaceId}/slash-commands`,
+        {
+          method: "POST",
+          body: JSON.stringify(input),
+        },
+      );
+      return data.slash_command;
+    },
+    revoke: async (commandId: string): Promise<SlashCommand> => {
+      const data = await this.request<{ slash_command: SlashCommand }>(
+        `/api/slash-commands/${commandId}/revoke`,
+        {
+          method: "POST",
+          body: JSON.stringify({}),
+        },
+      );
+      return data.slash_command;
     },
   };
 

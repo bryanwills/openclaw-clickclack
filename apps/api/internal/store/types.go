@@ -225,6 +225,54 @@ type CreateAppInstallationInput struct {
 	CreatedBy   string
 }
 
+type SlashCommand struct {
+	ID                string  `json:"id"`
+	WorkspaceID       string  `json:"workspace_id"`
+	AppInstallationID string  `json:"app_installation_id,omitempty"`
+	Command           string  `json:"command"`
+	Description       string  `json:"description"`
+	CallbackURL       string  `json:"callback_url"`
+	SigningSecret     string  `json:"signing_secret,omitempty"`
+	BotUserID         string  `json:"bot_user_id"`
+	CreatedBy         string  `json:"created_by,omitempty"`
+	CreatedAt         string  `json:"created_at"`
+	RevokedAt         *string `json:"revoked_at,omitempty"`
+}
+
+type CreateSlashCommandInput struct {
+	WorkspaceID       string
+	AppInstallationID string
+	Command           string
+	Description       string
+	CallbackURL       string
+	BotUserID         string
+	CreatedBy         string
+}
+
+type SlashCommandInvocation struct {
+	ID             string  `json:"id"`
+	CommandID      string  `json:"command_id"`
+	WorkspaceID    string  `json:"workspace_id"`
+	ChannelID      string  `json:"channel_id"`
+	UserID         string  `json:"user_id"`
+	Text           string  `json:"text"`
+	PayloadJSON    string  `json:"payload_json,omitempty"`
+	ResponseStatus int     `json:"response_status"`
+	ResponseBody   string  `json:"response_body,omitempty"`
+	Error          string  `json:"error,omitempty"`
+	CreatedAt      string  `json:"created_at"`
+	CompletedAt    *string `json:"completed_at,omitempty"`
+}
+
+type CreateSlashCommandInvocationInput struct {
+	CommandID   string
+	WorkspaceID string
+	ChannelID   string
+	UserID      string
+	Text        string
+	PayloadJSON string
+}
+
 type BotTokenAuth struct {
 	User        User
 	TokenID     string
@@ -478,6 +526,12 @@ type Store interface {
 	ListAppInstallations(ctx context.Context, workspaceID, requesterID string) ([]AppInstallation, error)
 	CreateAppInstallation(ctx context.Context, input CreateAppInstallationInput) (AppInstallation, error)
 	RevokeAppInstallation(ctx context.Context, installationID, requesterID string) (AppInstallation, error)
+	ListSlashCommands(ctx context.Context, workspaceID, requesterID string) ([]SlashCommand, error)
+	CreateSlashCommand(ctx context.Context, input CreateSlashCommandInput) (SlashCommand, error)
+	RevokeSlashCommand(ctx context.Context, commandID, requesterID string) (SlashCommand, error)
+	GetSlashCommandForChannel(ctx context.Context, channelID, command, requesterID string) (SlashCommand, error)
+	CreateSlashCommandInvocation(ctx context.Context, input CreateSlashCommandInvocationInput) (SlashCommandInvocation, error)
+	CompleteSlashCommandInvocation(ctx context.Context, invocationID string, status int, responseBody, invokeError string) (SlashCommandInvocation, error)
 	UpsertIdentityUser(ctx context.Context, input UpsertIdentityUserInput) (User, error)
 	UpdateUserProfile(ctx context.Context, input UpdateUserProfileInput) (User, error)
 	UpdateUserProfileAndNotificationSettings(ctx context.Context, input UpdateUserProfileAndNotificationSettingsInput) (User, error)
