@@ -29,10 +29,10 @@ DELETE /api/messages/{message_id}
   exclusive cursor windows; `around_seq` returns context around a target
   sequence. Cursor params are mutually exclusive, and `limit` is clamped to
   `1..200` (default 100).
-- `POST /messages` accepts `{body, quoted_message_id?, nonce?}`. Empty bodies
-  are rejected. `nonce` is an optional client idempotency key; replaying the
-  same nonce with the same body and quote returns the existing message with
-  HTTP 200 instead of creating a duplicate.
+- `POST /messages` accepts `{body, quoted_message_id?, nonce?, topic_id?}`.
+  Empty bodies are rejected. `nonce` is an optional client idempotency key;
+  replaying the same nonce with the same body, quote, and topic returns the
+  existing message with HTTP 200 instead of creating a duplicate.
 - `POST /read` accepts `{seq}` and updates the caller's monotonic read pointer
   for the channel. The server caps `seq` to the channel's current last root
   message sequence.
@@ -46,6 +46,22 @@ DELETE /api/messages/{message_id}
 Message create, edit, delete, and read updates emit durable events:
 `message.created`, `message.updated`, `message.deleted`, `channel.read`.
 Read events are private to the user who advanced the pointer.
+
+## Topics
+
+Topics are optional labels for channel messages. They are useful for deploys,
+incidents, customer threads, or other lightweight organization without turning
+the channel model into nested rooms.
+
+```http
+GET  /api/workspaces/{workspace_id}/topics
+POST /api/workspaces/{workspace_id}/topics
+```
+
+`POST /topics` accepts `{name, channel_id?}`. A topic without `channel_id` can
+be used by any channel in the workspace. A channel-scoped topic can only be
+used when posting to that channel. Message responses include `topic_id` when a
+topic was supplied.
 
 ## Sequence numbers
 

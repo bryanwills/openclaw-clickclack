@@ -864,6 +864,21 @@ func TestHTTPErrorPathsAndSPA(t *testing.T) {
 	if len(listedInstalls.AppInstallations) != 1 || listedInstalls.AppInstallations[0].ID != createdInstall.AppInstallation.ID {
 		t.Fatalf("expected active app installation in list, got %#v", listedInstalls.AppInstallations)
 	}
+	createdTopic := postJSONAsUser[struct {
+		Topic store.Topic `json:"topic"`
+	}](t, owner.ID, server.URL+"/api/workspaces/"+workspace.ID+"/topics", map[string]any{
+		"channel_id": channel.ID,
+		"name":       "deploys",
+	})
+	if createdTopic.Topic.ChannelID != channel.ID || createdTopic.Topic.Name != "deploys" {
+		t.Fatalf("unexpected created topic: %#v", createdTopic.Topic)
+	}
+	listedTopics := getJSONAsUser[struct {
+		Topics []store.Topic `json:"topics"`
+	}](t, owner.ID, server.URL+"/api/workspaces/"+workspace.ID+"/topics")
+	if len(listedTopics.Topics) != 1 || listedTopics.Topics[0].ID != createdTopic.Topic.ID {
+		t.Fatalf("expected topic in list, got %#v", listedTopics.Topics)
+	}
 	var signingSecret string
 	var callbackPayload map[string]any
 	callbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -947,9 +962,12 @@ func TestHTTPErrorPathsAndSPA(t *testing.T) {
 	if eventSigningSecret == "" {
 		t.Fatalf("expected one-time event signing secret: %#v", eventSubscription.EventSubscription)
 	}
-	postJSONAsUser[struct {
+	topicMessage := postJSONAsUser[struct {
 		Message store.Message `json:"message"`
-	}](t, owner.ID, server.URL+"/api/channels/"+channel.ID+"/messages", map[string]any{"body": "deliver me"})
+	}](t, owner.ID, server.URL+"/api/channels/"+channel.ID+"/messages", map[string]any{"body": "deliver me", "topic_id": createdTopic.Topic.ID})
+	if topicMessage.Message.TopicID != createdTopic.Topic.ID {
+		t.Fatalf("expected topic_id on message, got %#v", topicMessage.Message)
+	}
 	if eventPayload == nil || eventPayload["event"].(map[string]any)["type"] != "message.created" {
 		t.Fatalf("expected message.created event payload, got %#v", eventPayload)
 	}

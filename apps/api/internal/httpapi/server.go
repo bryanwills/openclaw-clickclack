@@ -95,6 +95,8 @@ func (s *Server) Handler() http.Handler {
 		r.Patch("/workspaces/{workspace_id}/moderation/members/{user_id}", s.updateWorkspaceMemberModeration)
 		r.Get("/workspaces/{workspace_id}/channels", s.listChannels)
 		r.Post("/workspaces/{workspace_id}/channels", s.createChannel)
+		r.Get("/workspaces/{workspace_id}/topics", s.listTopics)
+		r.Post("/workspaces/{workspace_id}/topics", s.createTopic)
 		r.Get("/workspaces/{workspace_id}/bots", s.listBots)
 		r.Post("/workspaces/{workspace_id}/bots", s.createBot)
 		r.Get("/bots/{bot_user_id}/tokens", s.listBotTokens)
@@ -531,6 +533,42 @@ func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
 	writeResultStatus(w, http.StatusCreated, map[string]any{"channel": channel, "event": event}, err)
 }
 
+func (s *Server) listTopics(w http.ResponseWriter, r *http.Request) {
+	act, err := s.currentActor(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if err := act.requireScope("channels:read"); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	topics, err := s.store.ListTopics(r.Context(), chi.URLParam(r, "workspace_id"), act.user.ID)
+	writeResult(w, map[string]any{"topics": topics}, err)
+}
+
+func (s *Server) createTopic(w http.ResponseWriter, r *http.Request) {
+	act, err := s.currentActor(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if err := act.requireScope("channels:write"); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	var body struct {
+		ChannelID string `json:"channel_id"`
+		Name      string `json:"name"`
+	}
+	if err := readJSON(w, r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	topic, err := s.store.CreateTopic(r.Context(), store.CreateTopicInput{WorkspaceID: chi.URLParam(r, "workspace_id"), ChannelID: body.ChannelID, Name: body.Name, CreatedBy: act.user.ID})
+	writeResultStatus(w, http.StatusCreated, map[string]any{"topic": topic}, err)
+}
+
 func (s *Server) listMessages(w http.ResponseWriter, r *http.Request) {
 	act, err := s.currentActor(r)
 	if err != nil {
@@ -567,6 +605,7 @@ func (s *Server) createMessage(w http.ResponseWriter, r *http.Request) {
 		Body            string `json:"body"`
 		QuotedMessageID string `json:"quoted_message_id"`
 		Nonce           string `json:"nonce"`
+		TopicID         string `json:"topic_id"`
 	}
 	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -575,7 +614,7 @@ func (s *Server) createMessage(w http.ResponseWriter, r *http.Request) {
 	if !s.requireBotChannelWorkspace(w, r, act, chi.URLParam(r, "channel_id")) {
 		return
 	}
-	message, event, err := s.store.CreateMessage(r.Context(), store.CreateMessageInput{ChannelID: chi.URLParam(r, "channel_id"), AuthorID: act.user.ID, Body: body.Body, QuotedMessageID: optionalString(body.QuotedMessageID), Nonce: body.Nonce})
+	message, event, err := s.store.CreateMessage(r.Context(), store.CreateMessageInput{ChannelID: chi.URLParam(r, "channel_id"), AuthorID: act.user.ID, Body: body.Body, QuotedMessageID: optionalString(body.QuotedMessageID), Nonce: body.Nonce, TopicID: body.TopicID})
 	if err == nil && event.ID != "" {
 		s.publishEvent(r.Context(), event)
 		s.notifyMessageCreated(r.Context(), message)

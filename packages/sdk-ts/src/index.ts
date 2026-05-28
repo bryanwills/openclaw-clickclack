@@ -139,6 +139,16 @@ export type Channel = {
   unread_count?: number;
 };
 
+export type Topic = {
+  id: string;
+  workspace_id: string;
+  channel_id?: string;
+  name: string;
+  created_by?: string;
+  created_at: string;
+  archived_at?: string;
+};
+
 export type Message = {
   id: string;
   route_id?: string;
@@ -148,6 +158,7 @@ export type Message = {
   author_id: string;
   parent_message_id?: string;
   thread_root_id: string;
+  topic_id?: string;
   channel_seq?: number;
   thread_seq?: number;
   body: string;
@@ -303,6 +314,23 @@ export class ClickClackClient {
         `/api/routes/${encodeURIComponent(workspaceRouteId)}/${encodeURIComponent(targetRouteId)}`,
       );
       return data.route;
+    },
+  };
+
+  topics = {
+    list: async (workspaceId: string): Promise<Topic[]> => {
+      const data = await this.request<{ topics: Topic[] }>(`/api/workspaces/${workspaceId}/topics`);
+      return data.topics;
+    },
+    create: async (
+      workspaceId: string,
+      input: { name: string; channel_id?: string },
+    ): Promise<Topic> => {
+      const data = await this.request<{ topic: Topic }>(`/api/workspaces/${workspaceId}/topics`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
+      return data.topic;
     },
   };
 
@@ -560,7 +588,7 @@ export class ClickClackClient {
     },
     sendMessage: async (
       channelId: string,
-      input: { body: string; quoted_message_id?: string; nonce?: string },
+      input: { body: string; quoted_message_id?: string; nonce?: string; topic_id?: string },
     ): Promise<Message> => {
       const data = await this.request<{ message: Message }>(`/api/channels/${channelId}/messages`, {
         method: "POST",

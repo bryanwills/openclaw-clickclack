@@ -207,6 +207,27 @@ paths:
       responses:
         "201":
           description: Created channel
+  /api/workspaces/{workspace_id}/topics:
+    get:
+      operationId: listTopics
+      parameters:
+        - $ref: "#/components/parameters/workspace_id"
+      responses:
+        "200":
+          description: Workspace topics
+    post:
+      operationId: createTopic
+      parameters:
+        - $ref: "#/components/parameters/workspace_id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTopicRequest"
+      responses:
+        "201":
+          description: Created topic
   /api/workspaces/{workspace_id}/bots:
     get:
       operationId: listBots
@@ -1230,6 +1251,35 @@ components:
         kind:
           type: string
           default: public
+    Topic:
+      type: object
+      required: [id, workspace_id, name, created_at]
+      properties:
+        id:
+          type: string
+        workspace_id:
+          type: string
+        channel_id:
+          type: string
+        name:
+          type: string
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        archived_at:
+          type: string
+          format: date-time
+    CreateTopicRequest:
+      type: object
+      required: [name]
+      properties:
+        channel_id:
+          type: string
+        name:
+          type: string
+          maxLength: 80
     UpdateChannelRequest:
       type: object
       properties:
@@ -1263,6 +1313,9 @@ components:
             Optional client idempotency key for retry-safe message creation.
             Reusing the same nonce with the same body and quote returns the
             existing message with HTTP 200 instead of creating a duplicate.
+        topic_id:
+          type: string
+          description: Optional topic id. Channel-scoped topics can only be used in their channel.
     MarkReadRequest:
       type: object
       required: [seq]

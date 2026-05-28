@@ -107,6 +107,7 @@ type Message struct {
 	AuthorID             string   `json:"author_id"`
 	ParentMessageID      *string  `json:"parent_message_id,omitempty"`
 	ThreadRootID         string   `json:"thread_root_id"`
+	TopicID              string   `json:"topic_id,omitempty"`
 	ChannelSeq           *int64   `json:"channel_seq,omitempty"`
 	ThreadSeq            *int64   `json:"thread_seq,omitempty"`
 	Body                 string   `json:"body"`
@@ -419,6 +420,7 @@ type CreateMessageInput struct {
 	Body            string
 	QuotedMessageID *string
 	Nonce           string
+	TopicID         string
 }
 
 type UpdateMessageInput struct {
@@ -531,6 +533,23 @@ type CreateDirectMessageInput struct {
 	Body            string
 	QuotedMessageID *string
 	Nonce           string
+}
+
+type Topic struct {
+	ID          string  `json:"id"`
+	WorkspaceID string  `json:"workspace_id"`
+	ChannelID   string  `json:"channel_id,omitempty"`
+	Name        string  `json:"name"`
+	CreatedBy   string  `json:"created_by,omitempty"`
+	CreatedAt   string  `json:"created_at"`
+	ArchivedAt  *string `json:"archived_at,omitempty"`
+}
+
+type CreateTopicInput struct {
+	WorkspaceID string
+	ChannelID   string
+	Name        string
+	CreatedBy   string
 }
 
 type Invite struct {
@@ -661,6 +680,8 @@ type Store interface {
 	GetChannel(ctx context.Context, channelID, userID string) (Channel, error)
 	CreateChannel(ctx context.Context, input CreateChannelInput) (Channel, Event, error)
 	UpdateChannel(ctx context.Context, input UpdateChannelInput) (Channel, Event, error)
+	ListTopics(ctx context.Context, workspaceID, requesterID string) ([]Topic, error)
+	CreateTopic(ctx context.Context, input CreateTopicInput) (Topic, error)
 	ListMessages(ctx context.Context, channelID, userID string, page MessagePageRequest) (MessagePage, error)
 	GetMessage(ctx context.Context, messageID, userID string) (Message, error)
 	EnsureThreadRouteID(ctx context.Context, userID, rootMessageID string) (Message, error)

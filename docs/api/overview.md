@@ -35,6 +35,7 @@ The server resolves callers in this order (see
 | Event subscriptions | `/api/workspaces/{id}/event-subscriptions`, `/api/event-subscriptions/{id}/{revoke,deliveries}` | [integrations](../features/integrations.md) |
 | Audit log     | `/api/workspaces/{id}/audit-log` | [integrations](../features/integrations.md) |
 | Connected accounts | `/api/workspaces/{id}/connected-accounts`, `/api/connected-accounts/{id}/revoke` | [integrations](../features/integrations.md) |
+| Topics        | `/api/workspaces/{id}/topics` | [messages](../features/messages.md) |
 | Channels      | `/api/workspaces/{id}/channels`, `/api/channels/{id}` | [workspaces](../features/workspaces.md) |
 | Messages      | `/api/channels/{id}/messages`, `/api/messages/{id}` | [messages](../features/messages.md) |
 | Threads       | `/api/messages/{id}/thread`, `/api/messages/{id}/thread/replies` | [threads](../features/threads.md) |

@@ -180,6 +180,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workspaces/{workspace_id}/topics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listTopics"];
+        put?: never;
+        post: operations["createTopic"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workspaces/{workspace_id}/bots": {
         parameters: {
             query?: never;
@@ -927,6 +943,21 @@ export interface components {
             /** @default public */
             kind: string;
         };
+        Topic: {
+            id: string;
+            workspace_id: string;
+            channel_id?: string;
+            name: string;
+            created_by?: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            archived_at?: string;
+        };
+        CreateTopicRequest: {
+            channel_id?: string;
+            name: string;
+        };
         UpdateChannelRequest: {
             name?: string;
             kind?: string;
@@ -952,6 +983,8 @@ export interface components {
              *     existing message with HTTP 200 instead of creating a duplicate.
              */
             nonce?: string;
+            /** @description Optional topic id. Channel-scoped topics can only be used in their channel. */
+            topic_id?: string;
         };
         MarkReadRequest: {
             /**
@@ -1463,6 +1496,50 @@ export interface operations {
         };
         responses: {
             /** @description Created channel */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listTopics: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: components["parameters"]["workspace_id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Workspace topics */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    createTopic: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: components["parameters"]["workspace_id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTopicRequest"];
+            };
+        };
+        responses: {
+            /** @description Created topic */
             201: {
                 headers: {
                     [name: string]: unknown;
