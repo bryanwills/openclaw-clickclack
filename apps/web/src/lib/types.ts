@@ -115,6 +115,20 @@ export type MemberModeration = {
 	moderation_at?: string;
 };
 
+export type SlashCommand = {
+	id: string;
+	workspace_id: string;
+	app_installation_id?: string;
+	command: string;
+	description: string;
+	callback_url: string;
+	signing_secret?: string;
+	bot_user_id: string;
+	created_by?: string;
+	created_at: string;
+	revoked_at?: string;
+};
+
 export type ThreadState = {
 	root_message_id: string;
 	reply_count: number;

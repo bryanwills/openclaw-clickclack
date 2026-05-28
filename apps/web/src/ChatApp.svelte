@@ -35,7 +35,7 @@
   import ThreadEmptyState from "./components/thread/ThreadEmptyState.svelte";
   import ThreadPanel from "./components/thread/ThreadPanel.svelte";
   import Topbar from "./components/topbar/Topbar.svelte";
-  import type { Channel, DirectConversation, MemberModeration, Message, MessagePage, RealtimeEvent, RouteTarget, SearchResult, ThreadState, Upload, User, Workspace } from "./lib/types";
+  import type { Channel, DirectConversation, MemberModeration, Message, MessagePage, RealtimeEvent, RouteTarget, SearchResult, SlashCommand, ThreadState, Upload, User, Workspace } from "./lib/types";
 
   const LIVE_EDGE_TOLERANCE_PX = 96;
   const LAST_CHANNEL_STORAGE_PREFIX = "clickclack:last-channel:v1:";
@@ -56,6 +56,8 @@
   let selectedThreadState: ThreadState | null = null;
   let selectedProfile: User | null = null;
   let moderationMembers: MemberModeration[] = [];
+  let slashCommands: SlashCommand[] = [];
+  let mentionPeople: User[] = [];
   let selectedImage: { url: string; title: string } | null = null;
   let messageBody = "";
   let replyBody = "";
@@ -149,6 +151,7 @@
     : "";
   $: sidePanelOpen = selectedThread !== null || selectedProfile !== null;
   $: recentPeople = collectRecentPeople(messages, directConversations, user?.id || "");
+  $: mentionPeople = collectMentionPeople(user, recentPeople, moderationMembers, selectedDirect);
   $: if (replyContext === "channel" && replyTarget && !messages.some((m) => m.id === replyTarget?.id)) clearReplyTarget();
   $: if (replyContext === "dm" && replyTarget && !messages.some((m) => m.id === replyTarget?.id)) clearReplyTarget();
   $: if (replyContext === "thread" && replyTarget && selectedThread && replyTarget.id !== selectedThread.id && !replies.some((r) => r.id === replyTarget?.id)) clearReplyTarget();
@@ -390,7 +393,7 @@
     if (workspaceChanged || channels.length === 0) await loadChannels(false, false);
     if (serial !== routeApplySerial) return;
     if (workspaceChanged || directConversations.length === 0) await loadDirectConversations();
-    if (workspaceChanged) await loadModerationMembers();
+    if (workspaceChanged) await Promise.all([loadModerationMembers(), loadSlashCommands()]);
     if (serial !== routeApplySerial) return;
 
     if (routeTarget) {
@@ -572,6 +575,37 @@
     } catch {
       moderationMembers = [];
     }
+  }
+
+  async function loadSlashCommands() {
+    slashCommands = [];
+    if (!selectedWorkspaceID) return;
+    try {
+      const data = await api<{ slash_commands: SlashCommand[] }>(`/api/workspaces/${selectedWorkspaceID}/slash-commands`);
+      slashCommands = data.slash_commands;
+    } catch {
+      slashCommands = [];
+    }
+  }
+
+  function collectMentionPeople(
+    currentUser: User | null,
+    recent: User[],
+    members: MemberModeration[],
+    direct: DirectConversation | undefined,
+  ): User[] {
+    const people = new Map<string, User>();
+    for (const member of members) {
+      if (member.user.id) people.set(member.user.id, member.user);
+    }
+    for (const person of direct?.members || []) {
+      if (person.id) people.set(person.id, person);
+    }
+    for (const person of recent) {
+      if (person.id) people.set(person.id, person);
+    }
+    if (currentUser?.id) people.set(currentUser.id, currentUser);
+    return [...people.values()].slice(0, 24);
   }
 
   async function updateMemberModeration(userID: string, body: Record<string, unknown>) {
@@ -2253,6 +2287,8 @@
       showGifPicker={showGifPicker}
       gifQuery={gifQuery}
       filteredGifs={filteredGifs}
+      slashCommands={selectedChannelID ? slashCommands : []}
+      {mentionPeople}
       onValue={(value) => {
         const previous = messageBody;
         messageBody = value;
@@ -2287,6 +2323,7 @@
         threadState={selectedThreadState}
         {replyBody}
         replyTarget={replyTarget && replyContext === "thread" ? replyTarget : null}
+        {mentionPeople}
         onClose={closeSidePanel}
         onReplyBody={(value) => (replyBody = value)}
         onSubmitReply={() => void sendReply()}

@@ -1,11 +1,30 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import { autoGrow } from "../../lib/actions/autogrow";
+  import { avatarInitial, handleLabel } from "../../lib/chat/people";
   import { formatBytes, isImageUpload, uploadURL } from "../../lib/uploads";
   import type { GifItem } from "../../lib/gifs";
-  import type { Message, Upload } from "../../lib/types";
+  import type { Message, SlashCommand, Upload, User } from "../../lib/types";
   import ComposerToolbar from "./ComposerToolbar.svelte";
   import GifPicker from "./GifPicker.svelte";
   import ReplyPreview from "./ReplyPreview.svelte";
+
+  type ActiveToken = {
+    kind: "slash" | "mention";
+    start: number;
+    end: number;
+    query: string;
+    raw: string;
+  };
+
+  type ComposerSuggestion = {
+    id: string;
+    kind: "slash" | "mention";
+    label: string;
+    detail: string;
+    insertText: string;
+    sortText: string;
+  };
 
   type Props = {
     value: string;
@@ -20,6 +39,8 @@
     showGifPicker?: boolean;
     gifQuery?: string;
     filteredGifs?: GifItem[];
+    slashCommands?: SlashCommand[];
+    mentionPeople?: User[];
     onValue: (value: string) => void;
     onSubmit: () => void;
     onKeydown: (event: KeyboardEvent) => void;
@@ -48,6 +69,8 @@
     showGifPicker = false,
     gifQuery = "",
     filteredGifs = [],
+    slashCommands = [],
+    mentionPeople = [],
     onValue,
     onSubmit,
     onKeydown,
@@ -64,11 +87,159 @@
   }: Props = $props();
 
   let input: HTMLTextAreaElement | null = $state(null);
+  let caret = $state(0);
+  let dismissedToken = $state("");
+  let selectedSuggestionIndex = $state(0);
+
+  const activeToken = $derived.by(() => detectActiveToken(value, caret));
+  const activeSuggestions = $derived.by(() => {
+    if (!activeToken || tokenKey(activeToken) === dismissedToken) return [];
+    return activeToken.kind === "slash"
+      ? slashSuggestions(activeToken)
+      : mentionSuggestions(activeToken);
+  });
 
   $effect(() => {
     onInputRef(input);
     return () => onInputRef(null);
   });
+
+  $effect(() => {
+    if (activeSuggestions.length === 0) {
+      selectedSuggestionIndex = 0;
+      return;
+    }
+    if (selectedSuggestionIndex >= activeSuggestions.length) selectedSuggestionIndex = 0;
+  });
+
+  function detectActiveToken(text: string, position: number): ActiveToken | null {
+    const safePosition = Math.max(0, Math.min(position || text.length, text.length));
+    const before = text.slice(0, safePosition);
+    const match = /(^|\s)([/@][^\s]*)$/.exec(before);
+    if (!match) return null;
+    const raw = match[2];
+    const start = before.length - raw.length;
+    if (raw.startsWith("/") && start !== 0) return null;
+    return {
+      kind: raw.startsWith("/") ? "slash" : "mention",
+      start,
+      end: safePosition,
+      query: raw.slice(1).toLowerCase(),
+      raw,
+    };
+  }
+
+  function tokenKey(token: ActiveToken): string {
+    return `${token.kind}:${token.start}:${token.raw}`;
+  }
+
+  function updateCaret(node: HTMLTextAreaElement | null = input) {
+    caret = node?.selectionStart ?? value.length;
+  }
+
+  function normalizedCommand(command: string): string {
+    return command.startsWith("/") ? command : `/${command}`;
+  }
+
+  function slashSuggestions(token: ActiveToken): ComposerSuggestion[] {
+    const query = token.query;
+    return slashCommands
+      .filter((command) => !command.revoked_at)
+      .map((command) => {
+        const label = normalizedCommand(command.command);
+        const searchable = label.slice(1).toLowerCase();
+        return {
+          id: command.id,
+          kind: "slash" as const,
+          label,
+          detail: command.description || "Slash command",
+          insertText: `${label} `,
+          sortText: searchable,
+        };
+      })
+      .filter((suggestion) => !query || suggestion.sortText.includes(query))
+      .sort((a, b) => Number(!a.sortText.startsWith(query)) - Number(!b.sortText.startsWith(query)) || a.sortText.localeCompare(b.sortText))
+      .slice(0, 6);
+  }
+
+  function mentionText(person: User): string {
+    return handleLabel(person.handle || person.display_name.replace(/\s+/g, ""));
+  }
+
+  function mentionSuggestions(token: ActiveToken): ComposerSuggestion[] {
+    const query = token.query;
+    const seen = new Set<string>();
+    return mentionPeople
+      .filter((person) => {
+        if (!person.id || seen.has(person.id)) return false;
+        seen.add(person.id);
+        return true;
+      })
+      .map((person) => {
+        const label = mentionText(person);
+        const searchable = `${person.handle || ""} ${person.display_name}`.trim().toLowerCase();
+        return {
+          id: person.id,
+          kind: "mention" as const,
+          label,
+          detail: person.kind === "bot" ? `${person.display_name} · bot` : person.display_name,
+          insertText: `${label} `,
+          sortText: searchable,
+        };
+      })
+      .filter((suggestion) => !query || suggestion.sortText.includes(query))
+      .sort((a, b) => Number(!a.sortText.startsWith(query)) - Number(!b.sortText.startsWith(query)) || a.sortText.localeCompare(b.sortText))
+      .slice(0, 6);
+  }
+
+  function pickSuggestion(suggestion: ComposerSuggestion) {
+    if (!activeToken) return;
+    const nextValue = `${value.slice(0, activeToken.start)}${suggestion.insertText}${value.slice(activeToken.end)}`;
+    const nextCaret = activeToken.start + suggestion.insertText.length;
+    onValue(nextValue);
+    void tick().then(() => {
+      input?.focus();
+      input?.setSelectionRange(nextCaret, nextCaret);
+      caret = nextCaret;
+    });
+  }
+
+  function handleInput(event: Event) {
+    const node = event.currentTarget as HTMLTextAreaElement;
+    onValue(node.value);
+    updateCaret(node);
+  }
+
+  function handleFocus() {
+    updateCaret();
+    onFocus();
+  }
+
+  function handleKeydown(event: KeyboardEvent) {
+    if (activeSuggestions.length > 0) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        selectedSuggestionIndex = (selectedSuggestionIndex + 1) % activeSuggestions.length;
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        selectedSuggestionIndex = (selectedSuggestionIndex - 1 + activeSuggestions.length) % activeSuggestions.length;
+        return;
+      }
+      if (event.key === "Enter" || event.key === "Tab") {
+        event.preventDefault();
+        pickSuggestion(activeSuggestions[selectedSuggestionIndex]);
+        return;
+      }
+      if (event.key === "Escape" && activeToken) {
+        event.preventDefault();
+        dismissedToken = tokenKey(activeToken);
+        return;
+      }
+    }
+    onKeydown(event);
+  }
 </script>
 
 <form
@@ -85,6 +256,33 @@
       onQuery={onGifQuery}
       onPick={onPickGif}
     />
+  {/if}
+  {#if activeSuggestions.length > 0}
+    <div class="composer-suggestions" role="listbox" aria-label={activeToken?.kind === "slash" ? "Slash command suggestions" : "Mention suggestions"}>
+      {#each activeSuggestions as suggestion, index (suggestion.id)}
+        <button
+          type="button"
+          class:active={index === selectedSuggestionIndex}
+          role="option"
+          aria-selected={index === selectedSuggestionIndex}
+          onmousedown={(event) => event.preventDefault()}
+          onclick={() => pickSuggestion(suggestion)}
+        >
+          <span class="suggestion-mark" aria-hidden="true">
+            {#if suggestion.kind === "slash"}
+              /
+            {:else}
+              {avatarInitial(suggestion.detail)}
+            {/if}
+          </span>
+          <span class="suggestion-copy">
+            <strong>{suggestion.label}</strong>
+            <span>{suggestion.detail}</span>
+          </span>
+          <span class="suggestion-kind">{suggestion.kind === "slash" ? "command" : "mention"}</span>
+        </button>
+      {/each}
+    </div>
   {/if}
   <div class="composer-card">
     {#if pendingUpload}
@@ -118,9 +316,12 @@
         rows="1"
         {placeholder}
         aria-label={ariaLabel}
-        oninput={(event) => onValue(event.currentTarget.value)}
-        onfocus={onFocus}
-        onkeydown={onKeydown}
+        oninput={handleInput}
+        onfocus={handleFocus}
+        onkeydown={handleKeydown}
+        onkeyup={() => updateCaret()}
+        onmouseup={() => updateCaret()}
+        onselect={() => updateCaret()}
       ></textarea>
       <button type="submit" class="send" aria-label={submitLabel} disabled={!value.trim()}>
         <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">

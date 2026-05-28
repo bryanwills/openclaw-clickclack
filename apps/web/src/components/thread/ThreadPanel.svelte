@@ -4,7 +4,7 @@
   import { handleLabel } from "../../lib/chat/people";
   import { markdown, time } from "../../lib/format";
   import { uploadURL } from "../../lib/uploads";
-  import type { Message, ThreadState } from "../../lib/types";
+  import type { Message, ThreadState, User } from "../../lib/types";
   import ChatComposer from "../composer/ChatComposer.svelte";
   import MediaAttachment from "../MediaAttachment.svelte";
   import QuoteBlock from "../messages/QuoteBlock.svelte";
@@ -15,6 +15,7 @@
     threadState: ThreadState | null;
     replyBody: string;
     replyTarget: Message | null;
+    mentionPeople?: User[];
     onClose: () => void;
     onReplyBody: (value: string) => void;
     onSubmitReply: () => void;
@@ -35,6 +36,7 @@
     threadState,
     replyBody,
     replyTarget,
+    mentionPeople = [],
     onClose,
     onReplyBody,
     onSubmitReply,
@@ -152,6 +154,7 @@
   submitLabel="Reply"
   formClass="composer reply-composer"
   replyTarget={replyTarget}
+  {mentionPeople}
   onValue={onReplyBody}
   onSubmit={onSubmitReply}
   onKeydown={onReplyKeydown}
