@@ -121,6 +121,9 @@
 }
 
 .reply-composer {
+  --composer-card-top: 10px;
+  --composer-overlay-inset-x: 14px;
+
   padding: 10px 14px 14px;
   background: var(--panel);
   border-top: 1px solid var(--line);

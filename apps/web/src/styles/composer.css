@@ -1,6 +1,10 @@
 /* ---------- COMPOSER ---------- */
 
 .composer {
+  --composer-card-top: 18px;
+  --composer-overlay-gap: 8px;
+  --composer-overlay-inset-x: 18px;
+
   padding: 18px 18px 10px;
   background: var(--bg);
   display: grid;
@@ -26,9 +30,15 @@
 }
 
 .composer-suggestions {
-  width: min(560px, 100%);
-  margin-bottom: 8px;
-  overflow: hidden;
+  position: absolute;
+  left: var(--composer-overlay-inset-x);
+  bottom: calc(100% - var(--composer-card-top) + var(--composer-overlay-gap));
+  z-index: 40;
+  width: min(560px, calc(100% - (var(--composer-overlay-inset-x) * 2)));
+  max-height: min(320px, 45vh);
+  margin: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
   border: 1px solid var(--line-strong);
   border-radius: 12px;
   background: color-mix(in srgb, var(--panel) 97%, transparent);
