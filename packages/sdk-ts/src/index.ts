@@ -10,6 +10,25 @@ export type User = {
   created_at: string;
 };
 
+export type BotToken = {
+  id: string;
+  bot_user_id: string;
+  workspace_id: string;
+  owner_user_id?: string;
+  name: string;
+  scopes: string[];
+  created_by?: string;
+  created_at: string;
+  last_used_at?: string;
+  revoked_at?: string;
+  token?: string;
+};
+
+export type BotWithTokens = {
+  bot: User;
+  tokens: BotToken[];
+};
+
 export type BotEventHandler = (
   event: RealtimeEvent,
   client: ClickClackClient,
@@ -207,6 +226,57 @@ export class ClickClackClient {
         `/api/routes/${encodeURIComponent(workspaceRouteId)}/${encodeURIComponent(targetRouteId)}`,
       );
       return data.route;
+    },
+  };
+
+  bots = {
+    list: async (workspaceId: string): Promise<BotWithTokens[]> => {
+      const data = await this.request<{ bots: BotWithTokens[] }>(
+        `/api/workspaces/${workspaceId}/bots`,
+      );
+      return data.bots;
+    },
+    create: async (
+      workspaceId: string,
+      input: {
+        display_name: string;
+        owner_user_id?: string;
+        handle?: string;
+        avatar_url?: string;
+        token_name?: string;
+        scopes?: string[];
+      },
+    ): Promise<{ bot: User; bot_token: BotToken }> => {
+      return this.request(`/api/workspaces/${workspaceId}/bots`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
+    },
+    listTokens: async (botUserId: string): Promise<BotToken[]> => {
+      const data = await this.request<{ bot_tokens: BotToken[] }>(
+        `/api/bots/${botUserId}/tokens`,
+      );
+      return data.bot_tokens;
+    },
+    createToken: async (
+      botUserId: string,
+      input: { name?: string; scopes?: string[] },
+    ): Promise<BotToken> => {
+      const data = await this.request<{ bot_token: BotToken }>(`/api/bots/${botUserId}/tokens`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
+      return data.bot_token;
+    },
+    revokeToken: async (tokenId: string): Promise<BotToken> => {
+      const data = await this.request<{ bot_token: BotToken }>(
+        `/api/bot-tokens/${tokenId}/revoke`,
+        {
+          method: "POST",
+          body: JSON.stringify({}),
+        },
+      );
+      return data.bot_token;
     },
   };
 

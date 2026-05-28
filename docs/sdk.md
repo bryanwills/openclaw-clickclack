@@ -66,6 +66,7 @@ See [features/auth.md](features/auth.md).
 |---------------|---------|
 | `me()`, `updateMe()` | get or edit the current user's profile |
 | `workspaces`  | `list`, `create` |
+| `bots`        | `list`, `create`, `listTokens`, `createToken`, `revokeToken` |
 | `channels`    | `list`, `create`, `update`, `messages`, `sendMessage`, `markRead` |
 | `messages`    | `get`, `update`, `delete` |
 | `threads`     | `get`, `reply` |
@@ -120,6 +121,23 @@ clickclack admin bot create \
 ```
 
 The returned `ccb_...` token goes into `CLICKCLACK_TOKEN`.
+
+Human-session clients can also manage bot lifecycle through the SDK:
+
+```ts
+const { bot, bot_token } = await client.bots.create(workspaceId, {
+  display_name: "OpenClaw Service",
+  handle: "openclaw",
+  token_name: "prod",
+  scopes: ["bot:write"],
+});
+
+const tokens = await client.bots.listTokens(bot.id);
+await client.bots.revokeToken(tokens[0].id);
+```
+
+Only `create` and `createToken` responses include the one-time raw
+`bot_token.token`. List calls return metadata only.
 
 The SDK also exports `ClickClackBot`, a tiny runner around the same client plus
 the realtime WebSocket:

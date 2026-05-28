@@ -783,6 +783,70 @@ func TestHTTPErrorPathsAndSPA(t *testing.T) {
 	if messages[len(messages)-1].AuthorID != bot.ID || messages[len(messages)-1].Author == nil || messages[len(messages)-1].Author.Kind != "bot" {
 		t.Fatalf("expected bot-authored message, got %#v", messages[len(messages)-1])
 	}
+	createdBot := postJSONAsUser[struct {
+		Bot      store.User     `json:"bot"`
+		BotToken store.BotToken `json:"bot_token"`
+	}](t, owner.ID, server.URL+"/api/workspaces/"+workspace.ID+"/bots", map[string]any{
+		"display_name": "API Bot",
+		"handle":       "api-bot",
+		"token_name":   "api",
+		"scopes":       []string{"bot:read"},
+	})
+	if createdBot.Bot.Kind != "bot" || createdBot.BotToken.Token == "" {
+		t.Fatalf("unexpected created bot payload: %#v", createdBot)
+	}
+	listedBots := getJSONAsUser[struct {
+		Bots []store.BotWithTokens `json:"bots"`
+	}](t, owner.ID, server.URL+"/api/workspaces/"+workspace.ID+"/bots")
+	foundCreatedBot := false
+	for _, item := range listedBots.Bots {
+		if item.Bot.ID == createdBot.Bot.ID {
+			foundCreatedBot = true
+			if len(item.Tokens) != 1 || item.Tokens[0].Token != "" {
+				t.Fatalf("expected one redacted token in list, got %#v", item.Tokens)
+			}
+		}
+	}
+	if !foundCreatedBot {
+		t.Fatalf("created bot missing from list: %#v", listedBots.Bots)
+	}
+	rotatedToken := postJSONAsUser[struct {
+		BotToken store.BotToken `json:"bot_token"`
+	}](t, owner.ID, server.URL+"/api/bots/"+createdBot.Bot.ID+"/tokens", map[string]any{
+		"name":   "rotated",
+		"scopes": []string{"messages:write"},
+	})
+	if rotatedToken.BotToken.Token == "" || rotatedToken.BotToken.BotUserID != createdBot.Bot.ID {
+		t.Fatalf("unexpected rotated token payload: %#v", rotatedToken)
+	}
+	listedTokens := getJSONAsUser[struct {
+		BotTokens []store.BotToken `json:"bot_tokens"`
+	}](t, owner.ID, server.URL+"/api/bots/"+createdBot.Bot.ID+"/tokens")
+	if len(listedTokens.BotTokens) != 2 {
+		t.Fatalf("expected two bot tokens, got %#v", listedTokens.BotTokens)
+	}
+	revokedToken := postJSONAsUser[struct {
+		BotToken store.BotToken `json:"bot_token"`
+	}](t, owner.ID, server.URL+"/api/bot-tokens/"+rotatedToken.BotToken.ID+"/revoke", map[string]any{})
+	if revokedToken.BotToken.RevokedAt == nil {
+		t.Fatalf("expected revoked_at on token, got %#v", revokedToken.BotToken)
+	}
+	req, err = http.NewRequest(http.MethodPost, server.URL+"/api/channels/"+channel.ID+"/messages", strings.NewReader(`{"body":"revoked should fail"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+rotatedToken.BotToken.Token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusUnauthorized {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		t.Fatalf("expected revoked token to fail auth, got %s %s", resp.Status, string(body))
+	}
+	resp.Body.Close()
 	readOnlyBot, readOnlyToken, err := st.CreateBot(context.Background(), store.CreateBotInput{
 		WorkspaceID: workspace.ID,
 		DisplayName: "Read Bot",

@@ -207,6 +207,68 @@ paths:
       responses:
         "201":
           description: Created channel
+  /api/workspaces/{workspace_id}/bots:
+    get:
+      operationId: listBots
+      parameters:
+        - $ref: "#/components/parameters/workspace_id"
+      responses:
+        "200":
+          description: Workspace bot identities and redacted tokens
+    post:
+      operationId: createBot
+      parameters:
+        - $ref: "#/components/parameters/workspace_id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBotRequest"
+      responses:
+        "201":
+          description: Created bot and one-time raw bot token
+  /api/bots/{bot_user_id}/tokens:
+    get:
+      operationId: listBotTokens
+      parameters:
+        - name: bot_user_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Redacted bot tokens
+    post:
+      operationId: createBotToken
+      parameters:
+        - name: bot_user_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBotTokenRequest"
+      responses:
+        "201":
+          description: Created one-time raw bot token
+  /api/bot-tokens/{token_id}/revoke:
+    post:
+      operationId: revokeBotToken
+      parameters:
+        - name: token_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Revoked bot token
   /api/channels/{channel_id}:
     patch:
       operationId: updateChannel
@@ -695,6 +757,77 @@ components:
           format: date-time
         notification_settings:
           $ref: "#/components/schemas/NotificationSettings"
+    BotToken:
+      type: object
+      required: [id, bot_user_id, workspace_id, name, scopes, created_at]
+      properties:
+        id:
+          type: string
+        bot_user_id:
+          type: string
+        workspace_id:
+          type: string
+        owner_user_id:
+          type: string
+        name:
+          type: string
+        scopes:
+          type: array
+          items:
+            type: string
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        last_used_at:
+          type: string
+          format: date-time
+        revoked_at:
+          type: string
+          format: date-time
+        token:
+          type: string
+          description: One-time raw ccb_ token. Present only immediately after creation.
+    BotWithTokens:
+      type: object
+      required: [bot, tokens]
+      properties:
+        bot:
+          $ref: "#/components/schemas/User"
+        tokens:
+          type: array
+          items:
+            $ref: "#/components/schemas/BotToken"
+    CreateBotRequest:
+      type: object
+      required: [display_name]
+      properties:
+        owner_user_id:
+          type: string
+        display_name:
+          type: string
+          maxLength: 80
+        handle:
+          type: string
+        avatar_url:
+          type: string
+          format: uri
+        token_name:
+          type: string
+        scopes:
+          type: array
+          items:
+            type: string
+    CreateBotTokenRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        scopes:
+          type: array
+          items:
+            type: string
     NotificationSettings:
       type: object
       required: [pushover_enabled, pushover_user_key]

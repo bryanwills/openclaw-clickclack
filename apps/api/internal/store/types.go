@@ -192,6 +192,18 @@ type BotToken struct {
 	Token       string   `json:"token,omitempty"`
 }
 
+type BotWithTokens struct {
+	Bot    User       `json:"bot"`
+	Tokens []BotToken `json:"tokens"`
+}
+
+type CreateBotTokenInput struct {
+	BotUserID string
+	Name      string
+	Scopes    []string
+	CreatedBy string
+}
+
 type BotTokenAuth struct {
 	User        User
 	TokenID     string
@@ -438,6 +450,10 @@ type Store interface {
 	EnsureBootstrap(ctx context.Context, name, email string) (User, error)
 	CreateUser(ctx context.Context, input CreateUserInput) (User, error)
 	CreateBot(ctx context.Context, input CreateBotInput) (User, BotToken, error)
+	ListBots(ctx context.Context, workspaceID, requesterID string) ([]BotWithTokens, error)
+	CreateBotToken(ctx context.Context, input CreateBotTokenInput) (BotToken, error)
+	ListBotTokens(ctx context.Context, botUserID, requesterID string) ([]BotToken, error)
+	RevokeBotToken(ctx context.Context, tokenID, requesterID string) (BotToken, error)
 	UpsertIdentityUser(ctx context.Context, input UpsertIdentityUserInput) (User, error)
 	UpdateUserProfile(ctx context.Context, input UpdateUserProfileInput) (User, error)
 	UpdateUserProfileAndNotificationSettings(ctx context.Context, input UpdateUserProfileAndNotificationSettingsInput) (User, error)

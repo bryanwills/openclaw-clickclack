@@ -192,15 +192,23 @@ bot_token}`.
 For the practical install flow, including Docker commands and OpenClaw
 configuration, see [Bot installs](../bot-installs.md).
 
-Follow-up API/UI:
+HTTP API:
 
 - `POST /api/workspaces/{workspace_id}/bots`
 - `GET /api/workspaces/{workspace_id}/bots`
+- `GET /api/bots/{bot_user_id}/tokens`
 - `POST /api/bots/{bot_user_id}/tokens`
 - `POST /api/bot-tokens/{token_id}/revoke`
 
-The HTTP creation API should require a human session; bot tokens cannot mint or
-revoke bot tokens in MVP.
+The creation and token-management API requires a human session. Bot tokens can
+read and write through the normal chat APIs according to scope, but cannot mint,
+list, or revoke bot tokens.
+
+`POST /api/workspaces/{workspace_id}/bots` returns `{bot, bot_token}`. The
+`bot_token.token` field is the one-time raw `ccb_...` token and is never
+returned by list calls. `GET /api/workspaces/{workspace_id}/bots` returns
+`{bots: [{bot, tokens}]}` with token metadata redacted. Rotation is create-new,
+move the runtime, then revoke-old through `POST /api/bot-tokens/{token_id}/revoke`.
 
 ## Runtime Contract
 

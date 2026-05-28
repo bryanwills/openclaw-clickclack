@@ -407,6 +407,110 @@ func (s *Server) attachUpload(w http.ResponseWriter, r *http.Request) {
 	writeResult(w, map[string]any{"ok": true}, err)
 }
 
+func (s *Server) listBots(w http.ResponseWriter, r *http.Request) {
+	act, err := s.currentActor(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if act.botTokenID != "" {
+		writeError(w, http.StatusForbidden, errors.New("bot tokens cannot manage bots"))
+		return
+	}
+	bots, err := s.store.ListBots(r.Context(), chi.URLParam(r, "workspace_id"), act.user.ID)
+	writeResult(w, map[string]any{"bots": bots}, err)
+}
+
+func (s *Server) createBot(w http.ResponseWriter, r *http.Request) {
+	act, err := s.currentActor(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if act.botTokenID != "" {
+		writeError(w, http.StatusForbidden, errors.New("bot tokens cannot create bots"))
+		return
+	}
+	var body struct {
+		OwnerUserID string   `json:"owner_user_id"`
+		DisplayName string   `json:"display_name"`
+		Handle      string   `json:"handle"`
+		AvatarURL   string   `json:"avatar_url"`
+		TokenName   string   `json:"token_name"`
+		Scopes      []string `json:"scopes"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	bot, token, err := s.store.CreateBot(r.Context(), store.CreateBotInput{
+		WorkspaceID: chi.URLParam(r, "workspace_id"),
+		OwnerUserID: body.OwnerUserID,
+		DisplayName: body.DisplayName,
+		Handle:      body.Handle,
+		AvatarURL:   body.AvatarURL,
+		TokenName:   body.TokenName,
+		Scopes:      body.Scopes,
+		CreatedBy:   act.user.ID,
+	})
+	writeResultStatus(w, http.StatusCreated, map[string]any{"bot": bot, "bot_token": token}, err)
+}
+
+func (s *Server) listBotTokens(w http.ResponseWriter, r *http.Request) {
+	act, err := s.currentActor(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if act.botTokenID != "" {
+		writeError(w, http.StatusForbidden, errors.New("bot tokens cannot manage bot tokens"))
+		return
+	}
+	tokens, err := s.store.ListBotTokens(r.Context(), chi.URLParam(r, "bot_user_id"), act.user.ID)
+	writeResult(w, map[string]any{"bot_tokens": tokens}, err)
+}
+
+func (s *Server) createBotToken(w http.ResponseWriter, r *http.Request) {
+	act, err := s.currentActor(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if act.botTokenID != "" {
+		writeError(w, http.StatusForbidden, errors.New("bot tokens cannot create bot tokens"))
+		return
+	}
+	var body struct {
+		Name   string   `json:"name"`
+		Scopes []string `json:"scopes"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	token, err := s.store.CreateBotToken(r.Context(), store.CreateBotTokenInput{
+		BotUserID: chi.URLParam(r, "bot_user_id"),
+		Name:      body.Name,
+		Scopes:    body.Scopes,
+		CreatedBy: act.user.ID,
+	})
+	writeResultStatus(w, http.StatusCreated, map[string]any{"bot_token": token}, err)
+}
+
+func (s *Server) revokeBotToken(w http.ResponseWriter, r *http.Request) {
+	act, err := s.currentActor(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if act.botTokenID != "" {
+		writeError(w, http.StatusForbidden, errors.New("bot tokens cannot revoke bot tokens"))
+		return
+	}
+	token, err := s.store.RevokeBotToken(r.Context(), chi.URLParam(r, "token_id"), act.user.ID)
+	writeResult(w, map[string]any{"bot_token": token}, err)
+}
+
 func (s *Server) listDirectConversations(w http.ResponseWriter, r *http.Request) {
 	act, err := s.currentActor(r)
 	if err != nil {
