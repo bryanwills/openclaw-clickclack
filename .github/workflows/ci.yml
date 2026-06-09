@@ -52,6 +52,15 @@ jobs:
       - name: Test
         run: go test ./...
 
+      - name: Deadcode
+        run: |
+          output_file=$(mktemp)
+          go run golang.org/x/tools/cmd/deadcode@v0.45.0 -test ./... > "$output_file"
+          if [ -s "$output_file" ]; then
+            cat "$output_file"
+            exit 1
+          fi
+
       - name: Coverage gate
         run: bash scripts/check-go-coverage.sh
 
