@@ -33,12 +33,12 @@
   },
   "packageManager": "pnpm@11.0.7",
   "devDependencies": {
-    "@cloudflare/containers": "0.3.4",
+    "@cloudflare/containers": "0.3.7",
     "@playwright/test": "^1.60.0",
     "@types/node": "^25.9.2",
-    "@typescript/native-preview": "7.0.0-dev.20260507.1",
-    "oxfmt": "^0.48.0",
-    "oxlint": "^1.68.0",
-    "wrangler": "4.91.0"
+    "@typescript/native-preview": "7.0.0-dev.20260609.1",
+    "oxfmt": "^0.54.0",
+    "oxlint": "^1.69.0",
+    "wrangler": "4.99.0"
   }
 }
