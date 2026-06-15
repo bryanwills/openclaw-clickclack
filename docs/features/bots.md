@@ -162,7 +162,10 @@ MVP endpoint mapping:
 - `GET /api/realtime/events` and `/ws`: `realtime:read`
 - `POST /api/uploads`: `uploads:write`
 - `POST /api/messages/{id}/attachments`: `uploads:write` and `messages:write`
-- `POST /api/realtime/ephemeral`: `messages:write`
+- `POST /api/realtime/ephemeral`: `messages:write`; the `agent.progress`
+  event type additionally requires a bot token and exactly one concrete target
+  (`channel_id` or `direct_conversation_id`), never workspace-wide. DM progress
+  also requires `dms:write`.
 - `PATCH /api/me`: human sessions only; bot tokens cannot mutate profiles.
 
 ## Creation Surfaces

@@ -107,9 +107,25 @@ func (s *Server) publishEphemeral(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	if body.Type != "typing.started" && body.Type != "typing.stopped" && body.Type != "presence.changed" {
+	// agent.progress is the source-bridge progress tick. It rides the same
+	// ephemeral transport and message-write authorization as typing/presence,
+	// but is bot-token-only and REQUIRED to name a single concrete target so a
+	// private turn can never broadcast to a whole workspace. The recipient list
+	// is always server-derived below; the relay never supplies recipients
+	// directly.
+	isAgentProgress := body.Type == "agent.progress"
+	if body.Type != "typing.started" && body.Type != "typing.stopped" &&
+		body.Type != "presence.changed" && !isAgentProgress {
 		writeError(w, http.StatusBadRequest, errors.New("unsupported ephemeral event type"))
 		return
+	}
+	if isAgentProgress {
+		// Human sessions never publish agent progress. A bot with normal write
+		// access can publish progress for the channel or DM it is allowed to use.
+		if act.botTokenID == "" {
+			writeError(w, http.StatusForbidden, errors.New("agent.progress requires a bot token"))
+			return
+		}
 	}
 	if err := act.requireWorkspace(body.WorkspaceID); err != nil {
 		writeError(w, http.StatusForbidden, err)
@@ -126,6 +142,14 @@ func (s *Server) publishEphemeral(w http.ResponseWriter, r *http.Request) {
 	directConversationID := strings.TrimSpace(body.DirectConversationID)
 	if (body.Type == "typing.started" || body.Type == "typing.stopped") && channelID == "" && directConversationID == "" {
 		writeError(w, http.StatusBadRequest, errors.New("typing events require channel_id or direct_conversation_id"))
+		return
+	}
+	// S1: a progress frame MUST target exactly one concrete surface. An empty
+	// target would otherwise fall through to the workspace-wide branch below and
+	// leak thinking/command-output/patch detail to every member. (channel_id and
+	// direct_conversation_id are also mutually exclusive, enforced just below.)
+	if isAgentProgress && channelID == "" && directConversationID == "" {
+		writeError(w, http.StatusBadRequest, errors.New("agent.progress requires channel_id or direct_conversation_id"))
 		return
 	}
 	var recipientUserIDs []string
