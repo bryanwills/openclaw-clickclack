@@ -5,9 +5,14 @@
   "main": "infra/cloudflare/worker.ts",
   "compatibility_date": "2026-05-17",
   "workers_dev": true,
+  "routes": [
+    { "pattern": "clickclack.chat", "custom_domain": true },
+    { "pattern": "www.clickclack.chat", "custom_domain": true },
+    { "pattern": "app.clickclack.chat", "custom_domain": true }
+  ],
   "vars": {
     "CLICKCLACK_PUBLIC_URL": "https://app.clickclack.chat",
-    "CLICKCLACK_CONTAINER_NAME": "prod-20260517-open-org",
+    "CLICKCLACK_CONTAINER_NAME": "prod-20260705-open-org",
     "CLICKCLACK_GITHUB_MODERATOR_ORG": "openclaw",
     "CLICKCLACK_UPLOADS": "r2://clickclack-uploads/prod",
     "CLICKCLACK_R2_ACCOUNT_ID": "91b59577e757131d68d55a471fe32aca"
