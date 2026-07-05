@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 - 2026-07-06
 
 - Published automated macOS, Windows, and Linux desktop installers with verified SHA-256 manifests alongside every tagged GitHub Release.
 - Integrated the desktop sidebar toggle and message search into native macOS, Windows, and Linux title bars while preserving the browser app header.
