@@ -7,10 +7,10 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsgo -p tsconfig.json && mkdir -p dist/generated && cp src/generated/openapi.d.ts dist/generated/openapi.d.ts",
-    "typecheck": "tsgo --noEmit -p tsconfig.json"
+    "build": "tsc -p tsconfig.json && mkdir -p dist/generated && cp src/generated/openapi.d.ts dist/generated/openapi.d.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
-    "@typescript/native-preview": "7.0.0-dev.20260609.1"
+    "@typescript/native": "npm:typescript@^7.0.2"
   }
 }

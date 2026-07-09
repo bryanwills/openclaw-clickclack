@@ -14,7 +14,7 @@ built SPA, so a full local build runs both toolchains.
 
 - Go (matching `go.mod`).
 - pnpm 11 (auto-managed via `corepack`).
-- TypeScript runs via `tsgo` from `@typescript/native-preview` — installed
+- TypeScript runs via stable TypeScript 7 native `tsc` from `@typescript/native` — installed
   through pnpm.
 - Lint/format use `oxlint` and `oxfmt` — installed through pnpm.
 
@@ -51,7 +51,7 @@ The Vite dev server proxies `/api` and `/api/realtime/ws` to `localhost:8080`.
 | `pnpm build:web`       | Builds and normalizes the Svelte app without touching embedded Go assets. |
 | `pnpm build:sdk`       | Builds the TypeScript SDK. |
 | `pnpm build:desktop`   | Bundles the Electron main process, preloads, and settings renderer. |
-| `pnpm check`           | Full local gate: `pnpm test`, root/workspace `tsgo`, `oxlint`, and format checks. |
+| `pnpm check`           | Full local gate: `pnpm test`, root/workspace `tsc`, `oxlint`, and format checks. |
 | `pnpm coverage`        | Go tests with coverage; fails under 85% line coverage. |
 | `pnpm dev:api`         | `go run ./apps/api/cmd/clickclack serve --dev-bootstrap=true`. |
 | `pnpm dev:web`         | `vite dev` for the SPA. |
@@ -60,7 +60,7 @@ The Vite dev server proxies `/api` and `/api/realtime/ws` to `localhost:8080`.
 | `pnpm fmt:check`       | CI-compatible formatting check with `gofmt -l` and `oxfmt --check`. |
 | `pnpm lint`            | `oxlint` over web, SDK, examples, and tests. |
 | `goreleaser release --snapshot --clean` | Local release smoke test for all configured OS/arch targets. |
-| `pnpm typecheck`       | `tsgo --noEmit -p tsconfig.json` for root Playwright config/tests. |
+| `pnpm typecheck`       | `tsc --noEmit -p tsconfig.json` for root Playwright config/tests. |
 | `pnpm test`            | Builds the web app and SDK, then runs Go tests against those fresh web assets in a temp copy without rewriting tracked embedded assets. |
 | `pnpm test:e2e`        | Playwright suite in `tests/e2e`. |
 | `pnpm test:desktop`    | Tests desktop URL, deep-link, notification, settings, and badge contracts. |

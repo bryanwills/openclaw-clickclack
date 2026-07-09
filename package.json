@@ -22,7 +22,7 @@
     "lint": "oxlint apps/desktop/src apps/web/src packages/sdk-ts/src examples tests/e2e playwright.config.ts",
     "test:e2e": "playwright test",
     "test:desktop": "pnpm --filter @clickclack/desktop test",
-    "typecheck": "tsgo --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "pnpm build:web && pnpm build:sdk && node scripts/go-test-with-web-dist.mjs",
     "embed:webassets": "node scripts/embed-web-dist.mjs apps/web/dist apps/api/internal/webassets/dist",
     "deploy:cloudflare": "wrangler deploy",
@@ -38,10 +38,11 @@
   "devDependencies": {
     "@cloudflare/containers": "0.3.7",
     "@playwright/test": "^1.61.1",
-    "@types/node": "^24.13.2",
-    "@typescript/native-preview": "7.0.0-dev.20260609.1",
-    "oxfmt": "^0.57.0",
-    "oxlint": "^1.72.0",
-    "wrangler": "4.105.0"
+    "@types/node": "^26.1.1",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "oxfmt": "^0.58.0",
+    "oxlint": "^1.73.0",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "wrangler": "4.107.1"
   }
 }

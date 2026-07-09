@@ -164,7 +164,7 @@ provided.
 
 ## Tooling
 
-- TypeScript: `tsgo` from `@typescript/native-preview`.
+- TypeScript: stable TypeScript 7 native `tsc` from `@typescript/native`.
 - Lint/format: `oxlint` and `oxfmt`.
 - Tests: `go test ./...` for the backend, Playwright (`pnpm test:e2e`) for
   the SPA.
