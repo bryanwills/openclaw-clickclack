@@ -32,7 +32,14 @@
   }: Props = $props();
 
   let openActionsID = $state("");
-  let unreadTotal = $derived(conversations.reduce((total, conversation) => total + (conversation.unread_count || 0), 0));
+  let visibleConversations = $derived(
+    expanded
+      ? conversations
+      : conversations.filter(
+          (conversation) =>
+            conversation.id === selectedDirectID || (conversation.unread_count || 0) > 0,
+        ),
+  );
 
   function shouldHandleClientNavigation(event: MouseEvent): boolean {
     return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
@@ -53,9 +60,6 @@
       <span class="caret" aria-hidden="true">▾</span>
       <span class="label">Direct messages</span>
     </button>
-    {#if !expanded && unreadTotal > 0}
-      <span class="section-unread-badge" aria-label={`${unreadTotal} unread`}>{unreadTotal > 99 ? "99+" : unreadTotal}</span>
-    {/if}
     <button
       type="button"
       class="add-button"
@@ -64,8 +68,12 @@
       onclick={onCreateDirect}
     >＋</button>
   </div>
-  <div class="nav-list" id="sidebar-direct-messages-list" hidden={!expanded}>
-    {#each conversations as conversation (conversation.id)}
+  <div
+    class="nav-list"
+    id="sidebar-direct-messages-list"
+    hidden={!expanded && visibleConversations.length === 0}
+  >
+    {#each visibleConversations as conversation (conversation.id)}
       {@const dmUser = dmAvatarUser(conversation, currentUserID)}
       {@const unread = conversation.unread_count || 0}
       {@const isActive = conversation.id === selectedDirectID}
@@ -128,10 +136,10 @@
         {/if}
       </div>
     {/each}
-    {#if conversations.length === 0}
+    {#if expanded && conversations.length === 0}
       <p class="nav-empty">No direct messages yet</p>
     {/if}
-    {#if hiddenDirectTitle}
+    {#if expanded && hiddenDirectTitle}
       <div class="dm-undo" role="status">
         <span>Closed {hiddenDirectTitle}</span>
         <button type="button" onclick={onUndoHideDirect}>Undo</button>

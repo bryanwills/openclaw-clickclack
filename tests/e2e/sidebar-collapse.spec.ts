@@ -42,9 +42,64 @@ test("sidebar sections collapse independently and persist per workspace", async 
     },
   });
   expect(botResponse.ok()).toBe(true);
-  const { bot_token: botToken } = (await botResponse.json()) as {
+  const { bot, bot_token: botToken } = (await botResponse.json()) as {
+    bot: { id: string };
     bot_token: { token: string };
   };
+  const createBotConversation = async (displayName: string, handle: string) => {
+    const response = await page.request.post(`/api/workspaces/${workspace.id}/bots`, {
+      data: {
+        display_name: displayName,
+        handle,
+        token_name: "e2e",
+        scopes: ["bot:write"],
+      },
+    });
+    expect(response.ok()).toBe(true);
+    const { bot: createdBot } = (await response.json()) as {
+      bot: { id: string };
+    };
+    const directResponse = await page.request.post("/api/dms", {
+      data: { workspace_id: workspace.id, member_ids: [createdBot.id] },
+    });
+    expect(directResponse.ok()).toBe(true);
+    const { conversation } = (await directResponse.json()) as {
+      conversation: { id: string; route_id: string };
+    };
+    return { displayName, conversation };
+  };
+  const unreadDirectResponse = await page.request.post("/api/dms", {
+    data: { workspace_id: workspace.id, member_ids: [bot.id] },
+  });
+  expect(unreadDirectResponse.ok()).toBe(true);
+  const { conversation: unreadDirect } = (await unreadDirectResponse.json()) as {
+    conversation: { id: string; route_id: string };
+  };
+  const activeDirect = await createBotConversation(
+    `Sidebar Active DM ${suffix}`,
+    `sidebar-active-dm-${suffix}`,
+  );
+  const hiddenDirect = await createBotConversation(
+    `Sidebar Hidden DM ${suffix}`,
+    `sidebar-hidden-dm-${suffix}`,
+  );
+  const dmMessageResponse = await page.request.post(`/api/dms/${unreadDirect.id}/messages`, {
+    headers: { Authorization: `Bearer ${botToken.token}` },
+    data: { body: "sidebar DM unread" },
+  });
+  expect(dmMessageResponse.ok()).toBe(true);
+  await expect
+    .poll(async () => {
+      const response = await page.request.get(`/api/dms?workspace_id=${workspace.id}`);
+      expect(response.ok()).toBe(true);
+      const data = (await response.json()) as {
+        conversations: { id: string; unread_count?: number }[];
+      };
+      return (
+        data.conversations.find((candidate) => candidate.id === unreadDirect.id)?.unread_count || 0
+      );
+    })
+    .toBe(1);
   for (let index = 0; index < 101; index++) {
     const response = await page.request.post(`/api/channels/${channel.id}/messages`, {
       headers: { Authorization: `Bearer ${botToken.token}` },
@@ -91,7 +146,27 @@ test("sidebar sections collapse independently and persist per workspace", async 
   await expect(page.locator("#sidebar-direct-messages-list")).toBeVisible();
   await expect(unreadChannelLink.getByLabel("101 unread", { exact: true })).toHaveText("99+");
   await expect(channels.locator("..").getByLabel("101 unread", { exact: true })).toHaveCount(0);
+  const directMessageList = page.locator("#sidebar-direct-messages-list");
+  const activeDirectLink = directMessageList.locator("a.nav-item.dm", {
+    hasText: activeDirect.displayName,
+  });
+  const unreadDirectLink = directMessageList.locator("a.nav-item.dm", {
+    hasText: "Sidebar Proof Bot",
+  });
+  const hiddenDirectLink = directMessageList.locator("a.nav-item.dm", {
+    hasText: hiddenDirect.displayName,
+  });
+  await activeDirectLink.click();
+  await expect(
+    page.getByRole("heading", { name: new RegExp(activeDirect.displayName) }),
+  ).toBeVisible();
   await directMessages.click();
+  await expect(directMessageList).toBeVisible();
+  await expect(activeDirectLink).toBeVisible();
+  await expect(unreadDirectLink).toBeVisible();
+  await expect(hiddenDirectLink).toHaveCount(0);
+  await expect(unreadDirectLink.getByLabel("1 unread", { exact: true })).toHaveText("1");
+  await expect(directMessages.locator("..").getByLabel("1 unread", { exact: true })).toHaveCount(0);
   await people.click();
 
   await page.getByRole("button", { name: "Create channel" }).click();
