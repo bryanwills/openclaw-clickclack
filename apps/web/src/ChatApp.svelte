@@ -20,6 +20,7 @@
   import { connectRealtime, type RealtimeConnection } from "./lib/realtime.svelte";
   import { notifyTyping, stopTyping } from "./lib/typing";
   import ChatComposer from "./components/composer/ChatComposer.svelte";
+  import ArtifactViewer from "./components/artifacts/ArtifactViewer.svelte";
   import ImageViewer from "./components/media/ImageViewer.svelte";
   import MessageList, {
     type MessageListHandle,
@@ -73,6 +74,13 @@
   let slashCommands: SlashCommand[] = [];
   let mentionPeople: User[] = [];
   let selectedImage: { url: string; title: string } | null = null;
+  let selectedArtifact: Upload | null = null;
+  let artifactConversationKey = "";
+  let artifactTrigger: HTMLElement | null = null;
+  let artifactThreadScrollTop: number | null = null;
+  let artifactViewerElement: HTMLElement | null = null;
+  let shellElement: HTMLElement | null = null;
+  let artifactModalInertElements = new Set<HTMLElement>();
   let messageBody = "";
   let replyBody = "";
   let workspaceName = "";
@@ -204,7 +212,16 @@
   $: agentResponding = agentProgressTurns.some((turn) =>
     turn.lines.some((line) => !line.finalized),
   );
-  $: sidePanelOpen = selectedThread !== null || selectedProfile !== null;
+  $: sidePanelOpen = selectedThread !== null || selectedProfile !== null || selectedArtifact !== null;
+  $: if (selectedArtifact && artifactConversationKey && artifactConversationKey !== activeConversationKey) {
+    selectedArtifact = null;
+    artifactConversationKey = "";
+    artifactTrigger = null;
+  }
+  $: syncArtifactModalInert(
+    mobileNavViewport && selectedArtifact !== null,
+    artifactViewerElement,
+  );
   $: recentPeople = collectRecentPeople(messages, directConversations, user?.id || "");
   $: mentionPeople = collectMentionPeople(user, recentPeople, moderationMembers, selectedDirect);
   $: if (replyContext === "channel" && replyTarget && !messages.some((m) => m.id === replyTarget?.id)) clearReplyTarget();
@@ -326,6 +343,7 @@
     if (agentProgressSweeper) window.clearInterval(agentProgressSweeper);
     if (activityClockSweeper) window.clearInterval(activityClockSweeper);
     if (hiddenDirectUndoTimer) clearTimeout(hiddenDirectUndoTimer);
+    syncArtifactModalInert(false, null);
   });
 
   async function boot() {
@@ -1792,6 +1810,8 @@
   }
 
   async function refreshThread(messageID: string, optimisticRoot?: Message) {
+    selectedArtifact = null;
+    artifactConversationKey = "";
     selectedProfile = null;
     if (optimisticRoot) selectedThread = optimisticRoot;
     activeComposerContext = "thread";
@@ -2419,6 +2439,8 @@
 
   function openUserProfile(profile?: User | null) {
     if (!profile) return;
+    selectedArtifact = null;
+    artifactConversationKey = "";
     selectedThread = null;
     selectedProfile = profile;
     if (
@@ -2457,6 +2479,75 @@
     selectedImage = { url, title };
   }
 
+  function openArtifactViewer(upload: Upload) {
+    artifactTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    artifactThreadScrollTop = selectedThread
+      ? (document.querySelector<HTMLElement>(".thread-scroll")?.scrollTop ?? null)
+      : null;
+    artifactConversationKey = activeConversationKey;
+    selectedArtifact = upload;
+    void tick().then(() => {
+      document.querySelector<HTMLElement>(".artifact-viewer__actions > button:last-child")?.focus();
+    });
+  }
+
+  function closeArtifactViewer() {
+    const trigger = artifactTrigger;
+    const uploadID = selectedArtifact?.id || "";
+    selectedArtifact = null;
+    artifactConversationKey = "";
+    artifactTrigger = null;
+    void tick().then(() => {
+      if (artifactThreadScrollTop !== null) {
+        const threadScroll = document.querySelector<HTMLElement>(".thread-scroll");
+        if (threadScroll) threadScroll.scrollTop = artifactThreadScrollTop;
+      }
+      artifactThreadScrollTop = null;
+      if (trigger?.isConnected) {
+        trigger.focus({ preventScroll: true });
+        return;
+      }
+      const scope = selectedThread ? document.querySelector<HTMLElement>(".thread") : document;
+      scope
+        ?.querySelector<HTMLElement>(`[data-artifact-upload-id="${CSS.escape(uploadID)}"]`)
+        ?.focus({ preventScroll: true });
+    });
+  }
+
+  function syncArtifactModalInert(active: boolean, viewer: HTMLElement | null) {
+    for (const element of artifactModalInertElements) element.inert = false;
+    artifactModalInertElements.clear();
+    if (!active || !shellElement || !viewer) return;
+    for (const child of shellElement.children) {
+      if (!(child instanceof HTMLElement) || child === viewer || child.inert) continue;
+      child.inert = true;
+      artifactModalInertElements.add(child);
+    }
+  }
+
+  function containArtifactModalFocus(event: KeyboardEvent) {
+    if (!selectedArtifact || !mobileNavViewport || event.key !== "Tab" || !artifactViewerElement) return;
+    const focusable = Array.from(
+      artifactViewerElement.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    ).filter((element) => !element.inert && element.getClientRects().length > 0);
+    if (focusable.length === 0) {
+      event.preventDefault();
+      artifactViewerElement.focus();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && (document.activeElement === first || !artifactViewerElement.contains(document.activeElement))) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && (document.activeElement === last || !artifactViewerElement.contains(document.activeElement))) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
   function handleInlineImagePointerUp(event: PointerEvent) {
     const target = event.target;
     if (!(target instanceof HTMLImageElement)) return;
@@ -2482,6 +2573,10 @@
   }
 
   function closeSidePanel() {
+    if (selectedArtifact) {
+      closeArtifactViewer();
+      return;
+    }
     const threadWasOpen = selectedThread !== null;
     const parentTargetID = currentConversationKey();
     if (replyContext === "thread") clearReplyTarget();
@@ -2500,12 +2595,18 @@
   }
 
   function handleWindowKeydown(event: KeyboardEvent) {
+    containArtifactModalFocus(event);
+    if (event.defaultPrevented) return;
     if (event.key === "Escape") {
       if (isModalOpen()) {
         closeModal();
       } else if (mobileNavOpen) {
         event.preventDefault();
         closeMobileNav();
+        return;
+      } else if (selectedArtifact) {
+        event.preventDefault();
+        closeSidePanel();
         return;
       } else if (replyTarget) {
         event.preventDefault();
@@ -2600,11 +2701,13 @@
   </main>
 {:else}
 <div
+  bind:this={shellElement}
   class="shell"
   class:desktop-shell={integratedTitleBar}
   class:nav-open={mobileNavOpen}
   class:sidebar-collapsed={sidebarCollapsed}
   class:thread-open={sidePanelOpen}
+  class:artifact-open={selectedArtifact !== null}
 >
   {#if integratedTitleBar && desktop}
     <DesktopTitlebar
@@ -2734,6 +2837,7 @@
       onOpenThread={openThread}
       onJumpToQuote={(message) => void jumpToQuotedMessage(message)}
       onOpenImage={openImageViewer}
+      onOpenArtifact={openArtifactViewer}
       onLoadOlder={requestOlderMessages}
       onLoadNewer={(source) => requestNewerMessages(source === "wheel")}
       onJumpToUnread={() => void jumpToUnreadBoundary()}
@@ -2789,10 +2893,25 @@
     </div>
   </main>
 
+  {#if selectedArtifact}
+    <aside
+      bind:this={artifactViewerElement}
+      class="artifact-viewer open"
+      inert={mobileNavOpen}
+      role={mobileNavViewport ? "dialog" : "complementary"}
+      aria-modal={mobileNavViewport ? "true" : undefined}
+      aria-label="Artifact viewer"
+      tabindex="-1"
+    >
+      <ArtifactViewer upload={selectedArtifact} onClose={closeArtifactViewer} />
+    </aside>
+  {/if}
   <aside
     class="thread"
     class:open={sidePanelOpen}
-    inert={mobileNavOpen}
+    class:covered={selectedArtifact !== null}
+    inert={mobileNavOpen || selectedArtifact !== null}
+    aria-hidden={selectedArtifact ? "true" : undefined}
     aria-label={selectedProfile ? "Profile pane" : "Thread pane"}
   >
     {#if selectedThread}
@@ -2815,6 +2934,7 @@
         onInlineImagePointerUp={handleInlineImagePointerUp}
         onJumpToQuote={(message) => void jumpToQuotedMessage(message)}
         onOpenImage={openImageViewer}
+        onOpenArtifact={openArtifactViewer}
       />
     {:else if selectedProfile}
       <ProfilePane
