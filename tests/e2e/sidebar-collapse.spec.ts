@@ -16,13 +16,21 @@ test("sidebar sections collapse independently and persist per workspace", async 
   );
   expect(activeChannelResponse.ok()).toBe(true);
   const { channel: activeChannel } = (await activeChannelResponse.json()) as {
-    channel: { route_id: string };
+    channel: { id: string; route_id: string; name: string };
   };
   const channelResponse = await page.request.post(`/api/workspaces/${workspace.id}/channels`, {
     data: { name: `sidebar-proof-${suffix}`, kind: "public" },
   });
   expect(channelResponse.ok()).toBe(true);
   const { channel } = (await channelResponse.json()) as {
+    channel: { id: string; route_id: string; name: string };
+  };
+  const hiddenChannelResponse = await page.request.post(
+    `/api/workspaces/${workspace.id}/channels`,
+    { data: { name: `hidden-${suffix}`, kind: "public" } },
+  );
+  expect(hiddenChannelResponse.ok()).toBe(true);
+  const { channel: hiddenChannel } = (await hiddenChannelResponse.json()) as {
     channel: { id: string; route_id: string; name: string };
   };
   const botResponse = await page.request.post(`/api/workspaces/${workspace.id}/bots`, {
@@ -44,8 +52,19 @@ test("sidebar sections collapse independently and persist per workspace", async 
     });
     expect(response.ok()).toBe(true);
   }
+  await expect
+    .poll(async () => {
+      const response = await page.request.get(`/api/workspaces/${workspace.id}/channels`);
+      expect(response.ok()).toBe(true);
+      const data = (await response.json()) as {
+        channels: { id: string; unread_count?: number }[];
+      };
+      return data.channels.find((candidate) => candidate.id === channel.id)?.unread_count || 0;
+    })
+    .toBe(101);
 
   await page.goto(`/app/${workspace.route_id}/${activeChannel.route_id}`);
+  await expect(page.getByRole("heading", { name: `#${activeChannel.name}` })).toBeVisible();
   const channels = page.getByRole("button", { name: "Channels", exact: true });
   const directMessages = page.getByRole("button", { name: "Direct messages", exact: true });
   const people = page.getByRole("button", { name: "People", exact: true });
@@ -57,9 +76,21 @@ test("sidebar sections collapse independently and persist per workspace", async 
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
   }
   await channels.click();
-  await expect(page.locator("#sidebar-channels-list")).toBeHidden();
+  const channelList = page.locator("#sidebar-channels-list");
+  const unreadChannelLink = channelList.locator("a.nav-item.channel", {
+    hasText: channel.name,
+  });
+  await expect(channelList).toBeVisible();
+  await expect(
+    channelList.getByRole("link", { name: `# ${activeChannel.name}`, exact: true }),
+  ).toBeVisible();
+  await expect(unreadChannelLink).toBeVisible();
+  await expect(
+    channelList.getByRole("link", { name: `# ${hiddenChannel.name}`, exact: true }),
+  ).toHaveCount(0);
   await expect(page.locator("#sidebar-direct-messages-list")).toBeVisible();
-  await expect(channels.locator("..").getByLabel("101 unread", { exact: true })).toHaveText("99+");
+  await expect(unreadChannelLink.getByLabel("101 unread", { exact: true })).toHaveText("99+");
+  await expect(channels.locator("..").getByLabel("101 unread", { exact: true })).toHaveCount(0);
   await directMessages.click();
   await people.click();
 
@@ -78,9 +109,13 @@ test("sidebar sections collapse independently and persist per workspace", async 
   for (const toggle of [channels, directMessages, people]) {
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
   }
+  await expect(channelList).toBeVisible();
   await page.goto(`/app/${workspace.route_id}/${channel.route_id}`);
   await expect(page.getByRole("heading", { name: `#${channel.name}` })).toBeVisible();
   await expect(channels).toHaveAttribute("aria-expanded", "false");
+  await expect(
+    channelList.getByRole("link", { name: `# ${channel.name}`, exact: true }),
+  ).toBeVisible();
 
   const secondResponse = await page.request.post("/api/workspaces", {
     data: { name: `Second Sidebar Workspace ${suffix}` },
@@ -107,7 +142,7 @@ test("sidebar sections collapse independently and persist per workspace", async 
   await page.getByRole("button", { name: "Toggle navigation" }).click();
   await channels.focus();
   await page.keyboard.press("Enter");
-  await expect(page.locator("#sidebar-channels-list")).toBeHidden();
+  await expect(channelList).toBeVisible();
 
   await page.addInitScript(() => {
     const blockedKeyPrefix = "clickclack:sidebar-sections:v1:";
@@ -128,4 +163,5 @@ test("sidebar sections collapse independently and persist per workspace", async 
   await channels.focus();
   await page.keyboard.press("Enter");
   await expect(channels).toHaveAttribute("aria-expanded", "false");
+  await expect(channelList).toBeVisible();
 });

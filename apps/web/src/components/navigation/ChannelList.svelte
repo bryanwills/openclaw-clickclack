@@ -23,7 +23,15 @@
     onToggle,
   }: Props = $props();
 
-  let unreadTotal = $derived(channels.reduce((total, channel) => total + (channel.unread_count || 0), 0));
+  let visibleChannels = $derived(
+    expanded
+      ? channels
+      : channels.filter(
+          (channel) =>
+            (channel.id === selectedChannelID && !selectedDirectID) ||
+            (channel.unread_count || 0) > 0,
+        ),
+  );
 
   function shouldHandleClientNavigation(event: MouseEvent): boolean {
     return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
@@ -36,9 +44,6 @@
       <span class="caret" aria-hidden="true">▾</span>
       <span class="label">Channels</span>
     </button>
-    {#if !expanded && unreadTotal > 0}
-      <span class="section-unread-badge" aria-label={`${unreadTotal} unread`}>{unreadTotal > 99 ? "99+" : unreadTotal}</span>
-    {/if}
     <button
       type="button"
       class="add-button"
@@ -47,8 +52,12 @@
       onclick={onCreateChannel}
     >＋</button>
   </div>
-  <div class="nav-list" id="sidebar-channels-list" hidden={!expanded}>
-    {#each channels as channel (channel.id)}
+  <div
+    class="nav-list"
+    id="sidebar-channels-list"
+    hidden={!expanded && visibleChannels.length === 0}
+  >
+    {#each visibleChannels as channel (channel.id)}
       {@const unread = channel.unread_count || 0}
       <a
         href={hrefForChannel(channel.id)}
@@ -67,7 +76,7 @@
         {/if}
       </a>
     {/each}
-    {#if channels.length === 0}
+    {#if expanded && channels.length === 0}
       <p class="nav-empty">No channels yet</p>
     {/if}
   </div>
