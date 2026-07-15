@@ -701,6 +701,16 @@ test("opens spreadsheets and slide decks with navigation", async ({ page }) => {
   await expect(viewer.getByRole("region", { name: "Assumptions worksheet" })).toContainText("0.18");
   await closeViewer();
 
+  await page.getByRole("button", { name: "Open launch.pptx" }).click();
+  await expect(viewer.getByLabel("Slide 1: Launch plan")).toContainText("Three milestones");
+  if (process.env.CAPTURE_OFFICE_PROOF) {
+    await viewer.screenshot({ path: "docs/proof/artifact-viewer-slide-deck.png" });
+  }
+  await viewer.getByRole("button", { name: "Next" }).click();
+  await expect(viewer.getByLabel("Slide 2: Next steps")).toContainText("Invite the pilot team");
+  await expect(viewer.getByRole("link", { name: "Download launch.pptx" })).toBeVisible();
+  await closeViewer();
+
   await page.getByRole("button", { name: "Open namespaced.xlsx" }).click();
   await expect(viewer.getByText("Deflated namespaced workbook")).toBeVisible();
   await closeViewer();
@@ -830,15 +840,6 @@ test("opens spreadsheets and slide decks with navigation", async ({ page }) => {
     )
     .toBeLessThanOrEqual(160);
   await closeViewer();
-
-  await page.getByRole("button", { name: "Open launch.pptx" }).click();
-  await expect(viewer.getByLabel("Slide 1: Launch plan")).toContainText("Three milestones");
-  if (process.env.CAPTURE_OFFICE_PROOF) {
-    await viewer.screenshot({ path: "docs/proof/artifact-viewer-slide-deck.png" });
-  }
-  await viewer.getByRole("button", { name: "Next" }).click();
-  await expect(viewer.getByLabel("Slide 2: Next steps")).toContainText("Invite the pilot team");
-  await expect(viewer.getByRole("link", { name: "Download launch.pptx" })).toBeVisible();
 });
 
 test("bounds PDF canvas dimensions and total backing pixels", () => {
