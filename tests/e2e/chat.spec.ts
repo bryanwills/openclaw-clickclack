@@ -429,13 +429,13 @@ test("channels can be reordered accessibly and persist locally", async ({ page, 
 
 test("app subdomain root opens the chat app", async ({ page }) => {
   await page.goto("http://app.localhost:18082/");
-  await expect(page.locator('.shell[data-connected="true"]')).toBeVisible();
+  await waitForAppReady(page);
   await expect(page.getByRole("heading", { name: "#general" })).toBeVisible();
 });
 
 test("shows realtime connection state in the shell", async ({ page }) => {
   await page.goto("/app");
-  await expect(page.locator('.shell[data-connected="true"]')).toBeVisible();
+  await waitForAppReady(page);
   await expect(page.locator(".workspace-name .presence")).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: /Account settings for Local Captain/ }),
@@ -913,7 +913,7 @@ test("browser notifications require explicit profile opt-in", async ({ page }) =
   });
 
   await page.goto("/app");
-  await expect(page.locator('.shell[data-connected="true"]')).toBeVisible();
+  await waitForAppReady(page);
   await page
     .getByRole("button", { name: /Account settings for Local Captain/ })
     .click({ button: "right" });
@@ -1008,7 +1008,7 @@ test("mobile navigation behaves like a drawer", async ({ page }) => {
 test("desktop sidebar collapse preference still toggles", async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 844 });
   await page.goto("/app");
-  await expect(page.locator('.shell[data-connected="true"]')).toBeVisible();
+  await waitForAppReady(page);
 
   const shell = page.locator(".shell");
   await page.getByRole("button", { name: "Collapse sidebar" }).click();
@@ -1784,7 +1784,7 @@ test("browser notifications announce incoming messages outside the active conver
 
   await page.goto(`/app/${workspace.route_id}/${activeChannel.channel.route_id}`);
   await expect(page.getByRole("heading", { name: `#${activeChannel.channel.name}` })).toBeVisible();
-  await expect(page.locator('.shell[data-connected="true"]')).toBeVisible();
+  await waitForAppReady(page);
 
   const channelName = `notify-${randomUUID()}`;
   const channelResponse = await page.request.post(`/api/workspaces/${workspace.id}/channels`, {

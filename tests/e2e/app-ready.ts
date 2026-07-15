@@ -1,7 +1,7 @@
 import { expect, type Page } from "@playwright/test";
 
 export async function waitForAppReady(page: Page) {
-  // SSR exposes controls before Svelte binds their handlers. Realtime only
-  // connects after the client has mounted and started the selected workspace.
-  await expect(page.locator('.shell[data-connected="true"]')).toBeVisible();
+  // /app can connect realtime before canonical route application finishes.
+  // Wait until boot has completed so interactions survive any route remount.
+  await expect(page.locator('.shell[data-app-ready="true"]')).toBeVisible();
 }

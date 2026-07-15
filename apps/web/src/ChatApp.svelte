@@ -3080,6 +3080,7 @@
   class:thread-open={sidePanelOpen}
   class:artifact-open={selectedArtifact !== null}
   data-connected={connected}
+  data-app-ready={connected && status === "ready"}
 >
   {#if integratedTitleBar && desktop}
     <DesktopTitlebar
