@@ -40,7 +40,7 @@
 - Serialized SQLite writers across processes, configured every connection consistently, and hardened nonce finalization, quota accounting, claim lifecycles, and workspace deletion races.
 - Allowed disabled Pushover settings to clear stored user keys through the public API contract. Thanks @vincentkoc.
 - Proxied WebSocket upgrades in the Vite development server so local realtime connects without a reconnect loop.
-- Refreshed frontend, Electron, Cloudflare Worker, router, SQLite, build, and release dependencies to their latest stable releases.
+- Refreshed frontend, Electron, Cloudflare Worker, router, SQLite, Node, pnpm, GoReleaser, GitHub Actions, and container bases to their latest stable releases.
 - Aligned the pull-request template with the repository workflow. Thanks @hannesrudolph.
 
 ## 0.1.0 - 2026-07-06
