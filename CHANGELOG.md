@@ -1,30 +1,47 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 - 2026-07-17
 
-- Added validated split frontend/API origins, credentialed exact-origin browser access, and versioned server-issued bot setup endpoints while preserving same-origin setup commands.
-- Refreshed frontend, Cloudflare Worker, router, and SQLite dependencies to their current compatible releases.
-- Tightened integration administration with manager-only registration changes, signing-secret rotation, atomic installation revoke cascades, paginated delivery history, and a discoverable durable event-type vocabulary.
-- Added owner-scoped message nonce lookup so durable clients can distinguish completed sends from interrupted requests and recover attachments safely. Thanks @shakkernerd.
-- Added durable upload idempotency and nonce lookup so retried bot deliveries reuse the original upload without consuming more storage or quota. Thanks @shakkernerd.
-- Allowed disabled Pushover notification settings to clear the stored user key through the public API contract.
-- Unified the desktop shell chrome like Slack: title bar, workspace rail, and sidebar share one continuous plate with the conversation floating on it as a rounded card, the sidebar workspace header and the in-card channel header are gone on desktop — the workspace name (click for workspace settings) and the current channel or DM title live in the title bar — and the always-on "Connected" labels are gone everywhere (app settings stay on the native menu and Cmd/Ctrl+,; a pulsing "Connecting…" note appears only while the realtime link is down). The browser app keeps its sidebar workspace header and channel header unchanged.
-- Fixed live agent-activity bursts so same-turn preambles grow in place without dropping realtime rows or pulling a bottom-pinned timeline away from the live edge.
-- Added typed agent-progress SDK payloads while preserving workspace-wide presence events without channel or DM targets. Thanks @arcabotai for surfacing the integration needs.
-- Softened message bubbles: hairline accent-tint borders replace the heavier outlines, gentler keycap under-edges, and roomier padding.
-- Added Appearance settings with a light/dark/system color mode and four full-app board themes (Signal, the heritage Ember, Moss, Iris) — each tuned for both modes via a light-dark() token refactor, applied instantly with live swatch previews, persisted per device, and flash-free on load.
-- Redesigned the product site around the "Switchboard" keycap identity: cool porcelain/night-board themes over a dot-grid plate, electric cyan accent with indigo bot/thread tones, keycap buttons and step markers with press states, Bricolage Grotesque display type, and mono kickers/labels.
-- Redesigned the web app around a "Switchboard" keycap identity: cool porcelain/night-board themes replace the warm paper look, an electric cyan signal accent with indigo delivery and amber working-log tones, tactile keycap controls with hard press states, Bricolage Grotesque display type, and mono machine metadata (timestamps, section labels, day dividers, bot chips).
-- Added personal channel ordering with desktop drag-and-drop, keyboard and touch move-menu controls, per-user/workspace browser persistence, same-profile tab synchronization, and preserved active/unread priority rows while sections are collapsed. Thanks @jjjhenriksen.
-- Added independently collapsible Channels, Direct messages, and People sidebar sections that retain active and unread rows while collapsed, with accessible controls and per-workspace browser persistence. Thanks @jjjhenriksen.
-- Unified the web app on one warm "paper & ember" design language: a new espresso dark theme replaces the cool slate look, identity marks share a theme-tied brand gradient, off-palette purple/indigo/blue hardcodes (including workspace-settings buttons and quote blocks) now follow the coral accent, settings surfaces inherit the app font, and scrollbars are visible on the light theme.
-- Added manager workspace profile and icon controls plus owner-only ownership transfer and permanent deletion with durable upload cleanup. Thanks @Solvely-Colin.
-- Proxied WebSocket upgrades in the Vite dev server so the local app connects to realtime instead of looping on "Reconnecting…".
-- Added a bounded read-only artifact pane for code, text, Markdown, PDF, and sandboxed HTML attachments, while keeping DOCX download-only and preserving thread routes when the pane closes. Thanks @jjjhenriksen.
-- Added an opt-in realtime tail cursor so fresh clients can skip retained history without racing new events, and applied read-receipt visibility before event pagination. Thanks @shakkernerd.
-- Added SDK helpers for paginated realtime recovery and bounded latest thread-history windows. Thanks @arcabotai for surfacing the integration needs.
-- Preserved validated request correlation IDs as optional metadata on durable message and thread-reply events across replay and realtime delivery, and added canary run/case evidence IDs without changing message storage or gateway traffic.
-- Added an isolated FakeCo small-VM deployment path with idempotent synthetic chat seed data, OpenClaw and ClawRouter SecretRef configuration, correlated health/readiness and metadata-only telemetry, a quoted-reply end-to-end canary, tests, and teardown guidance.
+### Highlights
+
+- Added a complete integrations workspace with an app catalog, guided installer, slash commands, event subscriptions, delivery history, connected accounts, durable event types, and OpenAPI/SDK support.
+- Added secure server-issued bot setup codes and validated split frontend/API origins with exact claim URLs, canonical API bases, credentialed CORS, and fully compatible same-origin defaults.
+- Added paginated SQLite/Postgres message search with matched context, persistent sidebar results, canonical thread handoff, and SDK pagination. Thanks @jjjhenriksen.
+- Added a bounded artifact viewer for code, text, Markdown, PDF, sandboxed HTML, spreadsheets, and slide decks. Thanks @jjjhenriksen.
+- Redesigned the app, product site, and desktop shell around the Switchboard identity with light/dark/system modes, four board themes, and unified native chrome.
+
+### Integrations and automation
+
+- Tightened integration administration with manager-only mutations, signing-secret rotation, atomic revoke cascades, reusable installations, bounded delivery cursors, and retry-safe setup workflows.
+- Added scoped bot command menus across storage, API, SDK, workspace settings, and the composer, including canonical slash-command dispatch and moderation-aware lifecycle handling.
+- Added guided OpenClaw connection commands, explicit bot/app connection methods, tokenless bot creation, exclusive credential reveals, and replay-safe setup defaults.
+- Added versioned, rate-limited, single-use bot setup-code claims that mint credentials atomically and return server-issued exact claim and canonical API endpoints.
+- Added durable bot deletion that retires identities, resources, direct messages, sockets, integrations, and tokens while preserving historical attribution.
+- Added SDK helpers for paginated realtime recovery, bounded latest thread history, and typed agent-progress payloads while retaining workspace-wide events without channel or DM targets. Thanks @arcabotai for surfacing the integration needs.
+- Added owner-scoped message nonce recovery and durable upload idempotency so interrupted clients can reconcile sends and reuse uploads without consuming duplicate storage or quota. Thanks @shakkernerd.
+
+### Chat and workspace
+
+- Added paginated SQLite/Postgres message search with bounded enrichment, matched snippets, persistent sidebar sessions, stale-response protection, canonical thread routes, and SDK pagination. Thanks @jjjhenriksen.
+- Added a bounded read-only artifact pane for code, text, Markdown, PDF, and sandboxed HTML plus safe spreadsheet and slide-deck previews with strict work/output limits. Thanks @jjjhenriksen.
+- Added personal channel ordering with drag-and-drop, keyboard/touch move controls, cross-tab persistence, and active/unread preservation inside independently collapsible sidebar sections. Thanks @jjjhenriksen.
+- Added independent message alignment, selectable standard/outlined layouts, softer message surfaces, and accessible appearance controls. Thanks @jjjhenriksen and @ragesaq.
+- Added manager workspace profile/icon controls, owner transfer and permanent deletion, and owner-or-author message deletion with confirmation and durable upload cleanup. Thanks @Solvely-Colin.
+- Expanded account and workspace settings with paginated/virtualized members, role totals, bot management, and workspace-isolated state.
+- Fixed live agent-activity bursts to coalesce same-turn progress without dropping realtime rows or pulling bottom-pinned timelines away from the live edge.
+- Restored brand-gradient contrast and enforced the repository pnpm runtime policy. Thanks @vincentkoc.
+
+### Platform, security, and operations
+
+- Hardened GitHub and desktop OAuth with persisted transactions and grants, PKCE, versioned handoff, bounded metrics, canonical origins, redacted failures, and production cookie namespaces. Thanks @ragesaq.
+- Added validated split-origin deployment configuration with strict administrator URL trust, exact-origin CORS/CSRF/WebSocket checks, secure cookie policy, API base paths, and server-injected browser configuration.
+- Added opt-in realtime tail cursors, read-receipt-aware pagination, and validated correlation metadata across replay, realtime delivery, and canary evidence. Thanks @shakkernerd.
+- Added an isolated FakeCo small-VM/AWS staging path with idempotent seed data, SecretRef configuration, correlated health/readiness telemetry, a quoted-reply canary, and teardown guidance.
+- Serialized SQLite writers across processes, configured every connection consistently, and hardened nonce finalization, quota accounting, claim lifecycles, and workspace deletion races.
+- Allowed disabled Pushover settings to clear stored user keys through the public API contract. Thanks @vincentkoc.
+- Proxied WebSocket upgrades in the Vite development server so local realtime connects without a reconnect loop.
+- Refreshed frontend, Electron, Cloudflare Worker, router, SQLite, build, and release dependencies to their latest stable releases.
+- Aligned the pull-request template with the repository workflow. Thanks @hannesrudolph.
 
 ## 0.1.0 - 2026-07-06
 
