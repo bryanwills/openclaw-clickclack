@@ -1,5 +1,6 @@
 <script lang="ts">
   import { dmTitle } from "../../lib/chat/people";
+  import { safeExternalChannelURL } from "../../lib/chat/channels";
   import type { Channel, DirectConversation } from "../../lib/types";
 
   type Props = {
@@ -31,6 +32,8 @@
     onToggleThread,
     onPinnedItems,
   }: Props = $props();
+
+  const externalHref = $derived(selectedDirect ? undefined : safeExternalChannelURL(selectedChannel?.external_url));
 </script>
 
 <header class="topbar">
@@ -68,6 +71,13 @@
     <button type="submit" class="search-submit">Search</button>
   </form>
   <div class="topbar-actions" aria-label="Channel tools">
+    {#if externalHref}
+      <a href={externalHref} target="_blank" rel="noopener" title="Open external channel" aria-label="Open external channel">
+        <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+          <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M14 4h6v6m0-6-9 9m7 0v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6" />
+        </svg>
+      </a>
+    {/if}
     <button
       type="button"
       title={threadOpen ? "Close thread" : "Open a message thread"}

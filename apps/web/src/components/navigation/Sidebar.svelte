@@ -228,6 +228,7 @@
 
   <div class="sidebar-scroll">
     <ChannelList
+      {workspaceID}
       expanded={sections.channels}
       channels={orderedChannels}
       {selectedChannelID}

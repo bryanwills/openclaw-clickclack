@@ -1,6 +1,9 @@
 <script lang="ts">
+  import { safeExternalChannelURL } from "../../lib/chat/channels";
+
   type Props = {
     channelTitle?: string;
+    externalURL?: string;
     connected: boolean;
     mobileNavigation: boolean;
     mobileNavOpen: boolean;
@@ -17,6 +20,7 @@
 
   let {
     channelTitle,
+    externalURL,
     connected,
     mobileNavigation,
     mobileNavOpen,
@@ -30,6 +34,8 @@
     onSearchQuery,
     onToggleSidebar,
   }: Props = $props();
+
+  const externalHref = $derived(safeExternalChannelURL(externalURL));
 </script>
 
 <header class="desktop-titlebar" data-platform={platform}>
@@ -85,6 +91,13 @@
       {#if channelTitle}
         <span class="topbar-divider desktop-titlebar-divider" aria-hidden="true"></span>
         <h1 class="desktop-titlebar-channel with-glyph" title={channelTitle}>{channelTitle}</h1>
+        {#if externalHref}
+          <a class="desktop-external-link" href={externalHref} target="_blank" rel="noopener" title="Open external channel" aria-label="Open external channel">
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+              <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M14 4h6v6m0-6-9 9m7 0v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6" />
+            </svg>
+          </a>
+        {/if}
       {/if}
     </div>
 

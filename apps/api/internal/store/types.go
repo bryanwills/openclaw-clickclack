@@ -194,16 +194,20 @@ type Workspace struct {
 }
 
 type Channel struct {
-	ID          string  `json:"id"`
-	RouteID     string  `json:"route_id"`
-	WorkspaceID string  `json:"workspace_id"`
-	Name        string  `json:"name"`
-	Kind        string  `json:"kind"`
-	CreatedAt   string  `json:"created_at"`
-	ArchivedAt  *string `json:"archived_at,omitempty"`
-	LastSeq     int64   `json:"last_seq"`
-	LastReadSeq int64   `json:"last_read_seq"`
-	UnreadCount int64   `json:"unread_count"`
+	ID              string  `json:"id"`
+	RouteID         string  `json:"route_id"`
+	WorkspaceID     string  `json:"workspace_id"`
+	Name            string  `json:"name"`
+	Kind            string  `json:"kind"`
+	CreatedAt       string  `json:"created_at"`
+	ArchivedAt      *string `json:"archived_at,omitempty"`
+	ExternalManaged bool    `json:"external_managed"`
+	ExternalRef     *string `json:"external_ref,omitempty"`
+	ExternalURL     *string `json:"external_url,omitempty"`
+	SidebarSection  *string `json:"sidebar_section,omitempty"`
+	LastSeq         int64   `json:"last_seq"`
+	LastReadSeq     int64   `json:"last_read_seq"`
+	UnreadCount     int64   `json:"unread_count"`
 }
 
 type Message struct {
@@ -653,18 +657,26 @@ type TransferWorkspaceOwnershipInput struct {
 }
 
 type CreateChannelInput struct {
-	WorkspaceID string
-	Name        string
-	Kind        string
-	UserID      string
+	WorkspaceID     string
+	Name            string
+	Kind            string
+	UserID          string
+	ExternalManaged bool
+	ExternalRef     string
+	ExternalURL     string
+	SidebarSection  string
 }
 
 type UpdateChannelInput struct {
-	ChannelID string
-	UserID    string
-	Name      string
-	Kind      string
-	Archived  *bool
+	ChannelID       string
+	UserID          string
+	Name            string
+	Kind            string
+	Archived        *bool
+	ExternalManaged *bool
+	ExternalRef     *string
+	ExternalURL     *string
+	SidebarSection  *string
 }
 
 type CreateMessageInput struct {

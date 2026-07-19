@@ -832,14 +832,27 @@ func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Name string `json:"name"`
-		Kind string `json:"kind"`
+		Name            string `json:"name"`
+		Kind            string `json:"kind"`
+		ExternalManaged bool   `json:"external_managed"`
+		ExternalRef     string `json:"external_ref"`
+		ExternalURL     string `json:"external_url"`
+		SidebarSection  string `json:"sidebar_section"`
 	}
 	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	channel, event, err := s.store.CreateChannel(r.Context(), store.CreateChannelInput{WorkspaceID: chi.URLParam(r, "workspace_id"), Name: body.Name, Kind: body.Kind, UserID: act.user.ID})
+	channel, event, err := s.store.CreateChannel(r.Context(), store.CreateChannelInput{
+		WorkspaceID:     chi.URLParam(r, "workspace_id"),
+		Name:            body.Name,
+		Kind:            body.Kind,
+		UserID:          act.user.ID,
+		ExternalManaged: body.ExternalManaged,
+		ExternalRef:     body.ExternalRef,
+		ExternalURL:     body.ExternalURL,
+		SidebarSection:  body.SidebarSection,
+	})
 	if err == nil {
 		s.publishEvent(r.Context(), event)
 	}

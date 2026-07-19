@@ -305,6 +305,13 @@ func TestSearchWorkspaceFTSMigrationPreservesAndScopesRows(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = st.Close() })
 	applySQLiteMigrationsBefore(t, ctx, st, "0033_search_workspace_fts.sql")
+	// Current channel queries include the managed-channel columns. Apply that
+	// independent schema addition early while leaving the FTS migration under
+	// test unapplied, and record it so Migrate does not run it twice below.
+	applySQLiteMigrations(t, ctx, st, "0037_managed_channels.sql")
+	if _, err := st.db.ExecContext(ctx, `INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)`, "0037_managed_channels.sql", now()); err != nil {
+		t.Fatal(err)
+	}
 
 	owner, err := st.EnsureBootstrap(ctx, "Migration Owner", "search-migration@example.com")
 	if err != nil {

@@ -353,6 +353,7 @@ func TestEmbedFrameAncestorsCSP(t *testing.T) {
 		want      string
 	}{
 		{name: "configured embed", path: "/embed/thread/TEXAMPLE/MEXAMPLE", ancestors: []string{"https://control.example.com", "https://dock.example.com"}, want: "frame-ancestors 'self' https://control.example.com https://dock.example.com"},
+		{name: "channel embed", path: "/embed/channel/TEXAMPLE/CEXAMPLE", ancestors: []string{"https://control.example.com"}, want: "frame-ancestors 'self' https://control.example.com"},
 		{name: "default embed", path: "/embed/thread/TEXAMPLE/MEXAMPLE", want: "frame-ancestors 'self'"},
 		{name: "non embed app", path: "/app/TEXAMPLE/MEXAMPLE", ancestors: []string{"https://control.example.com"}, want: ""},
 		{name: "embed prefix without slash", path: "/embed", ancestors: []string{"https://control.example.com"}, want: ""},

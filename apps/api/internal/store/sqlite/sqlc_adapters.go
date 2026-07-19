@@ -3,6 +3,7 @@ package sqlite
 import (
 	"database/sql"
 	"encoding/json"
+	"strings"
 
 	"github.com/openclaw/clickclack/apps/api/internal/store"
 	"github.com/openclaw/clickclack/apps/api/internal/store/sqlite/storedb"
@@ -35,6 +36,21 @@ func nullFromPtr(value *string) sql.NullString {
 		return sql.NullString{}
 	}
 	return sqlText(*value)
+}
+
+func optionalTrimmedString(value string) *string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
+}
+
+func databaseBool(value bool) int64 {
+	if value {
+		return 1
+	}
+	return 0
 }
 
 func sqlInt64(value int64) sql.NullInt64 {
@@ -171,28 +187,36 @@ func storeUploadFromGetUploadByOwnerNonce(row storedb.GetUploadByOwnerNonceRow) 
 
 func storeChannelFromGetChannel(row storedb.GetChannelRow) store.Channel {
 	return store.Channel{
-		ID:          row.ID,
-		RouteID:     row.RouteID,
-		WorkspaceID: row.WorkspaceID,
-		Name:        row.Name,
-		Kind:        row.Kind,
-		CreatedAt:   row.CreatedAt,
-		ArchivedAt:  ptrFromNull(row.ArchivedAt),
+		ID:              row.ID,
+		RouteID:         row.RouteID,
+		WorkspaceID:     row.WorkspaceID,
+		Name:            row.Name,
+		Kind:            row.Kind,
+		CreatedAt:       row.CreatedAt,
+		ArchivedAt:      ptrFromNull(row.ArchivedAt),
+		ExternalManaged: row.ExternalManaged == 1,
+		ExternalRef:     ptrFromNull(row.ExternalRef),
+		ExternalURL:     ptrFromNull(row.ExternalUrl),
+		SidebarSection:  ptrFromNull(row.SidebarSection),
 	}
 }
 
 func storeChannelFromListChannels(row storedb.ListChannelsRow) store.Channel {
 	return store.Channel{
-		ID:          row.ID,
-		RouteID:     row.RouteID,
-		WorkspaceID: row.WorkspaceID,
-		Name:        row.Name,
-		Kind:        row.Kind,
-		CreatedAt:   row.CreatedAt,
-		ArchivedAt:  ptrFromNull(row.ArchivedAt),
-		LastSeq:     row.LastSeq,
-		LastReadSeq: row.LastReadSeq,
-		UnreadCount: row.UnreadCount,
+		ID:              row.ID,
+		RouteID:         row.RouteID,
+		WorkspaceID:     row.WorkspaceID,
+		Name:            row.Name,
+		Kind:            row.Kind,
+		CreatedAt:       row.CreatedAt,
+		ArchivedAt:      ptrFromNull(row.ArchivedAt),
+		ExternalManaged: row.ExternalManaged == 1,
+		ExternalRef:     ptrFromNull(row.ExternalRef),
+		ExternalURL:     ptrFromNull(row.ExternalUrl),
+		SidebarSection:  ptrFromNull(row.SidebarSection),
+		LastSeq:         row.LastSeq,
+		LastReadSeq:     row.LastReadSeq,
+		UnreadCount:     row.UnreadCount,
 	}
 }
 

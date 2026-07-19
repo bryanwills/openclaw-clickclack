@@ -2,6 +2,7 @@
 
 ## 0.2.1 - Unreleased
 
+- Added externally managed channel identity and deep links, archive-aware and sectioned sidebar groups, archive event metadata, and a live standalone channel embed.
 - Fixed the thread reply composer send button sitting mid-row instead of flush right in thread panels and embeds.
 - Added a standalone, live-updating, cookie-authenticated thread embed with the shared thread composer and rendering, public route IDs, focused auth recovery, and an opt-in per-origin `/embed/*` frame policy.
 - Signed and notarized macOS desktop release bundles with the OpenClaw Foundation identity, hardened runtime, and strict sealed-artifact verification.

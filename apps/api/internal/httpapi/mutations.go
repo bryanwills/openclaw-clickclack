@@ -21,9 +21,13 @@ func (s *Server) updateChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Name     string `json:"name"`
-		Kind     string `json:"kind"`
-		Archived *bool  `json:"archived"`
+		Name            string  `json:"name"`
+		Kind            string  `json:"kind"`
+		Archived        *bool   `json:"archived"`
+		ExternalManaged *bool   `json:"external_managed"`
+		ExternalRef     *string `json:"external_ref"`
+		ExternalURL     *string `json:"external_url"`
+		SidebarSection  *string `json:"sidebar_section"`
 	}
 	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -32,7 +36,17 @@ func (s *Server) updateChannel(w http.ResponseWriter, r *http.Request) {
 	if !s.requireBotChannelWorkspace(w, r, act, chi.URLParam(r, "channel_id")) {
 		return
 	}
-	channel, event, err := s.store.UpdateChannel(r.Context(), store.UpdateChannelInput{ChannelID: chi.URLParam(r, "channel_id"), UserID: act.user.ID, Name: body.Name, Kind: body.Kind, Archived: body.Archived})
+	channel, event, err := s.store.UpdateChannel(r.Context(), store.UpdateChannelInput{
+		ChannelID:       chi.URLParam(r, "channel_id"),
+		UserID:          act.user.ID,
+		Name:            body.Name,
+		Kind:            body.Kind,
+		Archived:        body.Archived,
+		ExternalManaged: body.ExternalManaged,
+		ExternalRef:     body.ExternalRef,
+		ExternalURL:     body.ExternalURL,
+		SidebarSection:  body.SidebarSection,
+	})
 	if err == nil {
 		s.publishEvent(r.Context(), event)
 	}

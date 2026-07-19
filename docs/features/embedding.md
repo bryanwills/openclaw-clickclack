@@ -1,14 +1,18 @@
 ---
 read_when:
-  - embedding a ClickClack thread in another application
+  - embedding a ClickClack thread or channel in another application
   - configuring frame-ancestors for embedded pages
 ---
 
-# Embedded threads
+# Embedded threads and channels
 
 ClickClack exposes a minimal thread-only page for docking a conversation in an
 iframe. It contains the root message, replies, the normal thread composer, and
 live updates, but none of the workspace rail, sidebar, or full-app top bar.
+
+It also exposes a channel embed with the shared message renderer, paginated
+history, nonce-idempotent composer, and realtime cursor recovery. Its slim
+header names the channel and links back to the canonical full ClickClack view.
 
 ## URL
 
@@ -16,6 +20,12 @@ Use the public route IDs from a normal ClickClack thread URL:
 
 ```text
 https://chat.example.com/embed/thread/{workspace_route_id}/{message_route_id}
+```
+
+For a whole channel, use the workspace and channel public route IDs:
+
+```text
+https://chat.example.com/embed/channel/{workspace_route_id}/{channel_route_id}
 ```
 
 For example:
@@ -29,6 +39,10 @@ both public IDs through the normal route API, then uses the existing thread and
 realtime endpoints. Humans authenticate with their normal ClickClack session
 cookie. A signed-out frame offers a link that opens ClickClack in a new tab and
 automatically retries when focus returns after sign-in.
+
+The channel route ID must be a public `C...` channel route. The channel embed
+uses the same membership and guest-channel visibility checks as the full app;
+archiving a channel does not invalidate its embed URL.
 
 ## Allowing a host to frame ClickClack
 

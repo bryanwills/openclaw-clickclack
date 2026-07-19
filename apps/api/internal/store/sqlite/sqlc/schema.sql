@@ -74,6 +74,10 @@ CREATE TABLE channels (
   created_at TEXT NOT NULL,
   archived_at TEXT,
   route_id TEXT,
+  external_managed INTEGER NOT NULL DEFAULT 0,
+  external_ref TEXT,
+  external_url TEXT,
+  sidebar_section TEXT,
   UNIQUE(workspace_id, name)
 );
 

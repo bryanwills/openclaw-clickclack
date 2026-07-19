@@ -130,6 +130,72 @@ func TestMutationsCreateDurableEvents(t *testing.T) {
 	}
 }
 
+func TestManagedChannelFieldsRoundTripAndClear(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	st := newTestStore(t)
+	owner, err := st.EnsureBootstrap(ctx, "Managed Owner", "managed-owner@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaces, err := st.ListWorkspaces(ctx, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	channel, _, err := st.CreateChannel(ctx, store.CreateChannelInput{
+		WorkspaceID:     workspaces[0].ID,
+		UserID:          owner.ID,
+		Name:            "managed-session",
+		ExternalManaged: true,
+		ExternalRef:     "  session:alpha  ",
+		ExternalURL:     "  https://control.example.com/sessions/alpha  ",
+		SidebarSection:  "  Sessions  ",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !channel.ExternalManaged || channel.ExternalRef == nil || *channel.ExternalRef != "session:alpha" || channel.ExternalURL == nil || *channel.ExternalURL != "https://control.example.com/sessions/alpha" || channel.SidebarSection == nil || *channel.SidebarSection != "Sessions" {
+		t.Fatalf("unexpected created managed channel: %#v", channel)
+	}
+	channels, err := st.ListChannels(ctx, workspaces[0].ID, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var listed store.Channel
+	for _, candidate := range channels {
+		if candidate.ID == channel.ID {
+			listed = candidate
+			break
+		}
+	}
+	if listed.ID == "" || !listed.ExternalManaged || listed.ExternalRef == nil || *listed.ExternalRef != "session:alpha" || listed.ExternalURL == nil || listed.SidebarSection == nil {
+		t.Fatalf("managed fields missing from channel list: %#v", listed)
+	}
+
+	clear := ""
+	managed := false
+	archived := true
+	updated, event, err := st.UpdateChannel(ctx, store.UpdateChannelInput{
+		ChannelID:       channel.ID,
+		UserID:          owner.ID,
+		Archived:        &archived,
+		ExternalManaged: &managed,
+		ExternalRef:     &clear,
+		ExternalURL:     &clear,
+		SidebarSection:  &clear,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.ExternalManaged || updated.ExternalRef != nil || updated.ExternalURL != nil || updated.SidebarSection != nil || updated.ArchivedAt == nil {
+		t.Fatalf("managed fields were not cleared: %#v", updated)
+	}
+	payload, ok := event.Payload.(map[string]any)
+	if !ok || payload["archived"] != true || payload["channel_id"] != channel.ID {
+		t.Fatalf("channel.updated archive metadata missing: %#v", event.Payload)
+	}
+}
+
 func TestGuestChannelNameIsReserved(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

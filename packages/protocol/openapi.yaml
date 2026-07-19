@@ -2458,6 +2458,18 @@ components:
         kind:
           type: string
           default: public
+        external_managed:
+          type: boolean
+        external_ref:
+          type: string
+          description: Opaque identity in the external managing system.
+        external_url:
+          type: string
+          format: uri
+          description: Deep link into the external managing application.
+        sidebar_section:
+          type: string
+          description: Optional client sidebar grouping label.
     Topic:
       type: object
       required: [id, workspace_id, name, created_at]
@@ -2496,6 +2508,22 @@ components:
           type: string
         archived:
           type: boolean
+        external_managed:
+          type: boolean
+        external_ref:
+          type: string
+          description: Opaque external identity. Send an empty string to clear it.
+        external_url:
+          oneOf:
+            - type: string
+              format: uri
+              minLength: 1
+            - type: string
+              maxLength: 0
+          description: External deep link. Send an empty string to clear it.
+        sidebar_section:
+          type: string
+          description: Sidebar grouping label. Send an empty string to clear it.
     CreateMessageRequest:
       type: object
       required: [body]
@@ -2695,7 +2723,7 @@ components:
           format: date-time
     Channel:
       type: object
-      required: [id, route_id, workspace_id, name, kind, created_at]
+      required: [id, route_id, workspace_id, name, kind, created_at, external_managed]
       properties:
         id:
           type: string
@@ -2714,6 +2742,18 @@ components:
         archived_at:
           type: string
           format: date-time
+        external_managed:
+          type: boolean
+        external_ref:
+          type: string
+          description: Opaque identity in the external managing system.
+        external_url:
+          type: string
+          format: uri
+          description: Deep link into the external managing application.
+        sidebar_section:
+          type: string
+          description: Optional client sidebar grouping label.
         last_seq:
           type: integer
           format: int64

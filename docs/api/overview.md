@@ -57,6 +57,12 @@ The value is not stored on message rows or exported as a metrics label.
 | Integrations  | `/api/hooks/mattermost/{channel}` | [integrations](../features/integrations.md) |
 | Operations    | `/healthz`, `/readyz`, opt-in `/metrics` | [deployment](../deployment.md) |
 
+The standalone browser embeds live at
+`/embed/thread/{workspace_route_id}/{message_route_id}` and
+`/embed/channel/{workspace_route_id}/{channel_route_id}`. They resolve public
+route IDs through the normal route API and use the same authenticated channel,
+message, thread, and realtime endpoints listed above.
+
 ## Conventions
 
 - All payloads are JSON unless explicitly multipart (uploads) or

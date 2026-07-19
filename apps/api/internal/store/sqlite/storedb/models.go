@@ -104,13 +104,17 @@ type BotTombstone struct {
 }
 
 type Channel struct {
-	ID          string         `json:"id"`
-	WorkspaceID string         `json:"workspace_id"`
-	Name        string         `json:"name"`
-	Kind        string         `json:"kind"`
-	CreatedAt   string         `json:"created_at"`
-	ArchivedAt  sql.NullString `json:"archived_at"`
-	RouteID     sql.NullString `json:"route_id"`
+	ID              string         `json:"id"`
+	WorkspaceID     string         `json:"workspace_id"`
+	Name            string         `json:"name"`
+	Kind            string         `json:"kind"`
+	CreatedAt       string         `json:"created_at"`
+	ArchivedAt      sql.NullString `json:"archived_at"`
+	RouteID         sql.NullString `json:"route_id"`
+	ExternalManaged int64          `json:"external_managed"`
+	ExternalRef     sql.NullString `json:"external_ref"`
+	ExternalUrl     sql.NullString `json:"external_url"`
+	SidebarSection  sql.NullString `json:"sidebar_section"`
 }
 
 type ChannelRead struct {

@@ -834,7 +834,11 @@
     const data = await api<{ channels: Channel[] }>(`/api/workspaces/${selectedWorkspaceID}/channels`);
     channels = data.channels;
     if (selectFallback) {
-      selectedChannelID = channels.find((channel) => channel.id === selectedChannelID)?.id || channels[0]?.id || "";
+      selectedChannelID =
+        channels.find((channel) => channel.id === selectedChannelID)?.id ||
+        channels.find((channel) => !channel.archived_at)?.id ||
+        channels[0]?.id ||
+        "";
     } else if (selectedChannelID && !channels.some((channel) => channel.id === selectedChannelID)) {
       selectedChannelID = "";
     }
@@ -3282,6 +3286,7 @@
         : selectedChannel
           ? `#${selectedChannel.name}`
           : undefined}
+      externalURL={selectedDirect ? undefined : selectedChannel?.external_url}
       {connected}
       platform={desktop.platform}
       {searchQuery}

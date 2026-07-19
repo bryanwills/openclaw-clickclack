@@ -1535,6 +1535,16 @@ export interface components {
       name: string;
       /** @default public */
       kind: string;
+      external_managed?: boolean;
+      /** @description Opaque identity in the external managing system. */
+      external_ref?: string;
+      /**
+       * Format: uri
+       * @description Deep link into the external managing application.
+       */
+      external_url?: string;
+      /** @description Optional client sidebar grouping label. */
+      sidebar_section?: string;
     };
     Topic: {
       id: string;
@@ -1555,6 +1565,13 @@ export interface components {
       name?: string;
       kind?: string;
       archived?: boolean;
+      external_managed?: boolean;
+      /** @description Opaque external identity. Send an empty string to clear it. */
+      external_ref?: string;
+      /** @description External deep link. Send an empty string to clear it. */
+      external_url?: string;
+      /** @description Sidebar grouping label. Send an empty string to clear it. */
+      sidebar_section?: string;
     };
     CreateMessageRequest: {
       body: string;
@@ -1686,6 +1703,16 @@ export interface components {
       created_at: string;
       /** Format: date-time */
       archived_at?: string;
+      external_managed: boolean;
+      /** @description Opaque identity in the external managing system. */
+      external_ref?: string;
+      /**
+       * Format: uri
+       * @description Deep link into the external managing application.
+       */
+      external_url?: string;
+      /** @description Optional client sidebar grouping label. */
+      sidebar_section?: string;
       /** Format: int64 */
       last_seq?: number;
       /** Format: int64 */

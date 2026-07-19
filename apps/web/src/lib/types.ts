@@ -34,6 +34,10 @@ export type Channel = {
   kind: string;
   created_at: string;
   archived_at?: string;
+  external_managed: boolean;
+  external_ref?: string;
+  external_url?: string;
+  sidebar_section?: string;
   last_seq?: number;
   last_read_seq?: number;
   unread_count?: number;

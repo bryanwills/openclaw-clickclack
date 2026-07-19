@@ -251,21 +251,45 @@ func (s *Store) UpdateChannel(ctx context.Context, input store.UpdateChannelInpu
 			archivedValue = &value
 		}
 	}
+	externalManaged := ch.ExternalManaged
+	if input.ExternalManaged != nil {
+		externalManaged = *input.ExternalManaged
+	}
+	externalRef := ch.ExternalRef
+	if input.ExternalRef != nil {
+		externalRef = optionalTrimmedString(*input.ExternalRef)
+	}
+	externalURL := ch.ExternalURL
+	if input.ExternalURL != nil {
+		externalURL = optionalTrimmedString(*input.ExternalURL)
+	}
+	sidebarSection := ch.SidebarSection
+	if input.SidebarSection != nil {
+		sidebarSection = optionalTrimmedString(*input.SidebarSection)
+	}
 	if err := qtx.UpdateChannel(ctx, storedb.UpdateChannelParams{
-		Name:       name,
-		Kind:       kind,
-		ArchivedAt: nullFromPtr(archivedValue),
-		ID:         ch.ID,
+		Name:            name,
+		Kind:            kind,
+		ArchivedAt:      nullFromPtr(archivedValue),
+		ExternalManaged: databaseBool(externalManaged),
+		ExternalRef:     nullFromPtr(externalRef),
+		ExternalUrl:     nullFromPtr(externalURL),
+		SidebarSection:  nullFromPtr(sidebarSection),
+		ID:              ch.ID,
 	}); err != nil {
 		return store.Channel{}, store.Event{}, err
 	}
-	event, err := insertEvent(ctx, tx, ch.WorkspaceID, ch.ID, "channel.updated", nil, map[string]string{"channel_id": ch.ID})
+	event, err := insertEvent(ctx, tx, ch.WorkspaceID, ch.ID, "channel.updated", nil, map[string]any{"channel_id": ch.ID, "archived": archivedValue != nil})
 	if err != nil {
 		return store.Channel{}, store.Event{}, err
 	}
 	ch.Name = name
 	ch.Kind = kind
 	ch.ArchivedAt = archivedValue
+	ch.ExternalManaged = externalManaged
+	ch.ExternalRef = externalRef
+	ch.ExternalURL = externalURL
+	ch.SidebarSection = sidebarSection
 	return ch, event, tx.Commit()
 }
 

@@ -10,6 +10,57 @@ import (
 	"github.com/openclaw/clickclack/apps/api/internal/store/postgres/storedb"
 )
 
+func TestManagedChannelFieldsRoundTripPostgres(t *testing.T) {
+	ctx := context.Background()
+	st := newIsolatedPostgresTestStore(t)
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: "Managed Owner", Email: "managed-postgres@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace, err := st.CreateWorkspace(ctx, store.CreateWorkspaceInput{Name: "Managed Postgres", Slug: "managed-postgres"}, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	channel, _, err := st.CreateChannel(ctx, store.CreateChannelInput{
+		WorkspaceID:     workspace.ID,
+		UserID:          owner.ID,
+		Name:            "managed-session",
+		ExternalManaged: true,
+		ExternalRef:     "session:postgres",
+		ExternalURL:     "https://control.example.com/sessions/postgres",
+		SidebarSection:  "Sessions",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !channel.ExternalManaged || channel.ExternalRef == nil || channel.ExternalURL == nil || channel.SidebarSection == nil {
+		t.Fatalf("unexpected created managed channel: %#v", channel)
+	}
+	clear := ""
+	archived := true
+	updated, event, err := st.UpdateChannel(ctx, store.UpdateChannelInput{
+		ChannelID:      channel.ID,
+		UserID:         owner.ID,
+		Archived:       &archived,
+		ExternalRef:    &clear,
+		ExternalURL:    &clear,
+		SidebarSection: &clear,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.ExternalRef != nil || updated.ExternalURL != nil || updated.SidebarSection != nil || updated.ArchivedAt == nil {
+		t.Fatalf("managed fields were not cleared: %#v", updated)
+	}
+	payload, ok := event.Payload.(map[string]any)
+	if !ok || payload["archived"] != true {
+		t.Fatalf("channel.updated archive metadata missing: %#v", event.Payload)
+	}
+}
+
 func TestWorkspaceUpdateSerializesPartialWrites(t *testing.T) {
 	ctx := context.Background()
 	st := newIsolatedPostgresTestStore(t)

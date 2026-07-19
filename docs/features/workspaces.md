@@ -55,11 +55,24 @@ POST /api/workspaces/{workspace_id}/channels  # create
 PATCH /api/channels/{channel_id}              # rename, change kind, archive
 ```
 
-Create body: `{name, kind?}`. `name` is slugified to keep `(workspace_id, name)`
-unique. `kind` defaults to `public`.
+Create body: `{name, kind?, external_managed?, external_ref?, external_url?,
+sidebar_section?}`. `name` is slugified to keep `(workspace_id, name)` unique.
+`kind` defaults to `public`. External management is opt-in and does not change
+channel authorization: it records an opaque identity and optional deep link for
+the application that owns the channel lifecycle.
 
-`PATCH` accepts any subset of `{name, kind, archived}`. Setting `archived=true`
-fills `archived_at`; `archived=false` clears it.
+`PATCH` accepts any subset of `{name, kind, archived, external_managed,
+external_ref, external_url, sidebar_section}`. Setting `archived=true` fills
+`archived_at`; `archived=false` clears it. Sending an empty string for any of
+the nullable external or sidebar fields clears that field.
+
+Archived channels remain addressable and readable, but the web sidebar removes
+them from the normal channel list and places them in a collapsed Archived group.
+Non-archived channels with a non-empty `sidebar_section` appear in an
+alphabetized labeled subgroup; channels without one keep the original flat-list
+placement. Section and Archived disclosure state is browser-local and persisted
+per workspace. `external_managed` adds a small row marker, while a safe HTTP(S)
+`external_url` adds an external-open action to the channel header.
 
 Guest workspace members are waiting-room users. They can only see `#guest`, can
 post three messages per day, and cannot create rooms or DMs. Moderators and
@@ -68,7 +81,8 @@ owners can promote them to `member`, time them out, or block them. See
 
 Channel write endpoints emit a durable `channel.created` or `channel.updated`
 event into the workspace event stream so connected clients see the change
-without polling.
+without polling. `channel.updated` includes the resulting `archived` boolean in
+its payload so consumers can update visibility without refetching the channel.
 
 ## Web routes
 

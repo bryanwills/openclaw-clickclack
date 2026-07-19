@@ -262,6 +262,10 @@ export type Channel = {
   kind: string;
   created_at: string;
   archived_at?: string;
+  external_managed: boolean;
+  external_ref?: string;
+  external_url?: string;
+  sidebar_section?: string;
   last_seq?: number;
   last_read_seq?: number;
   unread_count?: number;
@@ -947,7 +951,14 @@ export class ClickClackClient {
     },
     create: async (
       workspaceId: string,
-      input: { name: string; kind?: string },
+      input: {
+        name: string;
+        kind?: string;
+        external_managed?: boolean;
+        external_ref?: string;
+        external_url?: string;
+        sidebar_section?: string;
+      },
     ): Promise<Channel> => {
       const data = await this.request<{ channel: Channel }>(
         `/api/workspaces/${workspaceId}/channels`,
@@ -960,7 +971,15 @@ export class ClickClackClient {
     },
     update: async (
       channelId: string,
-      input: { name?: string; kind?: string; archived?: boolean },
+      input: {
+        name?: string;
+        kind?: string;
+        archived?: boolean;
+        external_managed?: boolean;
+        external_ref?: string;
+        external_url?: string;
+        sidebar_section?: string;
+      },
     ): Promise<Channel> => {
       const data = await this.request<{ channel: Channel }>(`/api/channels/${channelId}`, {
         method: "PATCH",

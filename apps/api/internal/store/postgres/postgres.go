@@ -412,7 +412,17 @@ func (s *Store) CreateChannel(ctx context.Context, input store.CreateChannelInpu
 	if err := requireNoModerationBlockTx(ctx, tx, input.WorkspaceID, input.UserID); err != nil {
 		return store.Channel{}, store.Event{}, err
 	}
-	ch := store.Channel{ID: newID("chn"), WorkspaceID: input.WorkspaceID, Name: slug(input.Name), Kind: input.Kind, CreatedAt: now()}
+	ch := store.Channel{
+		ID:              newID("chn"),
+		WorkspaceID:     input.WorkspaceID,
+		Name:            slug(input.Name),
+		Kind:            input.Kind,
+		CreatedAt:       now(),
+		ExternalManaged: input.ExternalManaged,
+		ExternalRef:     optionalTrimmedString(input.ExternalRef),
+		ExternalURL:     optionalTrimmedString(input.ExternalURL),
+		SidebarSection:  optionalTrimmedString(input.SidebarSection),
+	}
 	if ch.Name == "" {
 		ch.Name = "general"
 	}
@@ -430,12 +440,16 @@ func (s *Store) CreateChannel(ctx context.Context, input store.CreateChannelInpu
 		}
 		ch.RouteID = routeID
 		if err := s.q.WithTx(tx).InsertChannel(ctx, storedb.InsertChannelParams{
-			ID:          ch.ID,
-			RouteID:     sqlText(ch.RouteID),
-			WorkspaceID: ch.WorkspaceID,
-			Name:        ch.Name,
-			Kind:        ch.Kind,
-			CreatedAt:   ch.CreatedAt,
+			ID:              ch.ID,
+			RouteID:         sqlText(ch.RouteID),
+			WorkspaceID:     ch.WorkspaceID,
+			Name:            ch.Name,
+			Kind:            ch.Kind,
+			CreatedAt:       ch.CreatedAt,
+			ExternalManaged: databaseBool(ch.ExternalManaged),
+			ExternalRef:     nullFromPtr(ch.ExternalRef),
+			ExternalUrl:     nullFromPtr(ch.ExternalURL),
+			SidebarSection:  nullFromPtr(ch.SidebarSection),
 		}); err != nil {
 			if isRouteIDConflict(err) {
 				continue
