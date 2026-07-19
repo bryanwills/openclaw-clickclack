@@ -2,6 +2,7 @@
 
 ## 0.2.1 - Unreleased
 
+- Added a standalone, live-updating, cookie-authenticated thread embed with the shared thread composer and rendering, public route IDs, focused auth recovery, and an opt-in per-origin `/embed/*` frame policy.
 - Signed and notarized macOS desktop release bundles with the OpenClaw Foundation identity, hardened runtime, and strict sealed-artifact verification.
 
 ## 0.2.0 - 2026-07-17
@@ -46,6 +47,30 @@
 - Proxied WebSocket upgrades in the Vite development server so local realtime connects without a reconnect loop.
 - Refreshed frontend, Electron, Cloudflare Worker, router, SQLite, Node, pnpm, GoReleaser, GitHub Actions, and container bases to their latest stable releases.
 - Aligned the pull-request template with the repository workflow. Thanks @hannesrudolph.
+||||||| parent of 26c95ce (feat: add embeddable thread view)
+- Added validated split frontend/API origins, credentialed exact-origin browser access, and versioned server-issued bot setup endpoints while preserving same-origin setup commands.
+- Refreshed frontend, Cloudflare Worker, router, and SQLite dependencies to their current compatible releases.
+- Tightened integration administration with manager-only registration changes, signing-secret rotation, atomic installation revoke cascades, paginated delivery history, and a discoverable durable event-type vocabulary.
+- Added owner-scoped message nonce lookup so durable clients can distinguish completed sends from interrupted requests and recover attachments safely. Thanks @shakkernerd.
+- Added durable upload idempotency and nonce lookup so retried bot deliveries reuse the original upload without consuming more storage or quota. Thanks @shakkernerd.
+- Allowed disabled Pushover notification settings to clear the stored user key through the public API contract.
+- Unified the desktop shell chrome like Slack: title bar, workspace rail, and sidebar share one continuous plate with the conversation floating on it as a rounded card, the sidebar workspace header and the in-card channel header are gone on desktop — the workspace name (click for workspace settings) and the current channel or DM title live in the title bar — and the always-on "Connected" labels are gone everywhere (app settings stay on the native menu and Cmd/Ctrl+,; a pulsing "Connecting…" note appears only while the realtime link is down). The browser app keeps its sidebar workspace header and channel header unchanged.
+- Fixed live agent-activity bursts so same-turn preambles grow in place without dropping realtime rows or pulling a bottom-pinned timeline away from the live edge.
+- Added typed agent-progress SDK payloads while preserving workspace-wide presence events without channel or DM targets. Thanks @arcabotai for surfacing the integration needs.
+- Softened message bubbles: hairline accent-tint borders replace the heavier outlines, gentler keycap under-edges, and roomier padding.
+- Added Appearance settings with a light/dark/system color mode and four full-app board themes (Signal, the heritage Ember, Moss, Iris) — each tuned for both modes via a light-dark() token refactor, applied instantly with live swatch previews, persisted per device, and flash-free on load.
+- Redesigned the product site around the "Switchboard" keycap identity: cool porcelain/night-board themes over a dot-grid plate, electric cyan accent with indigo bot/thread tones, keycap buttons and step markers with press states, Bricolage Grotesque display type, and mono kickers/labels.
+- Redesigned the web app around a "Switchboard" keycap identity: cool porcelain/night-board themes replace the warm paper look, an electric cyan signal accent with indigo delivery and amber working-log tones, tactile keycap controls with hard press states, Bricolage Grotesque display type, and mono machine metadata (timestamps, section labels, day dividers, bot chips).
+- Added personal channel ordering with desktop drag-and-drop, keyboard and touch move-menu controls, per-user/workspace browser persistence, same-profile tab synchronization, and preserved active/unread priority rows while sections are collapsed. Thanks @jjjhenriksen.
+- Added independently collapsible Channels, Direct messages, and People sidebar sections that retain active and unread rows while collapsed, with accessible controls and per-workspace browser persistence. Thanks @jjjhenriksen.
+- Unified the web app on one warm "paper & ember" design language: a new espresso dark theme replaces the cool slate look, identity marks share a theme-tied brand gradient, off-palette purple/indigo/blue hardcodes (including workspace-settings buttons and quote blocks) now follow the coral accent, settings surfaces inherit the app font, and scrollbars are visible on the light theme.
+- Added manager workspace profile and icon controls plus owner-only ownership transfer and permanent deletion with durable upload cleanup. Thanks @Solvely-Colin.
+- Proxied WebSocket upgrades in the Vite dev server so the local app connects to realtime instead of looping on "Reconnecting…".
+- Added a bounded read-only artifact pane for code, text, Markdown, PDF, and sandboxed HTML attachments, while keeping DOCX download-only and preserving thread routes when the pane closes. Thanks @jjjhenriksen.
+- Added an opt-in realtime tail cursor so fresh clients can skip retained history without racing new events, and applied read-receipt visibility before event pagination. Thanks @shakkernerd.
+- Added SDK helpers for paginated realtime recovery and bounded latest thread-history windows. Thanks @arcabotai for surfacing the integration needs.
+- Preserved validated request correlation IDs as optional metadata on durable message and thread-reply events across replay and realtime delivery, and added canary run/case evidence IDs without changing message storage or gateway traffic.
+- Added an isolated FakeCo small-VM deployment path with idempotent synthetic chat seed data, OpenClaw and ClawRouter SecretRef configuration, correlated health/readiness and metadata-only telemetry, a quoted-reply end-to-end canary, tests, and teardown guidance.
 
 ## 0.1.0 - 2026-07-06
 

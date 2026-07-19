@@ -87,6 +87,7 @@ func serve(args []string) error {
 	configPath := flags.String("config", "", "config file")
 	flags.Bool("dev-bootstrap", false, "create a local owner/workspace/channel if no user exists")
 	flags.Bool("metrics-enabled", false, "expose metadata-only Prometheus metrics at /metrics")
+	flags.String("embed-frame-ancestors", "", "comma-separated origins allowed to embed /embed/* pages")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -133,11 +134,12 @@ func serve(args []string) error {
 	}
 	log.Printf("ClickClack listening on %s", displayURL(cfg.Addr))
 	server := httpapi.New(st, realtime.NewHub(), httpapi.Options{
-		UploadStorage:  uploads,
-		DisableDevAuth: !cfg.DevBootstrap,
-		CookieNames:    cookieNames,
-		FrontendURL:    cfg.PublicURL,
-		PublicAPIURL:   cfg.PublicAPIURL,
+		UploadStorage:       uploads,
+		DisableDevAuth:      !cfg.DevBootstrap,
+		CookieNames:         cookieNames,
+		FrontendURL:         cfg.PublicURL,
+		PublicAPIURL:        cfg.PublicAPIURL,
+		EmbedFrameAncestors: cfg.EmbedFrameAncestors,
 		GitHubOAuth: httpapi.GitHubOAuthConfig{
 			ClientID:     cfg.GitHubClientID,
 			ClientSecret: cfg.GitHubClientSecret,
@@ -582,6 +584,8 @@ func applyFlagOverrides(flags *flag.FlagSet, cfg *config.Config) {
 			cfg.DevBootstrap = f.Value.String() == "true"
 		case "metrics-enabled":
 			cfg.MetricsEnabled = f.Value.String() == "true"
+		case "embed-frame-ancestors":
+			cfg.EmbedFrameAncestors = config.ParseEmbedFrameAncestors(f.Value.String())
 		}
 	})
 }

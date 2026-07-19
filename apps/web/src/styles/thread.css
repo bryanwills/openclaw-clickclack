@@ -77,6 +77,27 @@
   color: var(--text-strong);
 }
 
+.thread .thread-open-link {
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.thread .thread-open-link:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+.thread .thread-open-link:focus-visible {
+  border-radius: 3px;
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
 .thread .thread-back {
   display: grid;
   flex: 0 0 auto;

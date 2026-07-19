@@ -13,25 +13,26 @@ import (
 )
 
 type Config struct {
-	Addr               string `json:"addr"`
-	Data               string `json:"data"`
-	DB                 string `json:"db"`
-	Uploads            string `json:"uploads"`
-	Environment        string `json:"environment"`
-	MetricsEnabled     bool   `json:"metrics_enabled"`
-	PublicURL          string `json:"public_url"`
-	PublicAPIURL       string `json:"public_api_url"`
-	CookieNamespace    string `json:"cookie_namespace"`
-	DevBootstrap       bool   `json:"dev_bootstrap"`
-	GitHubClientID     string `json:"github_client_id"`
-	GitHubClientSecret string `json:"github_client_secret"`
-	GitHubAllowedOrg   string `json:"github_allowed_org"`
-	GitHubModeratorOrg string `json:"github_moderator_org"`
-	PushoverAPIToken   string `json:"pushover_api_token"`
-	R2AccountID        string `json:"r2_account_id"`
-	R2AccessKeyID      string `json:"r2_access_key_id"`
-	R2SecretAccessKey  string `json:"r2_secret_access_key"`
-	R2Endpoint         string `json:"r2_endpoint"`
+	Addr                string   `json:"addr"`
+	Data                string   `json:"data"`
+	DB                  string   `json:"db"`
+	Uploads             string   `json:"uploads"`
+	Environment         string   `json:"environment"`
+	MetricsEnabled      bool     `json:"metrics_enabled"`
+	PublicURL           string   `json:"public_url"`
+	PublicAPIURL        string   `json:"public_api_url"`
+	EmbedFrameAncestors []string `json:"embed_frame_ancestors"`
+	CookieNamespace     string   `json:"cookie_namespace"`
+	DevBootstrap        bool     `json:"dev_bootstrap"`
+	GitHubClientID      string   `json:"github_client_id"`
+	GitHubClientSecret  string   `json:"github_client_secret"`
+	GitHubAllowedOrg    string   `json:"github_allowed_org"`
+	GitHubModeratorOrg  string   `json:"github_moderator_org"`
+	PushoverAPIToken    string   `json:"pushover_api_token"`
+	R2AccountID         string   `json:"r2_account_id"`
+	R2AccessKeyID       string   `json:"r2_access_key_id"`
+	R2SecretAccessKey   string   `json:"r2_secret_access_key"`
+	R2Endpoint          string   `json:"r2_endpoint"`
 }
 
 func Defaults() Config {
@@ -82,6 +83,9 @@ func Load(path string) (Config, error) {
 	}
 	if env := os.Getenv("CLICKCLACK_PUBLIC_API_URL"); env != "" {
 		cfg.PublicAPIURL = env
+	}
+	if env := os.Getenv("CLICKCLACK_EMBED_FRAME_ANCESTORS"); env != "" {
+		cfg.EmbedFrameAncestors = ParseEmbedFrameAncestors(env)
 	}
 	if env := os.Getenv("CLICKCLACK_COOKIE_NAMESPACE"); env != "" {
 		cfg.CookieNamespace = env
@@ -145,6 +149,10 @@ func (c *Config) ValidateServe() error {
 	if publicAPIURL == "" {
 		publicAPIURL = publicURL
 	}
+	embedFrameAncestors, err := normalizeEmbedFrameAncestors(c.EmbedFrameAncestors)
+	if err != nil {
+		return fmt.Errorf("CLICKCLACK_EMBED_FRAME_ANCESTORS: %w", err)
+	}
 	if err := validatePublicURLPair(publicURL, publicAPIURL); err != nil {
 		return err
 	}
@@ -167,6 +175,7 @@ func (c *Config) ValidateServe() error {
 		return fmt.Errorf("cookie policy: %w", err)
 	}
 	c.PublicAPIURL = publicAPIURL
+	c.EmbedFrameAncestors = embedFrameAncestors
 	c.CookieNamespace = namespace
 	c.PublicURL = publicURL
 	c.GitHubClientID = clientID
@@ -174,6 +183,39 @@ func (c *Config) ValidateServe() error {
 	c.GitHubAllowedOrg = allowedOrg
 	c.GitHubModeratorOrg = moderatorOrg
 	return nil
+}
+
+// ParseEmbedFrameAncestors parses the comma- or whitespace-separated format
+// accepted by CLICKCLACK_EMBED_FRAME_ANCESTORS and --embed-frame-ancestors.
+func ParseEmbedFrameAncestors(value string) []string {
+	return strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == ' ' || r == '\t' || r == '\n' || r == '\r'
+	})
+}
+
+func normalizeEmbedFrameAncestors(values []string) ([]string, error) {
+	seen := make(map[string]struct{}, len(values))
+	normalized := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		parsed, err := url.Parse(value)
+		if err != nil || parsed.Opaque != "" || parsed.User != nil || parsed.Hostname() == "" ||
+			strings.Contains(parsed.Hostname(), "*") ||
+			(parsed.Scheme != "http" && parsed.Scheme != "https") ||
+			(parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
+			return nil, fmt.Errorf("%q must be an HTTP(S) origin without a path, query, or fragment", value)
+		}
+		origin := (&url.URL{Scheme: strings.ToLower(parsed.Scheme), Host: strings.ToLower(parsed.Host)}).String()
+		if _, ok := seen[origin]; ok {
+			continue
+		}
+		seen[origin] = struct{}{}
+		normalized = append(normalized, origin)
+	}
+	return normalized, nil
 }
 
 func validatePublicURLPair(publicURL, publicAPIURL string) error {

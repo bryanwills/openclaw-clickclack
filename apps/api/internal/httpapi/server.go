@@ -34,6 +34,7 @@ type Server struct {
 	githubOAuth           GitHubOAuthConfig
 	frontendURL           string
 	publicAPIURL          string
+	embedFrameAncestors   []string
 	cookies               authpolicy.CookieNames
 	cookieSameSite        http.SameSite
 	disableDevAuth        bool
@@ -67,18 +68,19 @@ type actor struct {
 }
 
 type Options struct {
-	UploadDir      string
-	UploadStorage  uploadstore.Store
-	GitHubOAuth    GitHubOAuthConfig
-	FrontendURL    string
-	PublicAPIURL   string
-	CookieNames    authpolicy.CookieNames
-	DisableDevAuth bool
-	PushNotifier   PushNotifier
-	MetricsEnabled bool
-	Environment    string
-	Version        string
-	Commit         string
+	UploadDir           string
+	UploadStorage       uploadstore.Store
+	GitHubOAuth         GitHubOAuthConfig
+	FrontendURL         string
+	PublicAPIURL        string
+	EmbedFrameAncestors []string
+	CookieNames         authpolicy.CookieNames
+	DisableDevAuth      bool
+	PushNotifier        PushNotifier
+	MetricsEnabled      bool
+	Environment         string
+	Version             string
+	Commit              string
 }
 
 func New(st store.Store, hub *realtime.Hub, options Options) *Server {
@@ -102,6 +104,7 @@ func New(st store.Store, hub *realtime.Hub, options Options) *Server {
 		githubOAuth:           options.GitHubOAuth.withDefaults(),
 		frontendURL:           strings.TrimSpace(options.FrontendURL),
 		publicAPIURL:          strings.TrimRight(strings.TrimSpace(options.PublicAPIURL), "/"),
+		embedFrameAncestors:   append([]string(nil), options.EmbedFrameAncestors...),
 		cookies:               cookieNames,
 		cookieSameSite:        configuredCookieSameSite(options.FrontendURL, options.PublicAPIURL),
 		disableDevAuth:        options.DisableDevAuth,
@@ -1456,6 +1459,13 @@ func (s *Server) serveSPA(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
+	if strings.HasPrefix(r.URL.Path, "/embed/") {
+		// frame-ancestors is deliberately independent of cookie SameSite policy:
+		// allowing a cross-site ancestor never loosens cookies, so such embeds can
+		// render signed-out. Documented in docs/features/embedding.md.
+		ancestors := append([]string{"'self'"}, s.embedFrameAncestors...)
+		w.Header().Set("Content-Security-Policy", "frame-ancestors "+strings.Join(ancestors, " "))
+	}
 	index = s.injectRuntimeConfig(index)
 	_, _ = w.Write(index)
 }

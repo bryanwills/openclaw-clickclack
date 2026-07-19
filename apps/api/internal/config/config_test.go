@@ -15,6 +15,7 @@ func TestLoadDefaultsEnvAndFile(t *testing.T) {
 	t.Setenv("CLICKCLACK_METRICS_ENABLED", "true")
 	t.Setenv("CLICKCLACK_PUBLIC_URL", "https://clickclack.test")
 	t.Setenv("CLICKCLACK_PUBLIC_API_URL", "https://api.clickclack.test/services/clickclack/")
+	t.Setenv("CLICKCLACK_EMBED_FRAME_ANCESTORS", "https://control.example.com, https://dock.example.com")
 	t.Setenv("CLICKCLACK_COOKIE_NAMESPACE", "prod-2")
 	t.Setenv("CLICKCLACK_DEV_BOOTSTRAP", "false")
 	t.Setenv("CLICKCLACK_GITHUB_CLIENT_ID", "client")
@@ -30,7 +31,7 @@ func TestLoadDefaultsEnvAndFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Addr != ":9000" || cfg.Data != "/tmp/clickclack" || cfg.DB != "sqlite:///tmp/clickclack.db" || cfg.Uploads != "r2://clickclack-uploads/prod" || cfg.Environment != "fakeco" || !cfg.MetricsEnabled || cfg.PublicURL != "https://clickclack.test" || cfg.PublicAPIURL != "https://api.clickclack.test/services/clickclack/" || cfg.CookieNamespace != "prod-2" || cfg.DevBootstrap || cfg.GitHubClientID != "client" || cfg.GitHubClientSecret != "secret" || cfg.GitHubAllowedOrg != "openclaw" || cfg.GitHubModeratorOrg != "openclaw" || cfg.PushoverAPIToken != "app-token" || cfg.R2AccountID != "account" || cfg.R2AccessKeyID != "access" || cfg.R2SecretAccessKey != "secret-access" || cfg.R2Endpoint != "https://r2.example.com" {
+	if cfg.Addr != ":9000" || cfg.Data != "/tmp/clickclack" || cfg.DB != "sqlite:///tmp/clickclack.db" || cfg.Uploads != "r2://clickclack-uploads/prod" || cfg.Environment != "fakeco" || !cfg.MetricsEnabled || cfg.PublicURL != "https://clickclack.test" || cfg.PublicAPIURL != "https://api.clickclack.test/services/clickclack/" || len(cfg.EmbedFrameAncestors) != 2 || cfg.EmbedFrameAncestors[0] != "https://control.example.com" || cfg.CookieNamespace != "prod-2" || cfg.DevBootstrap || cfg.GitHubClientID != "client" || cfg.GitHubClientSecret != "secret" || cfg.GitHubAllowedOrg != "openclaw" || cfg.GitHubModeratorOrg != "openclaw" || cfg.PushoverAPIToken != "app-token" || cfg.R2AccountID != "account" || cfg.R2AccessKeyID != "access" || cfg.R2SecretAccessKey != "secret-access" || cfg.R2Endpoint != "https://r2.example.com" {
 		t.Fatalf("unexpected env config: %#v", cfg)
 	}
 
@@ -54,6 +55,7 @@ func TestLoadDefaultsEnvAndFile(t *testing.T) {
 	t.Setenv("CLICKCLACK_METRICS_ENABLED", "")
 	t.Setenv("CLICKCLACK_PUBLIC_URL", "")
 	t.Setenv("CLICKCLACK_PUBLIC_API_URL", "")
+	t.Setenv("CLICKCLACK_EMBED_FRAME_ANCESTORS", "")
 	t.Setenv("CLICKCLACK_COOKIE_NAMESPACE", "")
 	t.Setenv("CLICKCLACK_DEV_BOOTSTRAP", "")
 	t.Setenv("CLICKCLACK_GITHUB_CLIENT_ID", "")
@@ -140,6 +142,13 @@ func TestValidateServe(t *testing.T) {
 	if err := splitOrigin.ValidateServe(); err != nil || splitOrigin.PublicAPIURL != "https://api.example.com/services/clickclack" {
 		t.Fatalf("expected canonical split API URL: %#v %v", splitOrigin, err)
 	}
+	embedOrigins := Config{EmbedFrameAncestors: []string{"HTTPS://Control.Example.com/", "https://control.example.com", "http://localhost:3000"}}
+	if err := embedOrigins.ValidateServe(); err != nil {
+		t.Fatal(err)
+	}
+	if len(embedOrigins.EmbedFrameAncestors) != 2 || embedOrigins.EmbedFrameAncestors[0] != "https://control.example.com" || embedOrigins.EmbedFrameAncestors[1] != "http://localhost:3000" {
+		t.Fatalf("unexpected normalized embed origins: %#v", embedOrigins.EmbedFrameAncestors)
+	}
 
 	for _, tc := range []struct {
 		name string
@@ -155,6 +164,8 @@ func TestValidateServe(t *testing.T) {
 		{"missing client secret", Config{PublicURL: "https://chat.example.com", GitHubClientID: "client"}},
 		{"oauth without public url", Config{GitHubClientID: "client", GitHubClientSecret: "secret"}},
 		{"org without oauth", Config{GitHubAllowedOrg: "openclaw"}},
+		{"invalid embed ancestor", Config{EmbedFrameAncestors: []string{"https://control.example.com/path"}}},
+		{"wildcard embed ancestor", Config{EmbedFrameAncestors: []string{"https://*.example.com"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if err := tc.cfg.ValidateServe(); err == nil {

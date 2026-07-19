@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -55,6 +56,19 @@ func TestCommandDBDefaultsUseEnvironment(t *testing.T) {
 	}
 	if got := defaultUploads(); got != "r2://bucket/uploads" {
 		t.Fatalf("defaultUploads = %q", got)
+	}
+}
+
+func TestApplyFlagOverridesParsesEmbedFrameAncestors(t *testing.T) {
+	flags := flag.NewFlagSet("test", flag.ContinueOnError)
+	flags.String("embed-frame-ancestors", "", "")
+	if err := flags.Parse([]string{"--embed-frame-ancestors", "https://control.example.com,https://dock.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{}
+	applyFlagOverrides(flags, &cfg)
+	if len(cfg.EmbedFrameAncestors) != 2 || cfg.EmbedFrameAncestors[1] != "https://dock.example.com" {
+		t.Fatalf("unexpected embed frame ancestors: %#v", cfg.EmbedFrameAncestors)
 	}
 }
 

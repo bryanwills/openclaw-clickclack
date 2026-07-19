@@ -36,6 +36,7 @@ hook in `cmd/clickclack/main.go`.
 | `--dev-bootstrap`     | `CLICKCLACK_DEV_BOOTSTRAP`       | `false`     | `serve` only. Creates a default user/workspace/channel and enables local dev auth fallbacks when explicitly set to `true`. |
 | —                     | `CLICKCLACK_PUBLIC_URL`          | unset       | Canonical external origin. Required for GitHub OAuth and namespaced cookies. |
 | —                     | `CLICKCLACK_PUBLIC_API_URL`      | public URL  | Canonical external API base. May use a different origin and a normalized base path. |
+| `--embed-frame-ancestors` | `CLICKCLACK_EMBED_FRAME_ANCESTORS` | unset | Comma- or whitespace-separated exact origins allowed to frame `/embed/*`; see [Embedded threads](features/embedding.md). |
 | —                     | `CLICKCLACK_COOKIE_NAMESPACE`    | unset       | Stable lowercase cookie namespace for multiple trusted ClickClack instances on one hostname. |
 | —                     | `CLICKCLACK_GITHUB_CLIENT_ID`    | unset       | GitHub OAuth app client ID. |
 | —                     | `CLICKCLACK_GITHUB_CLIENT_SECRET`| unset       | GitHub OAuth app client secret. |
@@ -60,6 +61,7 @@ hook in `cmd/clickclack/main.go`.
   "dev_bootstrap": false,
   "public_url": "https://chat.example.com",
   "public_api_url": "https://api.example.com/services/clickclack",
+  "embed_frame_ancestors": ["https://control.example.com"],
   "cookie_namespace": "production",
   "github_client_id": "Iv1.xxxxxxxxxxxx",
   "github_client_secret": "...",

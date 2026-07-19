@@ -52,6 +52,7 @@ it for anything that isn't a local clone.
 | --- | --- |
 | Channels, messages, edits, soft-delete | [Messages](features/messages.md) |
 | Slack-style threads, one level deep | [Threads](features/threads.md) |
+| Iframe-ready standalone thread panels | [Embedded threads](features/embedding.md) |
 | Reactions on every message | [Reactions](features/reactions.md) |
 | Realtime over WebSocket with cursor recovery | [Realtime](features/realtime.md) |
 | SQLite FTS5 full-text search | [Search](features/search.md) |

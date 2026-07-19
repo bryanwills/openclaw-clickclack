@@ -22,7 +22,10 @@
     currentUserID?: string;
     mentionPeople?: User[];
     replyDisabled?: boolean;
-    onClose: () => void;
+    headerLabel?: string;
+    headerDetail?: string;
+    openHref?: string;
+    onClose?: () => void;
     onBack?: () => void;
     onReplyBody: (value: string) => void;
     onSubmitReply: () => void;
@@ -50,6 +53,9 @@
     currentUserID,
     mentionPeople = [],
     replyDisabled = false,
+    headerLabel = "Thread",
+    headerDetail,
+    openHref,
     onClose,
     onBack,
     onReplyBody,
@@ -89,14 +95,19 @@
     </button>
   {/if}
   <div>
-    <p>Thread</p>
-    <strong>{threadState?.reply_count ?? replies.length} {(threadState?.reply_count ?? replies.length) === 1 ? "reply" : "replies"}</strong>
+    <p>{headerLabel}</p>
+    <strong>{headerDetail ?? `${threadState?.reply_count ?? replies.length} ${(threadState?.reply_count ?? replies.length) === 1 ? "reply" : "replies"}`}</strong>
   </div>
-  <button
-    class="close"
-    aria-label="Close thread"
-    onclick={onClose}
-  >&times;</button>
+  {#if openHref}
+    <a class="thread-open-link" href={openHref} target="_blank" rel="noopener">Open in ClickClack</a>
+  {/if}
+  {#if onClose}
+    <button
+      class="close"
+      aria-label="Close thread"
+      onclick={onClose}
+    >&times;</button>
+  {/if}
 </header>
 <div
   class="thread-scroll"

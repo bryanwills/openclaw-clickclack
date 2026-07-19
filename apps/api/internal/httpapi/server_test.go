@@ -344,6 +344,34 @@ func TestChatAPIVerticalSlice(t *testing.T) {
 	}
 }
 
+func TestEmbedFrameAncestorsCSP(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		path      string
+		ancestors []string
+		want      string
+	}{
+		{name: "configured embed", path: "/embed/thread/TEXAMPLE/MEXAMPLE", ancestors: []string{"https://control.example.com", "https://dock.example.com"}, want: "frame-ancestors 'self' https://control.example.com https://dock.example.com"},
+		{name: "default embed", path: "/embed/thread/TEXAMPLE/MEXAMPLE", want: "frame-ancestors 'self'"},
+		{name: "non embed app", path: "/app/TEXAMPLE/MEXAMPLE", ancestors: []string{"https://control.example.com"}, want: ""},
+		{name: "embed prefix without slash", path: "/embed", ancestors: []string{"https://control.example.com"}, want: ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			handler := New(nil, nil, Options{EmbedFrameAncestors: tc.ancestors}).Handler()
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, tc.path, nil))
+			if response.Code != http.StatusOK {
+				t.Fatalf("expected SPA response, got %d: %s", response.Code, response.Body.String())
+			}
+			if got := response.Header().Get("Content-Security-Policy"); got != tc.want {
+				t.Fatalf("Content-Security-Policy = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestWorkspaceAdminHTTPUploadLifecycle(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
