@@ -88,6 +88,8 @@ func serve(args []string) error {
 	flags.Bool("dev-bootstrap", false, "create a local owner/workspace/channel if no user exists")
 	flags.Bool("metrics-enabled", false, "expose metadata-only Prometheus metrics at /metrics")
 	flags.String("embed-frame-ancestors", "", "comma-separated origins allowed to embed /embed/* pages")
+	flags.String("access-team-domain", "", "Cloudflare Access team HTTPS origin")
+	flags.String("access-aud", "", "Cloudflare Access application audience tag")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -146,6 +148,10 @@ func serve(args []string) error {
 			PublicURL:    cfg.PublicURL,
 			AllowedOrg:   cfg.GitHubAllowedOrg,
 			ModeratorOrg: cfg.GitHubModeratorOrg,
+		},
+		Access: httpapi.AccessConfig{
+			TeamDomain: cfg.AccessTeamDomain,
+			Audience:   cfg.AccessAUD,
 		},
 		PushNotifier:   pushNotifier,
 		MetricsEnabled: cfg.MetricsEnabled,
@@ -586,6 +592,10 @@ func applyFlagOverrides(flags *flag.FlagSet, cfg *config.Config) {
 			cfg.MetricsEnabled = f.Value.String() == "true"
 		case "embed-frame-ancestors":
 			cfg.EmbedFrameAncestors = config.ParseEmbedFrameAncestors(f.Value.String())
+		case "access-team-domain":
+			cfg.AccessTeamDomain = f.Value.String()
+		case "access-aud":
+			cfg.AccessAUD = f.Value.String()
 		}
 	})
 }

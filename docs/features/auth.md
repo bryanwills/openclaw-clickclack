@@ -7,17 +7,20 @@ read_when:
 
 # Auth
 
-ClickClack accepts four ways to identify a caller, in order of precedence. The
+ClickClack accepts five ways to identify a caller, in order of precedence. The
 resolver lives in `apps/api/internal/httpapi/server.go` (`currentActor`).
 
 1. `Authorization: Bearer <token>` — bearer session token or `ccb_...` bot
    token. Bot tokens resolve to the bot user plus token workspace/scopes.
 2. Session cookie — `cc_session` by default, or the configured namespaced
    cookie. It is HTTP-only and set by magic-link consume and GitHub OAuth.
-3. `X-ClickClack-User: usr_...` header — explicit user impersonation for local
+3. Cloudflare Access assertion — when trusted-proxy authentication is
+   configured, a valid `Cf-Access-Jwt-Assertion` provisions or resolves the
+   asserted email and creates a normal ClickClack session.
+4. `X-ClickClack-User: usr_...` header — explicit user impersonation for local
    development and tests, accepted only from loopback clients using local
    request hosts.
-4. Dev fallback — the very first user in the database. Enabled only by
+5. Dev fallback — the very first user in the database. Enabled only by
    `clickclack serve --dev-bootstrap=true` so a fresh checkout can boot into a
    working app without any token plumbing, and accepted only from local
    requests.
@@ -89,6 +92,47 @@ should hold the `session.token` for the `Authorization` header. Session cookies
 default to `Secure` outside local dev HTTP, even if a reverse proxy omits HTTPS
 headers. Duplicate cookies with the active session-cookie name are rejected
 instead of relying on cookie ordering.
+
+## Trusted proxy (Cloudflare Access)
+
+Team deployments may put ClickClack behind a Cloudflare Tunnel and Cloudflare
+Access. Configure the Access team HTTPS origin and the application's audience
+tag together:
+
+```sh
+CLICKCLACK_ACCESS_TEAM_DOMAIN=https://openclaw.cloudflareaccess.com
+CLICKCLACK_ACCESS_AUD=<application-audience-tag>
+```
+
+The equivalent serve flags are `--access-team-domain` and `--access-aud`; the
+JSON config keys are `access_team_domain` and `access_aud`. Setting only one
+value fails startup validation. Leaving both unset disables this auth path, and
+the Access assertion header is ignored.
+
+For a request without a valid ClickClack session cookie, the server verifies
+the `Cf-Access-Jwt-Assertion` as an RS256 JWT. It fetches keys only from
+`<team-domain>/cdn-cgi/access/certs`, does not follow redirects, caches the JWKS
+with bounded expiry, and refreshes an unknown key ID at most once every 30
+seconds. The issuer must exactly match the configured team domain, the audience
+must include the configured tag, expiration and issued-at claims must be valid,
+and the email claim is required.
+
+Cloudflare Access service tokens produce assertions without an email claim, so
+this path rejects them. Automation must use ClickClack bot tokens instead.
+
+After verification, ClickClack resolves or creates the human user by normalized
+email and joins the default workspace. The first Access user becomes its owner;
+later users join as members. The current request is authenticated immediately,
+and the response sets the same configured HTTP-only session cookie used by
+magic-link and GitHub OAuth sign-in. Later HTTP and WebSocket requests use that
+cookie without revalidating Access on every request. Unsafe requests carrying
+either an Access assertion or a ClickClack session cookie remain subject to the
+existing same-origin and `X-ClickClack-CSRF` checks, including the first SSO
+request before a local cookie exists.
+
+This mode trusts Cloudflare Access as the deployment's identity boundary. Do
+not expose the ClickClack origin directly around Access, and do not configure
+these settings for a proxy that can pass client-supplied assertion headers.
 
 ## GitHub OAuth (optional)
 

@@ -32,6 +32,7 @@ type Server struct {
 	uploadDir             string
 	uploadStorage         uploadstore.Store
 	githubOAuth           GitHubOAuthConfig
+	access                *accessVerifier
 	frontendURL           string
 	publicAPIURL          string
 	embedFrameAncestors   []string
@@ -71,6 +72,7 @@ type Options struct {
 	UploadDir           string
 	UploadStorage       uploadstore.Store
 	GitHubOAuth         GitHubOAuthConfig
+	Access              AccessConfig
 	FrontendURL         string
 	PublicAPIURL        string
 	EmbedFrameAncestors []string
@@ -102,6 +104,7 @@ func New(st store.Store, hub *realtime.Hub, options Options) *Server {
 		uploadDir:             options.UploadDir,
 		uploadStorage:         uploadStorage,
 		githubOAuth:           options.GitHubOAuth.withDefaults(),
+		access:                newAccessVerifier(options.Access),
 		frontendURL:           strings.TrimSpace(options.FrontendURL),
 		publicAPIURL:          strings.TrimRight(strings.TrimSpace(options.PublicAPIURL), "/"),
 		embedFrameAncestors:   append([]string(nil), options.EmbedFrameAncestors...),
@@ -135,6 +138,7 @@ func (s *Server) Handler() http.Handler {
 	r.Route("/api", func(r chi.Router) {
 		r.Use(s.cors)
 		r.Use(s.requireCookieCSRF)
+		r.Use(bindAccessResponseWriter)
 		r.Post("/auth/magic/request", s.requestMagicLink)
 		r.Post("/auth/magic/consume", s.consumeMagicLink)
 		r.Get("/auth/github/start", s.githubStart)
@@ -228,7 +232,7 @@ func (s *Server) Handler() http.Handler {
 
 func (s *Server) requireCookieCSRF(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if isSafeMethod(r.Method) || hasBearerAuth(r) || !s.hasSessionCookie(r) {
+		if isSafeMethod(r.Method) || hasBearerAuth(r) || (!s.hasSessionCookie(r) && !s.hasAccessAssertion(r)) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -238,6 +242,10 @@ func (s *Server) requireCookieCSRF(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (s *Server) hasAccessAssertion(r *http.Request) bool {
+	return s.access != nil && r.Header.Get(accessAssertionHeader) != ""
 }
 
 func isSafeMethod(method string) bool {
@@ -1405,7 +1413,19 @@ func (s *Server) currentActor(r *http.Request) (actor, error) {
 	}
 	if err == nil && cookie.Value != "" {
 		user, err := s.store.GetSessionUser(r.Context(), cookie.Value)
-		return actor{user: user}, err
+		if err == nil {
+			return actor{user: user}, nil
+		}
+		if s.access == nil || r.Header.Get(accessAssertionHeader) == "" {
+			return actor{}, err
+		}
+	}
+	if s.access != nil {
+		if assertion := r.Header.Get(accessAssertionHeader); assertion != "" {
+			if act, err := s.accessActor(r, assertion); err == nil {
+				return act, nil
+			}
+		}
 	}
 	if s.disableDevAuth {
 		return actor{}, errors.New("authentication required")

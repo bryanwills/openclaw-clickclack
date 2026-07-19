@@ -164,6 +164,10 @@ func TestValidateServe(t *testing.T) {
 		{"missing client secret", Config{PublicURL: "https://chat.example.com", GitHubClientID: "client"}},
 		{"oauth without public url", Config{GitHubClientID: "client", GitHubClientSecret: "secret"}},
 		{"org without oauth", Config{GitHubAllowedOrg: "openclaw"}},
+		{"access domain only", Config{AccessTeamDomain: "https://openclaw.cloudflareaccess.com"}},
+		{"access audience only", Config{AccessAUD: "test-aud"}},
+		{"access domain must use https", Config{AccessTeamDomain: "http://openclaw.cloudflareaccess.com", AccessAUD: "test-aud"}},
+		{"access domain must be an origin", Config{AccessTeamDomain: "https://openclaw.cloudflareaccess.com/path", AccessAUD: "test-aud"}},
 		{"invalid embed ancestor", Config{EmbedFrameAncestors: []string{"https://control.example.com/path"}}},
 		{"wildcard embed ancestor", Config{EmbedFrameAncestors: []string{"https://*.example.com"}}},
 	} {
@@ -172,5 +176,41 @@ func TestValidateServe(t *testing.T) {
 				t.Fatal("expected validation error")
 			}
 		})
+	}
+}
+
+func TestValidateAccessConfig(t *testing.T) {
+	t.Parallel()
+	cfg := Config{AccessTeamDomain: " https://OpenClaw.cloudflareaccess.com:443/ ", AccessAUD: " test-access-aud "}
+	if err := cfg.ValidateServe(); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AccessTeamDomain != "https://openclaw.cloudflareaccess.com" || cfg.AccessAUD != "test-access-aud" {
+		t.Fatalf("unexpected validated Access config: %#v", cfg)
+	}
+}
+
+func TestLoadAccessConfigFromEnvironmentAndJSON(t *testing.T) {
+	t.Setenv("CLICKCLACK_ACCESS_TEAM_DOMAIN", "https://env.cloudflareaccess.com")
+	t.Setenv("CLICKCLACK_ACCESS_AUD", "test-env-aud")
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"access_team_domain":"https://file.cloudflareaccess.com","access_aud":"test-file-aud"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AccessTeamDomain != "https://env.cloudflareaccess.com" || cfg.AccessAUD != "test-env-aud" {
+		t.Fatalf("environment did not override Access JSON config: %#v", cfg)
+	}
+	t.Setenv("CLICKCLACK_ACCESS_TEAM_DOMAIN", "")
+	t.Setenv("CLICKCLACK_ACCESS_AUD", "")
+	cfg, err = Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AccessTeamDomain != "https://file.cloudflareaccess.com" || cfg.AccessAUD != "test-file-aud" {
+		t.Fatalf("Access JSON config was not loaded: %#v", cfg)
 	}
 }

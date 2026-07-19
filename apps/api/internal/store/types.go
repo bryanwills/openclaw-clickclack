@@ -1080,6 +1080,7 @@ type Store interface {
 	CreateInvite(ctx context.Context, workspaceID, createdBy string) (Invite, error)
 	CreateMagicLink(ctx context.Context, email, displayName string) (MagicLink, error)
 	ConsumeMagicLink(ctx context.Context, token string) (User, Session, error)
+	GetOrCreateUserByEmail(ctx context.Context, provider, email, displayName string) (User, error)
 	CreateSession(ctx context.Context, userID string) (Session, error)
 	GetSessionUser(ctx context.Context, token string) (User, error)
 	CreateOAuthTransaction(ctx context.Context, transaction OAuthTransaction) error

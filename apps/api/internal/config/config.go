@@ -28,6 +28,8 @@ type Config struct {
 	GitHubClientSecret  string   `json:"github_client_secret"`
 	GitHubAllowedOrg    string   `json:"github_allowed_org"`
 	GitHubModeratorOrg  string   `json:"github_moderator_org"`
+	AccessTeamDomain    string   `json:"access_team_domain"`
+	AccessAUD           string   `json:"access_aud"`
 	PushoverAPIToken    string   `json:"pushover_api_token"`
 	R2AccountID         string   `json:"r2_account_id"`
 	R2AccessKeyID       string   `json:"r2_access_key_id"`
@@ -109,6 +111,12 @@ func Load(path string) (Config, error) {
 	if env := os.Getenv("CLICKCLACK_GITHUB_MODERATOR_ORG"); env != "" {
 		cfg.GitHubModeratorOrg = env
 	}
+	if env := os.Getenv("CLICKCLACK_ACCESS_TEAM_DOMAIN"); env != "" {
+		cfg.AccessTeamDomain = env
+	}
+	if env := os.Getenv("CLICKCLACK_ACCESS_AUD"); env != "" {
+		cfg.AccessAUD = env
+	}
 	if env := os.Getenv("CLICKCLACK_PUSHOVER_API_TOKEN"); env != "" {
 		cfg.PushoverAPIToken = env
 	}
@@ -134,6 +142,9 @@ func Load(path string) (Config, error) {
 }
 
 func (c *Config) ValidateServe() error {
+	if err := normalizeAccessConfig(c); err != nil {
+		return err
+	}
 	namespace, err := authpolicy.ParseCookieNamespace(c.CookieNamespace)
 	if err != nil {
 		return fmt.Errorf("CLICKCLACK_COOKIE_NAMESPACE: %w", err)

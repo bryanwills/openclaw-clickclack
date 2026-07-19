@@ -57,7 +57,7 @@ func (s *Store) ConsumeMagicLink(ctx context.Context, token string) (store.User,
 	if err != nil || time.Now().UTC().After(expiresAt) {
 		return store.User{}, store.Session{}, errors.New("magic link expired")
 	}
-	user, err := getOrCreateMagicUser(ctx, qtx, link.Email, link.DisplayName)
+	user, err := getOrCreateUserByEmail(ctx, qtx, "magic", link.Email, link.DisplayName)
 	if err != nil {
 		return store.User{}, store.Session{}, err
 	}
@@ -106,7 +106,38 @@ func (s *Store) CreateSession(ctx context.Context, userID string) (store.Session
 	return session, tx.Commit()
 }
 
-func getOrCreateMagicUser(ctx context.Context, q *storedb.Queries, email, displayName string) (store.User, error) {
+func (s *Store) GetOrCreateUserByEmail(ctx context.Context, provider, email, displayName string) (store.User, error) {
+	provider = strings.TrimSpace(provider)
+	email = strings.ToLower(strings.TrimSpace(email))
+	if provider == "" || email == "" {
+		return store.User{}, errors.New("identity provider and email are required")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return store.User{}, err
+	}
+	defer tx.Rollback()
+	user, err := getOrCreateUserByEmail(ctx, s.q.WithTx(tx), provider, email, displayName)
+	if err == nil {
+		err = tx.Commit()
+	}
+	if err == nil {
+		return user, nil
+	}
+	_ = tx.Rollback()
+	row, lookupErr := s.q.GetUserByIdentityEmail(ctx, email)
+	if lookupErr == nil {
+		return storeUserFromIdentityEmail(row), nil
+	}
+	return store.User{}, err
+}
+
+func getOrCreateUserByEmail(ctx context.Context, q *storedb.Queries, provider, email, displayName string) (store.User, error) {
+	provider = strings.TrimSpace(provider)
+	email = strings.ToLower(strings.TrimSpace(email))
+	if provider == "" || email == "" {
+		return store.User{}, errors.New("identity provider and email are required")
+	}
 	row, err := q.GetUserByIdentityEmail(ctx, email)
 	if err == nil {
 		return storeUserFromIdentityEmail(row), nil
@@ -124,7 +155,7 @@ func getOrCreateMagicUser(ctx context.Context, q *storedb.Queries, email, displa
 	err = q.InsertIdentity(ctx, storedb.InsertIdentityParams{
 		ID:              newID("idn"),
 		UserID:          user.ID,
-		Provider:        "magic",
+		Provider:        provider,
 		ProviderSubject: email,
 		Email:           email,
 		CreatedAt:       user.CreatedAt,

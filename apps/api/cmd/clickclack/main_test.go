@@ -72,6 +72,20 @@ func TestApplyFlagOverridesParsesEmbedFrameAncestors(t *testing.T) {
 	}
 }
 
+func TestApplyFlagOverridesSetsAccessConfig(t *testing.T) {
+	flags := flag.NewFlagSet("test", flag.ContinueOnError)
+	flags.String("access-team-domain", "", "")
+	flags.String("access-aud", "", "")
+	if err := flags.Parse([]string{"--access-team-domain", "https://openclaw.cloudflareaccess.com", "--access-aud", "test-aud"}); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{}
+	applyFlagOverrides(flags, &cfg)
+	if cfg.AccessTeamDomain != "https://openclaw.cloudflareaccess.com" || cfg.AccessAUD != "test-aud" {
+		t.Fatalf("unexpected Access flag config: %#v", cfg)
+	}
+}
+
 func TestFakeCoSeedRequiresExplicitEnvironment(t *testing.T) {
 	t.Setenv("CLICKCLACK_ENVIRONMENT", "")
 	err := admin([]string{"fakeco", "seed", "--data", t.TempDir()})

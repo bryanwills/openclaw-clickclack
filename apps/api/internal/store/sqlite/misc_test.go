@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/openclaw/clickclack/apps/api/internal/store"
@@ -256,6 +257,63 @@ func TestStoreMiscBranches(t *testing.T) {
 	}
 	if len(recipients) != 0 {
 		t.Fatalf("revoked DM member should not receive push notifications, got %#v", recipients)
+	}
+}
+
+func TestGetOrCreateUserByEmailConcurrent(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "concurrent-identity.db")
+	const callers = 6
+	stores := make([]*Store, callers)
+	for index := range stores {
+		st, err := Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stores[index] = st
+		t.Cleanup(func() { _ = st.Close() })
+	}
+	if err := stores[0].Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	start := make(chan struct{})
+	users := make(chan store.User, callers)
+	errors := make(chan error, callers)
+	var group sync.WaitGroup
+	for _, st := range stores {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			<-start
+			user, err := st.GetOrCreateUserByEmail(ctx, "cloudflare-access", "Concurrent@Example.com", "Concurrent User")
+			if err != nil {
+				errors <- err
+				return
+			}
+			users <- user
+		}()
+	}
+	close(start)
+	group.Wait()
+	close(users)
+	close(errors)
+	for err := range errors {
+		t.Errorf("concurrent get-or-create failed: %v", err)
+	}
+	var userID string
+	count := 0
+	for user := range users {
+		count++
+		if userID == "" {
+			userID = user.ID
+		}
+		if user.ID != userID {
+			t.Errorf("concurrent get-or-create returned different users: %q and %q", userID, user.ID)
+		}
+	}
+	if count != callers {
+		t.Fatalf("successful callers = %d, want %d", count, callers)
 	}
 }
 

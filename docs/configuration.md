@@ -37,6 +37,8 @@ hook in `cmd/clickclack/main.go`.
 | —                     | `CLICKCLACK_PUBLIC_URL`          | unset       | Canonical external origin. Required for GitHub OAuth and namespaced cookies. |
 | —                     | `CLICKCLACK_PUBLIC_API_URL`      | public URL  | Canonical external API base. May use a different origin and a normalized base path. |
 | `--embed-frame-ancestors` | `CLICKCLACK_EMBED_FRAME_ANCESTORS` | unset | Comma- or whitespace-separated exact origins allowed to frame `/embed/*`; see [Embedded threads](features/embedding.md). |
+| `--access-team-domain` | `CLICKCLACK_ACCESS_TEAM_DOMAIN` | unset | Cloudflare Access team HTTPS origin. Must be configured together with the Access audience. |
+| `--access-aud`        | `CLICKCLACK_ACCESS_AUD`         | unset       | Expected Cloudflare Access application audience tag. Must be non-empty when the team domain is set. |
 | —                     | `CLICKCLACK_COOKIE_NAMESPACE`    | unset       | Stable lowercase cookie namespace for multiple trusted ClickClack instances on one hostname. |
 | —                     | `CLICKCLACK_GITHUB_CLIENT_ID`    | unset       | GitHub OAuth app client ID. |
 | —                     | `CLICKCLACK_GITHUB_CLIENT_SECRET`| unset       | GitHub OAuth app client secret. |
@@ -62,6 +64,8 @@ hook in `cmd/clickclack/main.go`.
   "public_url": "https://chat.example.com",
   "public_api_url": "https://api.example.com/services/clickclack",
   "embed_frame_ancestors": ["https://control.example.com"],
+  "access_team_domain": "https://openclaw.cloudflareaccess.com",
+  "access_aud": "<application-audience-tag>",
   "cookie_namespace": "production",
   "github_client_id": "Iv1.xxxxxxxxxxxx",
   "github_client_secret": "...",
@@ -77,6 +81,12 @@ hook in `cmd/clickclack/main.go`.
 Pass with `--config /etc/clickclack/config.json`. Values from the file
 are overridden by environment variables; CLI flags override both when
 explicitly set. The `dev_bootstrap` exception is described above.
+
+The Access team domain is an HTTPS origin without credentials, a path, query,
+or fragment. `access_team_domain` and `access_aud` are an all-or-nothing pair;
+when both are absent, trusted-proxy authentication is disabled. See
+[Trusted proxy (Cloudflare Access)](features/auth.md#trusted-proxy-cloudflare-access)
+for verification, provisioning, and session behavior.
 
 ## Public frontend and API URLs
 
