@@ -343,13 +343,20 @@
   --composer-text-padding-block: 7px;
 
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  /* Columns must match the rendered children: the upload icon is optional
+     (thread reply composers omit it), and a phantom icon column would shove
+     the textarea left and strand the send button mid-row. */
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
   gap: 4px;
   padding: 8px 8px 4px 10px;
   background: transparent;
   border: 0;
   border-radius: 0;
+}
+
+.composer-row:has(.composer-icon) {
+  grid-template-columns: auto minmax(0, 1fr) auto;
 }
 
 .composer:focus-within .composer-toolbar,
