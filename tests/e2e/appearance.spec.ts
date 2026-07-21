@@ -12,15 +12,19 @@ async function openAppearanceSettings(page: import("@playwright/test").Page) {
   const accountSettings = page.getByRole("button", { name: /account settings/i });
   const modal = page.getByRole("dialog", { name: "Account settings" });
   const appearanceHeading = modal.getByRole("heading", { name: "Appearance" });
-  await expect(async () => {
-    if (await appearanceHeading.isVisible()) return;
-    if (!(await modal.isVisible())) await accountSettings.click();
-    await expect(modal.getByRole("heading", { name: "Profile settings" })).toBeVisible({
-      timeout: 750,
-    });
-    await modal.getByRole("button", { name: "Appearance" }).click();
-    await expect(appearanceHeading).toBeVisible({ timeout: 750 });
-  }).toPass({ timeout: 5_000 });
+  const mobileNavigation = page.getByRole("button", { name: "Toggle navigation" });
+  if (
+    (await mobileNavigation.isVisible()) &&
+    (await mobileNavigation.getAttribute("aria-expanded")) !== "true"
+  ) {
+    await mobileNavigation.click();
+    await expect(mobileNavigation).toHaveAttribute("aria-expanded", "true");
+  }
+  await expect(accountSettings).toBeVisible();
+  await accountSettings.click();
+  await expect(modal.getByRole("heading", { name: "Profile settings" })).toBeVisible();
+  await modal.getByRole("button", { name: "Appearance" }).click();
+  await expect(appearanceHeading).toBeVisible();
 }
 
 test("forced color mode applies instantly and survives reload", async ({ page }) => {
