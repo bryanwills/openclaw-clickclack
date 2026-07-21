@@ -2144,3 +2144,32 @@
   min-height: 22px;
   margin-top: 2px;
 }
+
+/* Outlined rows live entirely inside the content column. Keep that invariant
+   when compact density is also active instead of restoring the standard
+   avatar-gutter indent through the generic compact rule above. */
+:root[data-density="compact"][data-message-layout="outlined"] .message-group .message-row {
+  margin-left: 0;
+  padding-left: 0;
+}
+
+:root[data-density="compact"][data-message-layout="outlined"] .message-group .row-stamp {
+  left: -34px;
+}
+
+:root[data-density="compact"][data-message-layout="outlined"][data-user-align="right"]
+  .message-group.is-self
+  .row-stamp,
+:root[data-density="compact"][data-message-layout="outlined"][data-other-align="right"]
+  .message-group:not(.is-self)
+  .row-stamp {
+  right: -34px;
+  left: auto;
+}
+
+@media (max-width: 520px) {
+  :root[data-density="compact"] .message-group {
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+}
