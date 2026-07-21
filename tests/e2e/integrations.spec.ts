@@ -74,7 +74,9 @@ test("installs an OpenClaw app through the wizard and uninstalls with cascade", 
   await expect(page.getByText("Expires in", { exact: false })).toBeVisible();
   await expect(page.locator("#ws-bots-reveal-token")).toHaveCount(0);
   await expect(page.getByText("Manual setup with the token")).toHaveCount(0);
-  await expect(page.getByText("agent_activity:write")).toBeVisible();
+  // Scopes summarize to the bundle label; extras stay visible as chips.
+  await expect(page.locator(".ws-bots__scope-chip--bundle")).toHaveText("Read & write");
+  await expect(page.getByText("agent_activity:write").first()).toBeVisible();
   const codeCommand = await codeSnippet.innerText();
   const setupCode = codeCommand.match(/\/#([A-Z0-9-]+)/)?.[1];
   expect(setupCode).toBeTruthy();
@@ -237,6 +239,19 @@ test("bot reveal mints a setup code that regenerates after expiry", async ({ pag
   await page.getByRole("button", { name: "Mint token" }).click();
   await expect(page.getByText("Your new token is ready")).toBeVisible();
   await expect(page.locator("#ws-bots-reveal-token")).toHaveValue(/^ccb_/);
+
+  // Token scopes render as a bundle summary chip, with the raw expanded list
+  // available on demand instead of a wall of a dozen mono chips.
+  await page.getByText("I've copied this token somewhere safe.").click();
+  await page.getByRole("button", { name: "Done" }).click();
+  const tokenRow = row.locator(".ws-bots__token-row", { hasText: "manual" });
+  await expect(tokenRow.locator(".ws-bots__scope-chip--bundle")).toHaveText("Read & write");
+  await expect(tokenRow.locator(".ws-bots__scope-chip")).toHaveCount(1);
+  await tokenRow.getByRole("button", { name: /All \d+ scopes/ }).click();
+  await expect(tokenRow.locator(".ws-bots__scope-chip")).toHaveCount(13);
+  await expect(tokenRow).toContainText("messages:write");
+  await tokenRow.getByRole("button", { name: "Hide scopes" }).click();
+  await expect(tokenRow.locator(".ws-bots__scope-chip")).toHaveCount(1);
 });
 
 test("keeps successful integration data when one initial request fails", async ({ page }) => {
