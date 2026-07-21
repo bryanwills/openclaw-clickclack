@@ -95,6 +95,34 @@ test("message layout switches to outlined chains and survives reload", async ({ 
     .toBeNull();
 });
 
+test("density switches to compact and survives reload", async ({ page }) => {
+  await openAppearanceSettings(page);
+
+  const html = page.locator("html");
+  await expect(html).not.toHaveAttribute("data-density");
+  await expect(page.getByRole("radio", { name: /^Comfortable/ })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+
+  await page.getByRole("radio", { name: /^Compact/ }).click();
+  await expect(html).toHaveAttribute("data-density", "compact");
+  await expect
+    .poll(() => page.evaluate(() => localStorage.getItem("clickclack:density:v1")))
+    .toBe("compact");
+
+  // The pre-paint boot script applies the stored density before hydration.
+  await page.reload();
+  await expect(html).toHaveAttribute("data-density", "compact");
+
+  await openAppearanceSettings(page);
+  await page.getByRole("radio", { name: /^Comfortable/ }).click();
+  await expect(html).not.toHaveAttribute("data-density");
+  await expect
+    .poll(() => page.evaluate(() => localStorage.getItem("clickclack:density:v1")))
+    .toBeNull();
+});
+
 test("appearance choices support radio keyboard navigation", async ({ page }) => {
   await openAppearanceSettings(page);
 
@@ -130,4 +158,12 @@ test("appearance choices support radio keyboard navigation", async ({ page }) =>
   await page.keyboard.press("ArrowUp");
   await expect(outlined).toBeFocused();
   await expect(outlined).toHaveAttribute("tabindex", "0");
+
+  const densities = page.getByRole("radiogroup", { name: "Density" });
+  const comfortable = densities.getByRole("radio", { name: /^Comfortable/ });
+  const compact = densities.getByRole("radio", { name: /^Compact/ });
+  await comfortable.focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(compact).toBeFocused();
+  await expect(compact).toHaveAttribute("aria-checked", "true");
 });
