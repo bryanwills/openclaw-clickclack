@@ -394,28 +394,20 @@ test("virtualized edit rows retain and reveal their unsaved draft", async ({ pag
   await firstRow.getByRole("button", { name: "Edit message" }).click();
   const draft = `retained virtualized draft ${suffix}`;
   await firstRow.getByLabel("Edit message").fill(draft);
+  await firstRow.getByLabel("Edit message").blur();
 
-  await scrollport.evaluate((element) => {
-    element.scrollTop = element.scrollHeight;
+  await scrollport.evaluate(async (element) => {
+    for (let frame = 0; frame < 12; frame += 1) {
+      element.scrollTop = element.scrollHeight;
+      element.dispatchEvent(new Event("scroll", { bubbles: true }));
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    }
   });
   await expect(firstRow).toHaveCount(0);
 
-  const visibleEditableRows = page
-    .locator(".message-row:visible")
-    .filter({ has: page.getByRole("button", { name: "Edit message" }) });
-  await expect
-    .poll(async () => visibleEditableRows.count(), {
-      message: "at least one distinct editable row should be rendered",
-    })
-    .toBeGreaterThan(1);
-  const visibleEditableMessageIDs = await visibleEditableRows.evaluateAll((rows) =>
-    rows
-      .map((row) => row.getAttribute("data-message-id"))
-      .filter((id): id is string => Boolean(id)),
-  );
-  const competingMessageID = visibleEditableMessageIDs.find((id) => id !== created[0].id);
-  expect(competingMessageID).toBeTruthy();
+  const competingMessageID = created[created.length - 1].id;
   const competingRow = page.locator(`[data-message-id="${competingMessageID}"]`);
+  await expect(competingRow).toBeVisible();
   await competingRow.hover();
   await competingRow.getByRole("button", { name: "Edit message" }).click();
 
