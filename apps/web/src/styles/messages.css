@@ -2091,3 +2091,56 @@
   border-top-left-radius: 0;
   border-top-right-radius: 0;
 }
+
+/* ---------- Density: compact ---------- */
+
+/* Compact tightens the message list: a narrower avatar gutter, tighter row
+   padding, and slightly smaller type fit roughly a third more messages on
+   screen. Comfortable is the default and sets no data attribute. The
+   .message-row indent mirrors the .message-group gutter, so the two must
+   change together. */
+:root[data-density="compact"] .message-group {
+  grid-template-columns: 42px minmax(0, 1fr);
+  padding: 2px 18px;
+}
+
+:root[data-density="compact"][data-user-align="right"] .message-group.is-self,
+:root[data-density="compact"][data-other-align="right"] .message-group:not(.is-self) {
+  grid-template-columns: minmax(0, 1fr) 42px;
+}
+
+:root[data-density="compact"] .message-group > .avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  font-size: 11px;
+}
+
+:root[data-density="compact"] .group-body > header {
+  gap: 6px;
+  margin-bottom: 0;
+}
+
+:root[data-density="compact"] .group-body > header strong,
+:root[data-density="compact"] .author-name {
+  font-size: 13px;
+}
+
+:root[data-density="compact"] .group-body > header time {
+  font-size: 10px;
+}
+
+:root[data-density="compact"] .message-row {
+  margin-left: -42px;
+  padding-left: 42px;
+}
+
+:root[data-density="compact"] .markdown {
+  font-size: 13.5px;
+  line-height: 1.42;
+}
+
+:root[data-density="compact"] .reactions-bar {
+  min-height: 22px;
+  margin-top: 2px;
+}

@@ -1,6 +1,6 @@
-// Appearance preferences: color mode, board theme, and message layout.
+// Appearance preferences: color mode, board theme, message layout, and density.
 //
-// All three are personal, device-local prefs stored in localStorage and
+// All preferences are personal, device-local values stored in localStorage and
 // applied as data attributes on <html>. The style sheets map those attributes
 // to color, token, and layout changes. An inline script in app.html applies
 // the stored values before first paint so a forced mode or non-default board
@@ -10,14 +10,17 @@
 export type ColorMode = "light" | "dark" | "system";
 export type BoardTheme = "signal" | "ember" | "moss" | "iris";
 export type MessageLayout = "standard" | "outlined";
+export type Density = "comfortable" | "compact";
 
 export const COLOR_MODE_STORAGE_KEY = "clickclack:color-mode:v1";
 export const BOARD_THEME_STORAGE_KEY = "clickclack:board-theme:v1";
 export const MESSAGE_LAYOUT_STORAGE_KEY = "clickclack:message-layout:v1";
+export const DENSITY_STORAGE_KEY = "clickclack:density:v1";
 
 export const DEFAULT_COLOR_MODE: ColorMode = "system";
 export const DEFAULT_BOARD_THEME: BoardTheme = "signal";
 export const DEFAULT_MESSAGE_LAYOUT: MessageLayout = "standard";
+export const DEFAULT_DENSITY: Density = "comfortable";
 
 export const COLOR_MODES: { id: ColorMode; label: string }[] = [
   { id: "light", label: "Light" },
@@ -41,6 +44,19 @@ export const MESSAGE_LAYOUTS: { id: MessageLayout; label: string; blurb: string 
   },
 ];
 
+export const DENSITIES: { id: Density; label: string; blurb: string }[] = [
+  {
+    id: "comfortable",
+    label: "Comfortable",
+    blurb: "Roomy rows and full-size avatars",
+  },
+  {
+    id: "compact",
+    label: "Compact",
+    blurb: "Tighter rows fit more messages on screen",
+  },
+];
+
 function isColorMode(value: string | null): value is ColorMode {
   return value === "light" || value === "dark" || value === "system";
 }
@@ -51,6 +67,10 @@ function isBoardTheme(value: string | null): value is BoardTheme {
 
 function isMessageLayout(value: string | null): value is MessageLayout {
   return MESSAGE_LAYOUTS.some((layout) => layout.id === value);
+}
+
+function isDensity(value: string | null): value is Density {
+  return DENSITIES.some((density) => density.id === value);
 }
 
 export function loadColorMode(): ColorMode {
@@ -80,6 +100,15 @@ export function loadMessageLayout(): MessageLayout {
   }
 }
 
+export function loadDensity(): Density {
+  try {
+    const stored = window.localStorage.getItem(DENSITY_STORAGE_KEY);
+    return isDensity(stored) ? stored : DEFAULT_DENSITY;
+  } catch {
+    return DEFAULT_DENSITY;
+  }
+}
+
 export function applyColorMode(mode: ColorMode) {
   try {
     if (mode === "system") document.documentElement.removeAttribute("data-color-mode");
@@ -104,6 +133,18 @@ export function applyMessageLayout(layout: MessageLayout) {
       document.documentElement.removeAttribute("data-message-layout");
     } else {
       document.documentElement.setAttribute("data-message-layout", layout);
+    }
+  } catch {
+    // Non-DOM context (SSR/tests); the stored pref still applies on mount.
+  }
+}
+
+export function applyDensity(density: Density) {
+  try {
+    if (density === DEFAULT_DENSITY) {
+      document.documentElement.removeAttribute("data-density");
+    } else {
+      document.documentElement.setAttribute("data-density", density);
     }
   } catch {
     // Non-DOM context (SSR/tests); the stored pref still applies on mount.
@@ -143,10 +184,24 @@ export function setMessageLayout(layout: MessageLayout) {
   }
 }
 
+export function setDensity(density: Density) {
+  applyDensity(density);
+  try {
+    if (density === DEFAULT_DENSITY) {
+      window.localStorage.removeItem(DENSITY_STORAGE_KEY);
+    } else {
+      window.localStorage.setItem(DENSITY_STORAGE_KEY, density);
+    }
+  } catch {
+    // Ignore unavailable storage; the in-memory pref still applies this session.
+  }
+}
+
 // Re-apply the stored prefs (mount-time belt to the app.html suspenders, and
 // the recovery path when the boot script could not run).
 export function initAppearance() {
   applyColorMode(loadColorMode());
   applyBoardTheme(loadBoardTheme());
   applyMessageLayout(loadMessageLayout());
+  applyDensity(loadDensity());
 }

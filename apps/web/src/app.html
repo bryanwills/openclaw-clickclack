@@ -23,6 +23,10 @@
         if (ccMessageLayout === "outlined") {
           document.documentElement.setAttribute("data-message-layout", ccMessageLayout);
         }
+        var ccDensity = localStorage.getItem("clickclack:density:v1");
+        if (ccDensity === "compact") {
+          document.documentElement.setAttribute("data-density", ccDensity);
+        }
       } catch (e) {}
     </script>
     %sveltekit.head%
