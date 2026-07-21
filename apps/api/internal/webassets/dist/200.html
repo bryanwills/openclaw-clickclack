@@ -23,6 +23,10 @@
         if (ccMessageLayout === "outlined") {
           document.documentElement.setAttribute("data-message-layout", ccMessageLayout);
         }
+        var ccDensity = localStorage.getItem("clickclack:density:v1");
+        if (ccDensity === "compact") {
+          document.documentElement.setAttribute("data-density", ccDensity);
+        }
       } catch (e) {}
     </script>
     <link href="/_app/immutable/entry/start.wvRykHGQ.js" rel="modulepreload">
@@ -30,12 +34,12 @@
 		<link href="/_app/immutable/chunks/CySd1wef.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DK3Fl9T5.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BuFlayix.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.BvFDwD1Z.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.BjX7wCgv.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/HclGiUj8.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/xihTtKlq.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.BeeaKxdb.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.ZfJ2AlKg.js" rel="modulepreload">
 
-		<link href="/_app/immutable/assets/0.CuKJboXi.css" rel="stylesheet">
+		<link href="/_app/immutable/assets/0.qzb5c1Df.css" rel="stylesheet">
   </head>
   <body>
     <div>
@@ -49,7 +53,7 @@
 
 					Promise.all([
 						import("/_app/immutable/entry/start.wvRykHGQ.js"),
-						import("/_app/immutable/entry/app.BvFDwD1Z.js")
+						import("/_app/immutable/entry/app.BjX7wCgv.js")
 					]).then(([kit, app]) => {
 						kit.start(app, element);
 					});
