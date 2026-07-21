@@ -7,6 +7,7 @@
     buildOpenClawShellSnippet,
     botLoadErrorMessage,
     createWorkspaceBotSetupCode,
+    summarizeBotScopes,
     type OpenClawAccountMode,
   } from "../../../lib/bots";
   import type { AppSnippetInput } from "../../../lib/app-catalog";
@@ -62,6 +63,7 @@
 
   const codeMode = $derived(connect === "code" && !!codeSnippetBuilder);
   const scopeChips = $derived(token?.scopes ?? scopes ?? []);
+  const scopeSummary = $derived(summarizeBotScopes(scopeChips));
 
   let acknowledged = $state(false);
   let mode = $state<OpenClawAccountMode>("single");
@@ -327,10 +329,25 @@
     <div class="ws-bots__reveal-field">
       <span class="ws-bots__reveal-label">Scopes</span>
       <div class="ws-bots__scope-row">
-        {#each scopeChips as scope (scope)}
+        {#if scopeSummary.bundleLabel}
+          <span class="ws-bots__scope-chip ws-bots__scope-chip--bundle">
+            {scopeSummary.bundleLabel}
+          </span>
+        {/if}
+        {#each scopeSummary.extras as scope (scope)}
           <span class="ws-bots__scope-chip">{scope}</span>
         {/each}
       </div>
+      {#if scopeSummary.bundle && scopeChips.length > 1}
+        <details class="ws-bots__scope-details">
+          <summary>All {scopeChips.length} scopes</summary>
+          <div class="ws-bots__scope-row">
+            {#each scopeChips as scope (scope)}
+              <span class="ws-bots__scope-chip">{scope}</span>
+            {/each}
+          </div>
+        </details>
+      {/if}
     </div>
   {/if}
 

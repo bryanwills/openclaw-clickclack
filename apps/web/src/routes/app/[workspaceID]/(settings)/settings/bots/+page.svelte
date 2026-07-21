@@ -8,6 +8,7 @@
     listWorkspaceBotTokens,
     removeBotFromWorkspace,
     revokeBotToken,
+    summarizeBotScopes,
     type BotToken,
     type BotWithTokens,
     type CreateBotResponse,
@@ -41,6 +42,11 @@
     { botID: string; kind: "revoke" | "remove" | "delete" } | null
   >(null);
   let actionError = $state("");
+  let scopesExpandedTokenID = $state<string | null>(null);
+
+  function toggleScopeList(tokenID: string) {
+    scopesExpandedTokenID = scopesExpandedTokenID === tokenID ? null : tokenID;
+  }
 
   const me = $derived(data.me);
   const workspaceID = $derived(data.workspaceID);
@@ -418,11 +424,35 @@
                           {/if}
                         </div>
                         {#if token.scopes?.length}
+                          {@const summary = summarizeBotScopes(token.scopes)}
                           <div class="ws-bots__scope-row">
-                            {#each token.scopes as scope (scope)}
+                            {#if summary.bundleLabel}
+                              <span class="ws-bots__scope-chip ws-bots__scope-chip--bundle">
+                                {summary.bundleLabel}
+                              </span>
+                            {/if}
+                            {#each summary.extras as scope (scope)}
                               <span class="ws-bots__scope-chip">{scope}</span>
                             {/each}
+                            {#if summary.bundle}
+                              <button
+                                type="button"
+                                class="ws-bots__scope-toggle"
+                                onclick={() => toggleScopeList(token.id)}
+                              >
+                                {scopesExpandedTokenID === token.id
+                                  ? "Hide scopes"
+                                  : `All ${token.scopes.length} scopes`}
+                              </button>
+                            {/if}
                           </div>
+                          {#if summary.bundle && scopesExpandedTokenID === token.id}
+                            <div class="ws-bots__scope-row">
+                              {#each token.scopes as scope (scope)}
+                                <span class="ws-bots__scope-chip">{scope}</span>
+                              {/each}
+                            </div>
+                          {/if}
                         {/if}
                       </div>
                       {#if canRotate(bot)}
