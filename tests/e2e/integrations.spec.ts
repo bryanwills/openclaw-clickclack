@@ -77,6 +77,12 @@ test("installs an OpenClaw app through the wizard and uninstalls with cascade", 
   // Scopes summarize to the bundle label; extras stay visible as chips.
   await expect(page.locator(".ws-bots__scope-chip--bundle")).toHaveText("Read & write");
   await expect(page.getByText("agent_activity:write").first()).toBeVisible();
+  // The form sends bundle shorthand; the detailed list must expand it to the
+  // concrete permissions the token will carry, not echo the shorthand back.
+  await page.locator(".ws-bots__scope-details > summary").click();
+  await expect(page.locator(".ws-bots__scope-details > summary")).toHaveText("All 13 scopes");
+  await expect(page.locator(".ws-bots__scope-details .ws-bots__scope-chip")).toHaveCount(13);
+  await expect(page.locator(".ws-bots__scope-details")).toContainText("messages:write");
   const codeCommand = await codeSnippet.innerText();
   const setupCode = codeCommand.match(/\/#([A-Z0-9-]+)/)?.[1];
   expect(setupCode).toBeTruthy();
@@ -252,6 +258,61 @@ test("bot reveal mints a setup code that regenerates after expiry", async ({ pag
   await expect(tokenRow).toContainText("messages:write");
   await tokenRow.getByRole("button", { name: "Hide scopes" }).click();
   await expect(tokenRow.locator(".ws-bots__scope-chip")).toHaveCount(1);
+});
+
+test("summarizes every scope bundle and leaves custom sets verbatim", async ({ page }) => {
+  const stamp = Date.now();
+  const workspace = await createWorkspace(page, "Scopes", stamp);
+  const botResponse = await page.request.post(`/api/workspaces/${workspace.id}/bots`, {
+    data: {
+      display_name: "Scope Bot",
+      handle: `scope-bot-${stamp}`,
+      token_name: "admin",
+      scopes: ["bot:admin"],
+    },
+  });
+  expect(botResponse.ok()).toBe(true);
+  const { bot } = (await botResponse.json()) as { bot: { id: string } };
+  for (const [name, scopes] of [
+    ["reader", ["bot:read"]],
+    ["custom", ["channels:read", "messages:read"]],
+  ] as const) {
+    const minted = await page.request.post(
+      `/api/workspaces/${workspace.id}/bots/${bot.id}/tokens`,
+      { data: { name, scopes: [...scopes] } },
+    );
+    expect(minted.ok()).toBe(true);
+  }
+
+  await page.goto(`/app/${workspace.route_id}/settings/bots`);
+  await page.locator(".ws-bots__row-main").click();
+
+  // Admin bundle: one summary chip; the disclosure shows the 13 expanded
+  // permissions and reports its state to assistive tech.
+  const adminRow = page.locator(".ws-bots__token-row", { hasText: "admin" });
+  await expect(adminRow.locator(".ws-bots__scope-chip--bundle")).toHaveText("Admin");
+  await expect(adminRow.locator(".ws-bots__scope-chip")).toHaveCount(1);
+  const adminToggle = adminRow.locator(".ws-bots__scope-toggle");
+  await expect(adminToggle).toHaveText("All 13 scopes");
+  await expect(adminToggle).toHaveAttribute("aria-expanded", "false");
+  await adminToggle.click();
+  await expect(adminToggle).toHaveText("Hide scopes");
+  await expect(adminToggle).toHaveAttribute("aria-expanded", "true");
+  await expect(adminRow.locator(".ws-bots__scope-chip")).toHaveCount(14);
+  await expect(adminRow).toContainText("channels:write");
+
+  // Read bundle summarizes independently (one row's list is open at a time).
+  const readerRow = page.locator(".ws-bots__token-row", { hasText: "reader" });
+  await expect(readerRow.locator(".ws-bots__scope-chip--bundle")).toHaveText("Read");
+  await readerRow.getByRole("button", { name: "All 7 scopes" }).click();
+  await expect(readerRow.locator(".ws-bots__scope-chip")).toHaveCount(8);
+  await expect(readerRow).toContainText("realtime:read");
+
+  // Custom sets match no bundle: raw chips, no summary, no toggle.
+  const customRow = page.locator(".ws-bots__token-row", { hasText: "custom" });
+  await expect(customRow.locator(".ws-bots__scope-chip--bundle")).toHaveCount(0);
+  await expect(customRow.locator(".ws-bots__scope-chip")).toHaveCount(2);
+  await expect(customRow.locator(".ws-bots__scope-toggle")).toHaveCount(0);
 });
 
 test("keeps successful integration data when one initial request fails", async ({ page }) => {
