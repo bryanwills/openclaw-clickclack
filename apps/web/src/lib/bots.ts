@@ -59,6 +59,84 @@ export const BOT_SCOPE_BUNDLES: { id: BotScopeBundle; label: string; hint: strin
   },
 ];
 
+// Mirrors botScopeBundles in apps/api/internal/store/sqlite/bots.go. The server
+// expands bundles into individual scopes at mint time, so the UI reverse-matches
+// stored scope lists back to bundle labels for compact display.
+const BOT_SCOPE_BUNDLE_EXPANSIONS: Record<BotScopeBundle, readonly string[]> = {
+  "bot:read": [
+    "workspaces:read",
+    "channels:read",
+    "messages:read",
+    "threads:read",
+    "dms:read",
+    "realtime:read",
+    "profile:read",
+  ],
+  "bot:write": [
+    "workspaces:read",
+    "channels:read",
+    "messages:read",
+    "messages:write",
+    "threads:read",
+    "threads:write",
+    "dms:read",
+    "dms:write",
+    "realtime:read",
+    "uploads:write",
+    "profile:read",
+    "commands:write",
+  ],
+  "bot:admin": [
+    "workspaces:read",
+    "channels:read",
+    "channels:write",
+    "messages:read",
+    "messages:write",
+    "threads:read",
+    "threads:write",
+    "dms:read",
+    "dms:write",
+    "realtime:read",
+    "uploads:write",
+    "profile:read",
+    "commands:write",
+  ],
+};
+
+export type BotScopeSummary = {
+  bundle: BotScopeBundle | null;
+  bundleLabel: string | null;
+  extras: string[];
+};
+
+// Collapses a scope list to the largest bundle it covers plus any leftover
+// scopes. Accepts both server-expanded lists and raw bundle ids. Returns
+// bundle:null when no bundle matches (custom sets render as raw chips).
+export function summarizeBotScopes(scopes: string[]): BotScopeSummary {
+  const have = new Set<string>();
+  for (const scope of scopes) {
+    have.add(scope);
+    const expansion = BOT_SCOPE_BUNDLE_EXPANSIONS[scope as BotScopeBundle];
+    if (expansion) for (const s of expansion) have.add(s);
+  }
+  for (const id of ["bot:admin", "bot:write", "bot:read"] as const) {
+    const expansion = BOT_SCOPE_BUNDLE_EXPANSIONS[id];
+    if (!expansion.every((scope) => have.has(scope))) continue;
+    const covered = new Set<string>(expansion);
+    return {
+      bundle: id,
+      bundleLabel: BOT_SCOPE_BUNDLES.find((b) => b.id === id)?.label ?? id,
+      extras: scopes.filter((scope) => {
+        if (scope === id) return false;
+        const nested = BOT_SCOPE_BUNDLE_EXPANSIONS[scope as BotScopeBundle];
+        if (nested) return !nested.every((s) => covered.has(s));
+        return !covered.has(scope);
+      }),
+    };
+  }
+  return { bundle: null, bundleLabel: null, extras: scopes };
+}
+
 export type CreateBotInput = {
   display_name: string;
   handle?: string;
