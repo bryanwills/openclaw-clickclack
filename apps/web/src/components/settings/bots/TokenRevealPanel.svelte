@@ -7,6 +7,7 @@
     buildOpenClawShellSnippet,
     botLoadErrorMessage,
     createWorkspaceBotSetupCode,
+    expandBotScopes,
     summarizeBotScopes,
     type OpenClawAccountMode,
   } from "../../../lib/bots";
@@ -64,6 +65,9 @@
   const codeMode = $derived(connect === "code" && !!codeSnippetBuilder);
   const scopeChips = $derived(token?.scopes ?? scopes ?? []);
   const scopeSummary = $derived(summarizeBotScopes(scopeChips));
+  // Bundle shorthand from the create/mint forms hides the permissions it
+  // grants; the detailed list must always show the concrete scopes.
+  const expandedScopes = $derived(expandBotScopes(scopeChips));
 
   let acknowledged = $state(false);
   let mode = $state<OpenClawAccountMode>("single");
@@ -338,11 +342,11 @@
           <span class="ws-bots__scope-chip">{scope}</span>
         {/each}
       </div>
-      {#if scopeSummary.bundle && scopeChips.length > 1}
+      {#if scopeSummary.bundle && expandedScopes.length > 1}
         <details class="ws-bots__scope-details">
-          <summary>All {scopeChips.length} scopes</summary>
+          <summary>All {expandedScopes.length} scopes</summary>
           <div class="ws-bots__scope-row">
-            {#each scopeChips as scope (scope)}
+            {#each expandedScopes as scope (scope)}
               <span class="ws-bots__scope-chip">{scope}</span>
             {/each}
           </div>

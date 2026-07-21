@@ -137,6 +137,24 @@ export function summarizeBotScopes(scopes: string[]): BotScopeSummary {
   return { bundle: null, bundleLabel: null, extras: scopes };
 }
 
+// Expands bundle shorthand into the concrete scopes the server grants.
+// Views that promise the full permission list must use this so bundle ids
+// never hide the individual permissions they carry.
+export function expandBotScopes(scopes: string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const scope of scopes) {
+    const expansion = BOT_SCOPE_BUNDLE_EXPANSIONS[scope as BotScopeBundle];
+    for (const s of expansion ?? [scope]) {
+      if (!seen.has(s)) {
+        seen.add(s);
+        out.push(s);
+      }
+    }
+  }
+  return out;
+}
+
 export type CreateBotInput = {
   display_name: string;
   handle?: string;
