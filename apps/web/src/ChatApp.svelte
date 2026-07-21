@@ -3079,6 +3079,7 @@
   }
 
   function openImageViewer(url: string, title: string) {
+    if (isModalOpen()) return;
     selectedImage = { url, title };
   }
 
@@ -3211,6 +3212,7 @@
       ) {
         return;
       }
+      if (selectedImage) return;
       if (isModalOpen()) {
         closeModal();
       } else if (mobileNavOpen) {
