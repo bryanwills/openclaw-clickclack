@@ -111,6 +111,41 @@ test("density switches to compact and survives reload", async ({ page }) => {
     .poll(() => page.evaluate(() => localStorage.getItem("clickclack:density:v1")))
     .toBe("compact");
 
+  await page.evaluate(() => {
+    const fixture = document.createElement("article");
+    fixture.id = "appearance-density-fixture";
+    fixture.className = "message-group";
+    fixture.style.cssText = "position:fixed;left:-10000px;top:0;width:600px;visibility:hidden";
+    fixture.innerHTML = `
+      <span class="avatar"></span>
+      <div class="group-body">
+        <header><strong>Fixture</strong><time>2:14 PM</time></header>
+        <div class="message-row">
+          <span class="row-stamp"></span>
+          <div class="message-content"><div class="markdown">Fixture message</div></div>
+        </div>
+      </div>
+    `;
+    document.body.append(fixture);
+  });
+
+  await page.getByRole("radio", { name: /^Outlined chains/ }).click();
+  const messageGroup = page.locator("#appearance-density-fixture");
+  const messageRow = messageGroup.locator(".message-row");
+  await expect
+    .poll(() =>
+      messageRow.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { marginLeft: style.marginLeft, paddingLeft: style.paddingLeft };
+      }),
+    )
+    .toEqual({ marginLeft: "0px", paddingLeft: "0px" });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect
+    .poll(() => messageGroup.evaluate((element) => getComputedStyle(element).paddingLeft))
+    .toBe("12px");
+
   // The pre-paint boot script applies the stored density before hydration.
   await page.reload();
   await expect(html).toHaveAttribute("data-density", "compact");
