@@ -8,6 +8,7 @@
     listWorkspaceBotTokens,
     removeBotFromWorkspace,
     revokeBotToken,
+    expandBotScopes,
     summarizeBotScopes,
     type BotToken,
     type BotWithTokens,
@@ -425,6 +426,7 @@
                         </div>
                         {#if token.scopes?.length}
                           {@const summary = summarizeBotScopes(token.scopes)}
+                          {@const fullScopes = expandBotScopes(token.scopes)}
                           <div class="ws-bots__scope-row">
                             {#if summary.bundleLabel}
                               <span class="ws-bots__scope-chip ws-bots__scope-chip--bundle">
@@ -438,17 +440,19 @@
                               <button
                                 type="button"
                                 class="ws-bots__scope-toggle"
+                                aria-expanded={scopesExpandedTokenID === token.id}
+                                aria-controls="ws-bots-scopes-{token.id}"
                                 onclick={() => toggleScopeList(token.id)}
                               >
                                 {scopesExpandedTokenID === token.id
                                   ? "Hide scopes"
-                                  : `All ${token.scopes.length} scopes`}
+                                  : `All ${fullScopes.length} scopes`}
                               </button>
                             {/if}
                           </div>
                           {#if summary.bundle && scopesExpandedTokenID === token.id}
-                            <div class="ws-bots__scope-row">
-                              {#each token.scopes as scope (scope)}
+                            <div class="ws-bots__scope-row" id="ws-bots-scopes-{token.id}">
+                              {#each fullScopes as scope (scope)}
                                 <span class="ws-bots__scope-chip">{scope}</span>
                               {/each}
                             </div>
