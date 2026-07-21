@@ -2297,300 +2297,328 @@
 }
 
 /* =========================================================
-   Appearance section: color mode keys + board swatches.
+   Appearance section: live preview strip + quiet rows.
    ========================================================= */
 
-.appearance-modes {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  max-width: 460px;
-}
-
-/* Mode pickers are keycaps, like every other control on the board. */
-.appearance-mode {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 40px;
-  padding: 0 14px;
+/* The strip inherits the active board + color-mode tokens (picks apply
+   globally the instant they're made); layout and density restyle the sample
+   messages via local data attributes. */
+.appearance-preview {
+  overflow: hidden;
   border: 1px solid var(--line-strong);
-  border-radius: var(--radius);
-  background: var(--panel-2);
-  color: var(--text);
-  font-size: 13.5px;
-  font-weight: 600;
-  box-shadow: var(--key-edge);
-  transition:
-    background 0.12s ease,
-    border-color 0.12s ease,
-    color 0.12s ease,
-    box-shadow 0.08s ease,
-    transform 0.08s ease;
+  border-radius: var(--radius-lg);
+  background: var(--bg);
 }
 
-.appearance-mode:hover {
-  background: var(--panel-3);
+.appearance-preview__bar {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 700;
 }
 
-.appearance-mode:active {
-  transform: translateY(1px);
-  box-shadow: var(--key-edge-pressed);
-}
-
-.appearance-mode.is-active {
-  background: var(--accent-soft);
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--line-strong));
+.appearance-preview__hash {
   color: var(--accent);
 }
 
-.appearance-mode__icon {
+.appearance-preview__topic {
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.appearance-preview__chat {
+  display: grid;
+  gap: 14px;
+  padding: 14px 16px 16px;
+}
+
+.appearance-preview[data-density="compact"] .appearance-preview__chat {
+  gap: 7px;
+  padding: 10px 14px 12px;
+}
+
+.appearance-preview__msg {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.appearance-preview[data-density="compact"] .appearance-preview__msg {
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.appearance-preview__avatar {
   display: grid;
   place-items: center;
-  width: 16px;
-  height: 16px;
-}
-
-.appearance-mode__icon svg {
-  width: 16px;
-  height: 16px;
-  display: block;
-}
-
-.board-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  max-width: 640px;
-}
-
-/* Each swatch carries its own data-board attribute, so the tokens inside the
-   preview resolve to that board's palette (in the active color mode) even
-   while a different board is applied on the root. */
-.board-swatch {
-  display: grid;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-lg);
-  background: var(--panel);
-  color: var(--text);
-  text-align: left;
-  box-shadow: var(--key-edge);
-  transition:
-    border-color 0.12s ease,
-    box-shadow 0.08s ease,
-    transform 0.08s ease;
-}
-
-.board-swatch:hover {
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--line-strong));
-}
-
-.board-swatch:active {
-  transform: translateY(1px);
-  box-shadow: var(--key-edge-pressed);
-}
-
-.board-swatch.is-active {
-  border-color: color-mix(in srgb, var(--accent) 70%, var(--line-strong));
-  box-shadow:
-    var(--key-edge),
-    0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
-}
-
-/* Miniature board: rail strip, an accent key, and a panel bubble. */
-.board-swatch__preview {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
-  height: 64px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--bg);
-  overflow: hidden;
-}
-
-.board-swatch__rail {
-  background: var(--rail);
-  border-right: 1px solid var(--line);
-}
-
-.board-swatch__body {
-  position: relative;
-}
-
-.board-swatch__key {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  width: 22px;
-  height: 14px;
-  border-radius: 4px;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
   background: var(--accent);
-  box-shadow: 0 1.5px 0 color-mix(in srgb, var(--text-strong) 25%, transparent);
+  color: var(--accent-contrast);
+  font-size: 14px;
+  font-weight: 700;
 }
 
-.board-swatch__bubble {
-  position: absolute;
-  right: 10px;
-  bottom: 10px;
-  left: 40px;
-  height: 22px;
-  border: 1px solid var(--line-strong);
-  border-radius: 6px;
+.appearance-preview[data-density="compact"] .appearance-preview__avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  font-size: 11px;
+}
+
+.appearance-preview__avatar.is-agent {
+  background: var(--accent-2);
+}
+
+.appearance-preview__body {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.appearance-preview[data-density="compact"] .appearance-preview__body {
+  gap: 1px;
+}
+
+.appearance-preview__head {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.appearance-preview__who {
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.appearance-preview[data-density="compact"] .appearance-preview__who {
+  font-size: 12px;
+}
+
+.appearance-preview__when {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.appearance-preview__text {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.appearance-preview[data-density="compact"] .appearance-preview__text {
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.appearance-preview__activity {
+  margin-top: 3px;
+  padding: 6px 10px;
+  border-radius: 7px 7px 0 0;
+  background: color-mix(in srgb, var(--accent-2) 9%, var(--panel));
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.appearance-preview__activity code {
+  color: var(--text-strong);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10.5px;
+}
+
+.appearance-preview__answer {
+  padding: 7px 10px 8px;
+  border-radius: 0 0 7px 7px;
+  background: color-mix(in srgb, var(--accent) 7%, var(--panel));
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.appearance-preview[data-density="compact"] .appearance-preview__activity {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.appearance-preview[data-density="compact"] .appearance-preview__answer {
+  padding: 5px 8px 6px;
+  font-size: 12.5px;
+}
+
+.appearance-preview[data-layout="outlined"] .appearance-preview__activity {
+  border: 1px solid color-mix(in srgb, var(--accent-2) 45%, var(--line));
+  border-bottom: 0;
+  background: transparent;
+}
+
+.appearance-preview[data-layout="outlined"] .appearance-preview__answer {
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line));
+  background: transparent;
+}
+
+.appearance-preview__reactions {
+  display: flex;
+  gap: 5px;
+  margin-top: 5px;
+}
+
+.appearance-preview[data-density="compact"] .appearance-preview__reactions {
+  margin-top: 2px;
+}
+
+.appearance-preview__reaction {
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
   background: var(--panel);
+  color: var(--muted);
+  font-size: 11px;
 }
 
-.board-swatch__meta {
+.appearance-preview__reaction.is-mine {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+  color: var(--text-strong);
+}
+
+.appearance-preview__caption {
+  margin: -14px 2px 0;
+  color: var(--muted-2);
+  font-size: 11px;
+  text-align: right;
+}
+
+/* Quiet rows: label + hint on the left, one compact control on the right. */
+.appearance-rows {
+  display: grid;
+}
+
+.appearance-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 24px;
+  padding: 14px 0;
+}
+
+.appearance-row + .appearance-row {
+  border-top: 1px solid var(--line);
+}
+
+.appearance-row__meta {
   display: grid;
   gap: 2px;
 }
 
-.board-swatch__meta strong {
+.appearance-row__label {
   color: var(--text-strong);
   font-size: 13.5px;
-  font-family: var(--font-display);
   font-weight: 650;
 }
 
-.board-swatch__meta span {
+.appearance-row__desc {
   color: var(--muted);
   font-size: 12px;
 }
 
-.message-layout-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  max-width: 640px;
-}
-
-.message-layout-option {
-  display: grid;
-  grid-template-columns: 104px minmax(0, 1fr);
+.appearance-row__control {
+  display: inline-flex;
   align-items: center;
   gap: 12px;
-  min-height: 92px;
-  padding: 12px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-lg);
-  background: var(--panel);
-  color: var(--text);
-  text-align: left;
-  box-shadow: var(--key-edge);
-  transition:
-    border-color 0.12s ease,
-    box-shadow 0.08s ease,
-    transform 0.08s ease;
 }
 
-.message-layout-option:hover {
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--line-strong));
-}
-
-.message-layout-option:active {
-  transform: translateY(1px);
-  box-shadow: var(--key-edge-pressed);
-}
-
-.message-layout-option:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-}
-
-.message-layout-option.is-active {
-  border-color: color-mix(in srgb, var(--accent) 70%, var(--line-strong));
-  box-shadow:
-    var(--key-edge),
-    0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
-}
-
-.message-layout-option__preview {
-  display: grid;
-  align-content: center;
-  gap: 3px;
-  height: 66px;
-  padding: 9px;
+.appearance-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--bg);
-}
-
-.message-layout-option__activity,
-.message-layout-option__answer {
-  display: block;
-  width: 86%;
-  justify-self: start;
+  border-radius: var(--radius-lg);
   background: var(--panel-2);
 }
 
-.message-layout-option__activity {
-  height: 16px;
-  background: color-mix(in srgb, var(--activity-accent) 18%, var(--panel-2));
+.appearance-seg__btn {
+  padding: 5px 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
-.message-layout-option__answer {
-  height: 24px;
-  background: var(--delivery-accent-soft);
-}
-
-.message-layout-option__preview[data-layout="standard"] .message-layout-option__activity {
-  border: 1px solid color-mix(in srgb, var(--activity-accent) 30%, var(--line));
-  border-bottom: 0;
-  border-radius: 6px 6px 0 0;
-}
-
-.message-layout-option__preview[data-layout="standard"] .message-layout-option__answer {
-  border: 1px solid color-mix(in srgb, var(--delivery-accent) 24%, var(--line));
-  border-top: 0;
-  border-radius: 0 0 6px 6px;
-}
-
-.message-layout-option__preview[data-layout="outlined"] .message-layout-option__activity,
-.message-layout-option__preview[data-layout="outlined"] .message-layout-option__answer {
-  width: 100%;
-}
-
-.message-layout-option__preview[data-layout="outlined"] .message-layout-option__activity {
-  border: 1px solid color-mix(in srgb, var(--activity-accent) 42%, var(--line));
-  border-radius: 6px 6px 0 0;
-}
-
-.message-layout-option__preview[data-layout="outlined"] .message-layout-option__answer {
-  margin-top: -4px;
-  border: 1px solid color-mix(in srgb, var(--delivery-accent) 36%, var(--line));
-  border-radius: 0 0 6px 6px;
-}
-
-.message-layout-option__meta {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.message-layout-option__meta strong {
+.appearance-seg__btn:hover {
   color: var(--text-strong);
-  font-family: var(--font-display);
-  font-size: 13.5px;
-  font-weight: 650;
 }
 
-.message-layout-option__meta span {
+.appearance-seg__btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.appearance-seg__btn.is-active {
+  border-color: var(--line-strong);
+  background: var(--panel);
+  color: var(--text-strong);
+  box-shadow: 0 1px 2px rgb(16 21 29 / 10%);
+}
+
+/* Board chips resolve their own data-board palette (in the active color
+   mode), so each chip shows its board's panel + accent even while a
+   different board is applied on the root. */
+.board-chips__name {
+  min-width: 44px;
   color: var(--muted);
   font-size: 12px;
-  line-height: 1.35;
+  text-align: right;
+}
+
+.board-chips {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.board-chip {
+  position: relative;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--panel) 52%, var(--accent) 52%);
+  cursor: pointer;
+}
+
+.board-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.board-chip.is-active::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border: 2px solid var(--accent);
+  border-radius: 11px;
 }
 
 @media (max-width: 640px) {
-  .appearance-modes,
-  .board-grid,
-  .message-layout-grid {
+  .appearance-row {
     grid-template-columns: 1fr;
+    gap: 10px;
   }
 
-  .message-layout-option {
-    grid-template-columns: 92px minmax(0, 1fr);
+  .appearance-row__control,
+  .board-chips__name {
+    justify-self: start;
+    text-align: left;
   }
 }
 

@@ -2,23 +2,34 @@
   import {
     BOARD_THEMES,
     COLOR_MODES,
+    DENSITIES,
     MESSAGE_LAYOUTS,
     loadBoardTheme,
     loadColorMode,
+    loadDensity,
     loadMessageLayout,
     setBoardTheme,
     setColorMode,
+    setDensity,
     setMessageLayout,
     type BoardTheme,
     type ColorMode,
+    type Density,
     type MessageLayout,
   } from "../../lib/appearance";
+  import type { User } from "../../lib/types";
+
+  let { user }: { user: User } = $props();
+
+  const previewName = $derived(user.display_name || user.handle || "You");
+  const previewInitial = $derived((previewName[0] ?? "Y").toUpperCase());
 
   // Appearance is a device-local pref with no server state, so the section
   // owns it directly instead of prop-drilling through ChatApp.
   let colorMode = $state<ColorMode>(loadColorMode());
   let boardTheme = $state<BoardTheme>(loadBoardTheme());
   let messageLayout = $state<MessageLayout>(loadMessageLayout());
+  let density = $state<Density>(loadDensity());
 
   function pickMode(mode: ColorMode) {
     colorMode = mode;
@@ -33,6 +44,11 @@
   function pickMessageLayout(layout: MessageLayout) {
     messageLayout = layout;
     setMessageLayout(layout);
+  }
+
+  function pickDensity(next: Density) {
+    density = next;
+    setDensity(next);
   }
 
   function moveRadioSelection(
@@ -74,110 +90,183 @@
   <p class="settings-page__eyebrow">Account</p>
   <h2 class="settings-page__h1">Appearance</h2>
   <p class="settings-page__lead">
-    Pick a color mode, board, and message layout. Changes apply instantly, everywhere in the
-    app, and stay on this device.
+    Changes apply instantly, everywhere in the app, and stay on this device.
   </p>
 </header>
 
 <div class="settings-form">
-  <h3 class="settings-rows__head">Color mode</h3>
-  <div class="appearance-modes" role="radiogroup" aria-label="Color mode">
-    {#each COLOR_MODES as mode, index (mode.id)}
-      <button
-        type="button"
-        class="appearance-mode"
-        class:is-active={colorMode === mode.id}
-        role="radio"
-        aria-checked={colorMode === mode.id}
-        tabindex={colorMode === mode.id ? 0 : -1}
-        onclick={() => pickMode(mode.id)}
-        onkeydown={(event) =>
-          moveRadioSelection(event, COLOR_MODES.length, index, (nextIndex) =>
-            pickMode(COLOR_MODES[nextIndex].id),
-          )}
-      >
-        <span class="appearance-mode__icon" aria-hidden="true">
-          {#if mode.id === "light"}
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="4" />
-              <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
-            </svg>
-          {:else if mode.id === "dark"}
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" />
-            </svg>
-          {:else}
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="2" y="4" width="20" height="13" rx="2" />
-              <path d="M8 21h8M12 17v4" />
-            </svg>
-          {/if}
-        </span>
-        {mode.label}
-      </button>
-    {/each}
-  </div>
-
-  <h3 class="settings-rows__head">Board</h3>
-  <div class="board-grid" role="radiogroup" aria-label="Board theme">
-    {#each BOARD_THEMES as board, index (board.id)}
-      <button
-        type="button"
-        class="board-swatch"
-        class:is-active={boardTheme === board.id}
-        role="radio"
-        aria-checked={boardTheme === board.id}
-        tabindex={boardTheme === board.id ? 0 : -1}
-        data-board={board.id}
-        onclick={() => pickBoard(board.id)}
-        onkeydown={(event) =>
-          moveRadioSelection(event, BOARD_THEMES.length, index, (nextIndex) =>
-            pickBoard(BOARD_THEMES[nextIndex].id),
-          )}
-      >
-        <span class="board-swatch__preview" aria-hidden="true">
-          <span class="board-swatch__rail"></span>
-          <span class="board-swatch__body">
-            <span class="board-swatch__key"></span>
-            <span class="board-swatch__bubble"></span>
+  <!-- Live preview: picks apply globally the moment they're made, so the strip
+       inherits color mode + board tokens for free; layout and density are
+       mirrored locally via data attributes so the sample messages restyle. -->
+  <div
+    class="appearance-preview"
+    data-layout={messageLayout}
+    data-density={density}
+    aria-hidden="true"
+  >
+    <div class="appearance-preview__bar">
+      <span class="appearance-preview__hash">#</span>
+      <span>deploys</span>
+      <span class="appearance-preview__topic">Release pipeline chatter</span>
+    </div>
+    <div class="appearance-preview__chat">
+      <div class="appearance-preview__msg">
+        <span class="appearance-preview__avatar">{previewInitial}</span>
+        <span class="appearance-preview__body">
+          <span class="appearance-preview__head">
+            <span class="appearance-preview__who">{previewName}</span>
+            <span class="appearance-preview__when">2:14 PM</span>
+          </span>
+          <span class="appearance-preview__text">
+            Pipeline's green again — can we ship v0.2.2 to staging?
           </span>
         </span>
-        <span class="board-swatch__meta">
-          <strong>{board.label}</strong>
-          <span>{board.blurb}</span>
+      </div>
+      <div class="appearance-preview__msg">
+        <span class="appearance-preview__avatar is-agent">C</span>
+        <span class="appearance-preview__body">
+          <span class="appearance-preview__head">
+            <span class="appearance-preview__who">Claw</span>
+            <span class="bot-chip">bot</span>
+            <span class="appearance-preview__when">2:15 PM</span>
+          </span>
+          <span class="appearance-preview__activity">
+            Ran <code>make test && make deploy staging</code> · 34 passed · 12s
+          </span>
+          <span class="appearance-preview__answer">
+            Done — staging is live on v0.2.2. Smoke checks passed; dashboards look clean.
+          </span>
+          <span class="appearance-preview__reactions">
+            <span class="appearance-preview__reaction is-mine">🚀 2</span>
+            <span class="appearance-preview__reaction">✅ 1</span>
+          </span>
         </span>
-      </button>
-    {/each}
+      </div>
+      <div class="appearance-preview__msg">
+        <span class="appearance-preview__avatar">{previewInitial}</span>
+        <span class="appearance-preview__body">
+          <span class="appearance-preview__head">
+            <span class="appearance-preview__who">{previewName}</span>
+            <span class="appearance-preview__when">2:16 PM</span>
+          </span>
+          <span class="appearance-preview__text">Perfect. Promoting to prod after lunch 🌮</span>
+        </span>
+      </div>
+    </div>
   </div>
-  <p class="settings-field__hint">
-    Every board comes tuned for light and dark; the swatches preview whichever mode is active.
-  </p>
+  <p class="appearance-preview__caption">Live preview — updates as you pick</p>
 
-  <h3 class="settings-rows__head">Message layout</h3>
-  <div class="message-layout-grid" role="radiogroup" aria-label="Message layout">
-    {#each MESSAGE_LAYOUTS as layout, index (layout.id)}
-      <button
-        type="button"
-        class="message-layout-option"
-        class:is-active={messageLayout === layout.id}
-        role="radio"
-        aria-checked={messageLayout === layout.id}
-        tabindex={messageLayout === layout.id ? 0 : -1}
-        onclick={() => pickMessageLayout(layout.id)}
-        onkeydown={(event) =>
-          moveRadioSelection(event, MESSAGE_LAYOUTS.length, index, (nextIndex) =>
-            pickMessageLayout(MESSAGE_LAYOUTS[nextIndex].id),
-          )}
-      >
-        <span class="message-layout-option__preview" data-layout={layout.id} aria-hidden="true">
-          <span class="message-layout-option__activity"></span>
-          <span class="message-layout-option__answer"></span>
+  <div class="appearance-rows">
+    <div class="appearance-row">
+      <div class="appearance-row__meta">
+        <span class="appearance-row__label">Color mode</span>
+        <span class="appearance-row__desc">System follows your OS setting</span>
+      </div>
+      <div class="appearance-seg" role="radiogroup" aria-label="Color mode">
+        {#each COLOR_MODES as mode, index (mode.id)}
+          <button
+            type="button"
+            class="appearance-seg__btn"
+            class:is-active={colorMode === mode.id}
+            role="radio"
+            aria-checked={colorMode === mode.id}
+            tabindex={colorMode === mode.id ? 0 : -1}
+            onclick={() => pickMode(mode.id)}
+            onkeydown={(event) =>
+              moveRadioSelection(event, COLOR_MODES.length, index, (nextIndex) =>
+                pickMode(COLOR_MODES[nextIndex].id),
+              )}
+          >
+            {mode.label}
+          </button>
+        {/each}
+      </div>
+    </div>
+
+    <div class="appearance-row">
+      <div class="appearance-row__meta">
+        <span class="appearance-row__label">Board theme</span>
+        <span class="appearance-row__desc">Palette for boards, accents, and highlights</span>
+      </div>
+      <div class="appearance-row__control">
+        <span class="board-chips__name">
+          {BOARD_THEMES.find((board) => board.id === boardTheme)?.label}
         </span>
-        <span class="message-layout-option__meta">
-          <strong>{layout.label}</strong>
-          <span>{layout.blurb}</span>
-        </span>
-      </button>
-    {/each}
+        <div class="board-chips" role="radiogroup" aria-label="Board theme">
+          {#each BOARD_THEMES as board, index (board.id)}
+            <button
+              type="button"
+              class="board-chip"
+              class:is-active={boardTheme === board.id}
+              role="radio"
+              aria-checked={boardTheme === board.id}
+              tabindex={boardTheme === board.id ? 0 : -1}
+              data-board={board.id}
+              aria-label={`${board.label} — ${board.blurb}`}
+              title={`${board.label} — ${board.blurb}`}
+              onclick={() => pickBoard(board.id)}
+              onkeydown={(event) =>
+                moveRadioSelection(event, BOARD_THEMES.length, index, (nextIndex) =>
+                  pickBoard(BOARD_THEMES[nextIndex].id),
+                )}
+            ></button>
+          {/each}
+        </div>
+      </div>
+    </div>
+
+    <div class="appearance-row">
+      <div class="appearance-row__meta">
+        <span class="appearance-row__label">Message layout</span>
+        <span class="appearance-row__desc">How agent activity attaches to replies</span>
+      </div>
+      <div class="appearance-seg" role="radiogroup" aria-label="Message layout">
+        {#each MESSAGE_LAYOUTS as layout, index (layout.id)}
+          <button
+            type="button"
+            class="appearance-seg__btn"
+            class:is-active={messageLayout === layout.id}
+            role="radio"
+            aria-checked={messageLayout === layout.id}
+            tabindex={messageLayout === layout.id ? 0 : -1}
+            title={layout.blurb}
+            onclick={() => pickMessageLayout(layout.id)}
+            onkeydown={(event) =>
+              moveRadioSelection(event, MESSAGE_LAYOUTS.length, index, (nextIndex) =>
+                pickMessageLayout(MESSAGE_LAYOUTS[nextIndex].id),
+              )}
+          >
+            {layout.label}
+          </button>
+        {/each}
+      </div>
+    </div>
+
+    <div class="appearance-row">
+      <div class="appearance-row__meta">
+        <span class="appearance-row__label">Density</span>
+        <span class="appearance-row__desc">Compact fits more messages on screen</span>
+      </div>
+      <div class="appearance-seg" role="radiogroup" aria-label="Density">
+        {#each DENSITIES as option, index (option.id)}
+          <button
+            type="button"
+            class="appearance-seg__btn"
+            class:is-active={density === option.id}
+            role="radio"
+            aria-checked={density === option.id}
+            tabindex={density === option.id ? 0 : -1}
+            title={option.blurb}
+            onclick={() => pickDensity(option.id)}
+            onkeydown={(event) =>
+              moveRadioSelection(event, DENSITIES.length, index, (nextIndex) =>
+                pickDensity(DENSITIES[nextIndex].id),
+              )}
+          >
+            {option.label}
+          </button>
+        {/each}
+      </div>
+    </div>
   </div>
 </div>

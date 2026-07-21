@@ -239,7 +239,7 @@
           {onBrowserNotificationsChanged}
         />
       {:else if activeSection === "appearance"}
-        <AppearanceSection />
+        <AppearanceSection {user} />
       {:else if activeSection === "notifications"}
         <header class="settings-page__header">
           <p class="settings-page__eyebrow">Account</p>
