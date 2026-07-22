@@ -386,6 +386,14 @@ type User struct {
 	OwnerUserID sql.NullString `json:"owner_user_id"`
 }
 
+type UserAppearancePreference struct {
+	UserID        string `json:"user_id"`
+	ColorMode     string `json:"color_mode"`
+	BoardTheme    string `json:"board_theme"`
+	MessageLayout string `json:"message_layout"`
+	Density       string `json:"density"`
+}
+
 type UserNotificationSetting struct {
 	UserID          string `json:"user_id"`
 	PushoverEnabled int64  `json:"pushover_enabled"`

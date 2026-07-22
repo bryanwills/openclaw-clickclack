@@ -207,6 +207,36 @@ SELECT pushover_enabled, pushover_user_key
 FROM user_notification_settings
 WHERE user_id = sqlc.arg(user_id);
 
+-- name: GetAppearancePreferences :one
+SELECT color_mode, board_theme, message_layout, density
+FROM user_appearance_preferences
+WHERE user_id = sqlc.arg(user_id);
+
+-- name: EnsureAppearancePreferences :exec
+INSERT INTO user_appearance_preferences (user_id)
+VALUES (sqlc.arg(user_id))
+ON CONFLICT(user_id) DO NOTHING;
+
+-- name: UpdateAppearanceColorMode :exec
+UPDATE user_appearance_preferences
+SET color_mode = sqlc.arg(color_mode)
+WHERE user_id = sqlc.arg(user_id);
+
+-- name: UpdateAppearanceBoardTheme :exec
+UPDATE user_appearance_preferences
+SET board_theme = sqlc.arg(board_theme)
+WHERE user_id = sqlc.arg(user_id);
+
+-- name: UpdateAppearanceMessageLayout :exec
+UPDATE user_appearance_preferences
+SET message_layout = sqlc.arg(message_layout)
+WHERE user_id = sqlc.arg(user_id);
+
+-- name: UpdateAppearanceDensity :exec
+UPDATE user_appearance_preferences
+SET density = sqlc.arg(density)
+WHERE user_id = sqlc.arg(user_id);
+
 -- name: ListWorkspacePushNotificationRecipients :many
 SELECT u.id AS user_id, u.display_name, uns.pushover_user_key
 FROM workspace_members wm

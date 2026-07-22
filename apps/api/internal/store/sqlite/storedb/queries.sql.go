@@ -739,6 +739,17 @@ func (q *Queries) DirectRouteID(ctx context.Context, arg DirectRouteIDParams) (s
 	return route_id, err
 }
 
+const ensureAppearancePreferences = `-- name: EnsureAppearancePreferences :exec
+INSERT INTO user_appearance_preferences (user_id)
+VALUES (?1)
+ON CONFLICT(user_id) DO NOTHING
+`
+
+func (q *Queries) EnsureAppearancePreferences(ctx context.Context, userID string) error {
+	_, err := q.db.ExecContext(ctx, ensureAppearancePreferences, userID)
+	return err
+}
+
 const findOneToOneDirectConversation = `-- name: FindOneToOneDirectConversation :one
 SELECT dc.id, COALESCE(dc.route_id, '') AS route_id, dc.workspace_id, dc.created_at
 FROM direct_conversations dc
@@ -879,6 +890,31 @@ func (q *Queries) GetActiveBotForDeletion(ctx context.Context, botUserID string)
 		&i.Handle,
 		&i.AvatarUrl,
 		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getAppearancePreferences = `-- name: GetAppearancePreferences :one
+SELECT color_mode, board_theme, message_layout, density
+FROM user_appearance_preferences
+WHERE user_id = ?1
+`
+
+type GetAppearancePreferencesRow struct {
+	ColorMode     string `json:"color_mode"`
+	BoardTheme    string `json:"board_theme"`
+	MessageLayout string `json:"message_layout"`
+	Density       string `json:"density"`
+}
+
+func (q *Queries) GetAppearancePreferences(ctx context.Context, userID string) (GetAppearancePreferencesRow, error) {
+	row := q.db.QueryRowContext(ctx, getAppearancePreferences, userID)
+	var i GetAppearancePreferencesRow
+	err := row.Scan(
+		&i.ColorMode,
+		&i.BoardTheme,
+		&i.MessageLayout,
+		&i.Density,
 	)
 	return i, err
 }
@@ -4841,6 +4877,70 @@ WHERE conversation_id = ?1
 
 func (q *Queries) UnhideDirectConversationForMembers(ctx context.Context, conversationID string) error {
 	_, err := q.db.ExecContext(ctx, unhideDirectConversationForMembers, conversationID)
+	return err
+}
+
+const updateAppearanceBoardTheme = `-- name: UpdateAppearanceBoardTheme :exec
+UPDATE user_appearance_preferences
+SET board_theme = ?1
+WHERE user_id = ?2
+`
+
+type UpdateAppearanceBoardThemeParams struct {
+	BoardTheme string `json:"board_theme"`
+	UserID     string `json:"user_id"`
+}
+
+func (q *Queries) UpdateAppearanceBoardTheme(ctx context.Context, arg UpdateAppearanceBoardThemeParams) error {
+	_, err := q.db.ExecContext(ctx, updateAppearanceBoardTheme, arg.BoardTheme, arg.UserID)
+	return err
+}
+
+const updateAppearanceColorMode = `-- name: UpdateAppearanceColorMode :exec
+UPDATE user_appearance_preferences
+SET color_mode = ?1
+WHERE user_id = ?2
+`
+
+type UpdateAppearanceColorModeParams struct {
+	ColorMode string `json:"color_mode"`
+	UserID    string `json:"user_id"`
+}
+
+func (q *Queries) UpdateAppearanceColorMode(ctx context.Context, arg UpdateAppearanceColorModeParams) error {
+	_, err := q.db.ExecContext(ctx, updateAppearanceColorMode, arg.ColorMode, arg.UserID)
+	return err
+}
+
+const updateAppearanceDensity = `-- name: UpdateAppearanceDensity :exec
+UPDATE user_appearance_preferences
+SET density = ?1
+WHERE user_id = ?2
+`
+
+type UpdateAppearanceDensityParams struct {
+	Density string `json:"density"`
+	UserID  string `json:"user_id"`
+}
+
+func (q *Queries) UpdateAppearanceDensity(ctx context.Context, arg UpdateAppearanceDensityParams) error {
+	_, err := q.db.ExecContext(ctx, updateAppearanceDensity, arg.Density, arg.UserID)
+	return err
+}
+
+const updateAppearanceMessageLayout = `-- name: UpdateAppearanceMessageLayout :exec
+UPDATE user_appearance_preferences
+SET message_layout = ?1
+WHERE user_id = ?2
+`
+
+type UpdateAppearanceMessageLayoutParams struct {
+	MessageLayout string `json:"message_layout"`
+	UserID        string `json:"user_id"`
+}
+
+func (q *Queries) UpdateAppearanceMessageLayout(ctx context.Context, arg UpdateAppearanceMessageLayoutParams) error {
+	_, err := q.db.ExecContext(ctx, updateAppearanceMessageLayout, arg.MessageLayout, arg.UserID)
 	return err
 }
 

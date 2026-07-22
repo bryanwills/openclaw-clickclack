@@ -177,6 +177,25 @@ type UpdateNotificationSettingsInput struct {
 	PushoverUserKey string
 }
 
+type AppearancePreferences struct {
+	ColorMode     string `json:"color_mode,omitempty"`
+	BoardTheme    string `json:"board_theme,omitempty"`
+	MessageLayout string `json:"message_layout,omitempty"`
+	Density       string `json:"density,omitempty"`
+}
+
+type AppearancePreferencesPatch struct {
+	ColorMode     *string `json:"color_mode,omitempty"`
+	BoardTheme    *string `json:"board_theme,omitempty"`
+	MessageLayout *string `json:"message_layout,omitempty"`
+	Density       *string `json:"density,omitempty"`
+}
+
+type UpdateAppearancePreferencesInput struct {
+	UserID string
+	Patch  AppearancePreferencesPatch
+}
+
 type PushNotificationRecipient struct {
 	UserID          string
 	DisplayName     string
@@ -1021,6 +1040,8 @@ type Store interface {
 	UpdateUserProfile(ctx context.Context, input UpdateUserProfileInput) (User, error)
 	UpdateUserProfileAndNotificationSettings(ctx context.Context, input UpdateUserProfileAndNotificationSettingsInput) (User, error)
 	UpdateNotificationSettings(ctx context.Context, input UpdateNotificationSettingsInput) (NotificationSettings, error)
+	GetAppearancePreferences(ctx context.Context, userID string) (*AppearancePreferences, error)
+	UpdateAppearancePreferences(ctx context.Context, input UpdateAppearancePreferencesInput) (*AppearancePreferences, error)
 	ListPushNotificationRecipients(ctx context.Context, messageID string) ([]PushNotificationRecipient, error)
 	AddWorkspaceMember(ctx context.Context, workspaceID, userID, role string) error
 	EnsureDefaultWorkspaceMember(ctx context.Context, userID string) (Workspace, error)
