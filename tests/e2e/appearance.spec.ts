@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { waitForAppReady } from "./app-ready";
 
 // Appearance prefs apply locally first, persist to the account, and use
@@ -19,6 +21,37 @@ const appearanceStorageKeys = [
   "clickclack:density:v1",
   "clickclack:appearance-user:v1",
 ];
+
+let appearanceUserID = "";
+
+test.beforeEach(async ({ page }) => {
+  const workspacesResponse = await page.request.get("/api/workspaces");
+  expect(workspacesResponse.ok()).toBe(true);
+  const { workspaces } = (await workspacesResponse.json()) as {
+    workspaces: { id: string }[];
+  };
+  const suffix = randomUUID();
+  appearanceUserID = execFileSync(
+    "go",
+    [
+      "run",
+      "./apps/api/cmd/clickclack",
+      "admin",
+      "user",
+      "create",
+      "--data",
+      "./data/e2e",
+      "--workspace",
+      workspaces[0].id,
+      "--name",
+      `Appearance Tester ${suffix}`,
+      "--email",
+      `appearance-${suffix}@example.com`,
+    ],
+    { cwd: process.cwd(), encoding: "utf8" },
+  ).trim();
+  await page.setExtraHTTPHeaders({ "X-ClickClack-User": appearanceUserID });
+});
 
 async function serverAppearance(page: import("@playwright/test").Page) {
   return page.evaluate(async () => {
@@ -75,7 +108,7 @@ async function openAppearanceSettings(page: import("@playwright/test").Page) {
   await expect(accountSettings).toBeVisible();
   await accountSettings.click();
   await expect(modal.getByRole("heading", { name: "Profile settings" })).toBeVisible();
-  await modal.getByRole("button", { name: "Appearance" }).click();
+  await modal.getByRole("button", { name: "Appearance", exact: true }).click();
   await expect(appearanceHeading).toBeVisible();
 }
 
@@ -133,7 +166,9 @@ test("appearance choices survive cache loss and roam to a second browser context
   await expect(html).toHaveAttribute("data-board", "iris");
   await expect(html).toHaveAttribute("data-density", "compact");
 
-  const secondContext = await browser.newContext();
+  const secondContext = await browser.newContext({
+    extraHTTPHeaders: { "X-ClickClack-User": appearanceUserID },
+  });
   try {
     await secondContext.addCookies(await page.context().cookies());
     const secondPage = await secondContext.newPage();
@@ -179,7 +214,7 @@ test("stale account responses cannot overwrite a newer appearance choice", async
   await modal.getByRole("button", { name: "Save profile" }).click();
   await profileResponseCaptured;
 
-  await modal.getByRole("button", { name: "Appearance" }).click();
+  await modal.getByRole("button", { name: "Appearance", exact: true }).click();
   await modal.getByRole("radio", { name: /^Iris/ }).click();
   await expect.poll(() => serverAppearance(page)).toMatchObject({ board_theme: "iris" });
   releaseProfileResponse();

@@ -42,6 +42,25 @@ async function clickclackAsync(args: string[], env: NodeJS.ProcessEnv = {}): Pro
   return stdout.trim();
 }
 
+async function createGeneralChannelRoute(page: Page, label: string): Promise<string> {
+  const suffix = randomUUID().replaceAll("-", "").slice(0, 12);
+  const workspaceResponse = await page.request.post("/api/workspaces", {
+    data: { name: `${label} ${suffix}` },
+  });
+  expect(workspaceResponse.ok()).toBe(true);
+  const { workspace } = (await workspaceResponse.json()) as {
+    workspace: { id: string; route_id: string };
+  };
+  const channelResponse = await page.request.post(`/api/workspaces/${workspace.id}/channels`, {
+    data: { name: "general", kind: "public" },
+  });
+  expect(channelResponse.ok()).toBe(true);
+  const { channel } = (await channelResponse.json()) as {
+    channel: { route_id: string };
+  };
+  return `/app/${workspace.route_id}/${channel.route_id}`;
+}
+
 function isolatedHome(): NodeJS.ProcessEnv {
   const root = mkdtempSync(join(tmpdir(), "clickclack-e2e-"));
   return {
@@ -1121,6 +1140,7 @@ test("browser notifications require explicit profile opt-in", async ({ page }) =
 });
 
 test("browser notification storage failures do not block app startup", async ({ page }) => {
+  const generalRoute = await createGeneralChannelRoute(page, "Notification storage");
   await page.addInitScript(() => {
     const blockedKeyPrefix = "clickclack:browser-notifications-enabled:v1:";
     const getItem = Storage.prototype.getItem;
@@ -1140,13 +1160,16 @@ test("browser notification storage failures do not block app startup", async ({ 
     };
   });
 
-  await page.goto("/app");
+  await page.goto(generalRoute);
+  await waitForAppReady(page);
   await expect(page.getByRole("heading", { name: "#general" })).toBeVisible();
 });
 
 test("mobile navigation behaves like a drawer", async ({ page }) => {
+  const generalRoute = await createGeneralChannelRoute(page, "Mobile navigation");
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/app");
+  await page.goto(generalRoute);
+  await waitForAppReady(page);
   await expect(page.getByRole("heading", { name: "#general" })).toBeVisible();
 
   const composer = page.locator('textarea[aria-label="Message body"]');
@@ -1200,6 +1223,7 @@ test("desktop sidebar collapse preference still toggles", async ({ page }) => {
 });
 
 test("desktop shell moves sidebar and search controls into the title bar", async ({ page }) => {
+  const generalRoute = await createGeneralChannelRoute(page, "Desktop titlebar");
   await page.addInitScript(() => {
     Object.assign(window, {
       clickclackDesktop: {
@@ -1216,7 +1240,8 @@ test("desktop shell moves sidebar and search controls into the title bar", async
     });
   });
   await page.setViewportSize({ width: 1280, height: 860 });
-  await page.goto("/app");
+  await page.goto(generalRoute);
+  await waitForAppReady(page);
   await expect(page.getByRole("heading", { name: "#general" })).toBeVisible();
 
   const shell = page.locator(".shell");
@@ -1368,9 +1393,11 @@ test("desktop bridge keeps native frame layout when renderer chrome is disabled"
 });
 
 test("mobile navigation geometry clears the timeline at narrow widths", async ({ page }) => {
+  const generalRoute = await createGeneralChannelRoute(page, "Mobile geometry");
   for (const width of [390, 320]) {
     await page.setViewportSize({ width, height: 844 });
-    await page.goto("/app");
+    await page.goto(generalRoute);
+    await waitForAppReady(page);
     await expect(page.getByRole("heading", { name: "#general" })).toBeVisible();
     await expect
       .poll(() =>
