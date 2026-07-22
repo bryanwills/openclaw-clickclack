@@ -146,6 +146,51 @@ test("appearance choices survive cache loss and roam to a second browser context
   }
 });
 
+test("stale account responses cannot overwrite a newer appearance choice", async ({ page }) => {
+  let releaseProfileResponse!: () => void;
+  let markProfileResponseCaptured!: () => void;
+  const profileResponseGate = new Promise<void>((resolve) => {
+    releaseProfileResponse = resolve;
+  });
+  const profileResponseCaptured = new Promise<void>((resolve) => {
+    markProfileResponseCaptured = resolve;
+  });
+  await page.route("**/api/me", async (route) => {
+    const request = route.request();
+    const body = request.postData() ?? "";
+    if (
+      request.method() === "PATCH" &&
+      body.includes('"display_name"') &&
+      !body.includes('"appearance_preferences"')
+    ) {
+      const response = await route.fetch();
+      markProfileResponseCaptured();
+      await profileResponseGate;
+      await route.fulfill({ response });
+      return;
+    }
+    await route.continue();
+  });
+
+  await openAppearanceSettings(page);
+  const modal = page.getByRole("dialog", { name: "Account settings" });
+  await modal.locator(".settings-modal__rail-item").first().click();
+  await expect(modal.getByRole("heading", { name: "Profile settings" })).toBeVisible();
+  await modal.getByRole("button", { name: "Save profile" }).click();
+  await profileResponseCaptured;
+
+  await modal.getByRole("button", { name: "Appearance" }).click();
+  await modal.getByRole("radio", { name: /^Iris/ }).click();
+  await expect.poll(() => serverAppearance(page)).toMatchObject({ board_theme: "iris" });
+  releaseProfileResponse();
+
+  await expect(modal).toBeHidden();
+  await expect(page.locator("html")).toHaveAttribute("data-board", "iris");
+  await expect
+    .poll(() => page.evaluate(() => localStorage.getItem("clickclack:board-theme:v1")))
+    .toBe("iris");
+});
+
 test("forced color mode applies instantly and survives reload", async ({ page }) => {
   await openAppearanceSettings(page);
 

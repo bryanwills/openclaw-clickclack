@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { api, APIError } from "$lib/api";
-  import { reconcileAppearancePreferences } from "$lib/appearance";
+  import { requestCurrentUser } from "$lib/appearance";
   import {
     activeOnly,
     attachedTo,
@@ -117,7 +117,7 @@
           listWorkspaceBots(workspaceID),
           api<{ channels: Channel[] }>(`/api/workspaces/${workspaceID}/channels`),
           listEventTypes(),
-          api<{ user: User }>("/api/me"),
+          requestCurrentUser(),
         ]);
 
       if (generation !== refreshGeneration || revision !== mutationRevision) return;
@@ -130,7 +130,6 @@
       if (eventTypesResult.status === "fulfilled") eventTypes = eventTypesResult.value;
       if (meResult.status === "fulfilled") {
         me = meResult.value.user;
-        reconcileAppearancePreferences(me);
       }
       loaded = {
         installations: loaded.installations || installationsResult.status === "fulfilled",

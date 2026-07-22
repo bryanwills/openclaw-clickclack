@@ -6,8 +6,8 @@
   import NotificationSettingsForm from "../profile/NotificationSettingsForm.svelte";
   import MyBotsSection from "./MyBotsSection.svelte";
   import AppearanceSection from "./AppearanceSection.svelte";
-  import { api, APIError } from "../../lib/api";
-  import { reconcileAppearancePreferences } from "../../lib/appearance";
+  import { APIError } from "../../lib/api";
+  import { requestCurrentUser } from "../../lib/appearance";
   import {
     ACCOUNT_SETTINGS_SECTIONS,
     DEFAULT_ACCOUNT_SETTINGS_SECTION,
@@ -73,8 +73,7 @@
   async function refreshUser() {
     userStatus = "loading";
     try {
-      const data = await api<{ user: User }>("/api/me");
-      reconcileAppearancePreferences(data.user);
+      const data = await requestCurrentUser();
       refreshedUser = data.user;
       onUserUpdated?.(data.user);
       userStatus = "ready";

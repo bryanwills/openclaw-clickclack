@@ -2,7 +2,7 @@
   import { goto } from "$app/navigation";
   import { onDestroy, onMount, tick } from "svelte";
   import { APIError, api, apiResourceURL, apiURL } from "./lib/api";
-  import { reconcileAppearancePreferences } from "./lib/appearance";
+  import { requestCurrentUser } from "./lib/appearance";
   import { desktop } from "./lib/desktop";
   import { probeMediaDimensions } from "./lib/media";
   import { gifLibrary } from "./lib/gifs";
@@ -407,8 +407,7 @@
 
   async function boot() {
     try {
-      const me = await api<{ user: User }>("/api/me");
-      reconcileAppearancePreferences(me.user);
+      const me = await requestCurrentUser();
       user = me.user;
       syncBrowserNotificationState();
       await loadWorkspaces();

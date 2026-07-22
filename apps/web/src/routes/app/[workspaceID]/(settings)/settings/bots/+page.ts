@@ -1,8 +1,8 @@
 export const prerender = false;
 export const ssr = false;
 
-import { api, APIError } from "$lib/api";
-import { reconcileAppearancePreferences } from "$lib/appearance";
+import { APIError } from "$lib/api";
+import { requestCurrentUser } from "$lib/appearance";
 import {
   listWorkspaceBots,
   botLoadErrorMessage,
@@ -29,11 +29,10 @@ export async function load({
   try {
     const [botsResult, meResult] = await Promise.all([
       listWorkspaceBots(workspaceID),
-      api<{ user: User }>("/api/me"),
+      requestCurrentUser(),
     ]);
     bots = botsResult;
     me = meResult.user;
-    reconcileAppearancePreferences(me);
   } catch (err) {
     if (err instanceof APIError && (err.status === 401 || err.status === 403)) {
       loadError = botLoadErrorMessage(err);

@@ -2,7 +2,7 @@ export const prerender = false;
 export const ssr = false;
 
 import { api } from "$lib/api";
-import { reconcileAppearancePreferences } from "$lib/appearance";
+import { requestCurrentUser } from "$lib/appearance";
 import {
   integrationsLoadErrorMessage,
   listAppInstallations,
@@ -58,7 +58,7 @@ export async function load({
     listWorkspaceBots(workspaceID),
     api<{ channels: Channel[] }>(`/api/workspaces/${workspaceID}/channels`),
     listEventTypes(),
-    api<{ user: User }>("/api/me"),
+    requestCurrentUser(),
   ]);
 
   if (installationsResult.status === "fulfilled") installations = installationsResult.value;
@@ -70,7 +70,6 @@ export async function load({
   if (eventTypesResult.status === "fulfilled") eventTypes = eventTypesResult.value;
   if (meResult.status === "fulfilled") {
     me = meResult.value.user;
-    reconcileAppearancePreferences(me);
   }
 
   const failureMessages = [

@@ -4,7 +4,7 @@
   import ThreadPanel from "../thread/ThreadPanel.svelte";
   import { markdownImageViewerURL } from "../../lib/actions/markdown";
   import { APIError, api, apiResourceURL, readableAPIError } from "../../lib/api";
-  import { reconcileAppearancePreferences } from "../../lib/appearance";
+  import { requestCurrentUser } from "../../lib/appearance";
   import { dmTitle } from "../../lib/chat/people";
   import {
     MessageEditController,
@@ -172,8 +172,7 @@
     if (viewState !== "auth") viewState = "loading";
     errorText = "";
     try {
-      const me = await api<{ user: User }>("/api/me");
-      reconcileAppearancePreferences(me.user);
+      const me = await requestCurrentUser();
       const resolved = await api<{ route: RouteTarget }>(
         `/api/routes/${encodeURIComponent(workspaceRouteID)}/${encodeURIComponent(messageRouteID)}`,
       );

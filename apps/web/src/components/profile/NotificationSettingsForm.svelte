@@ -1,7 +1,6 @@
 <script lang="ts">
   import BrowserNotificationSetting from "./BrowserNotificationSetting.svelte";
-  import { api } from "../../lib/api";
-  import { reconcileAppearancePreferences } from "../../lib/appearance";
+  import { requestCurrentUser } from "../../lib/appearance";
   import type { User } from "../../lib/types";
 
   type Props = {
@@ -38,7 +37,7 @@
     status = "";
     statusError = false;
     try {
-      const data = await api<{ user: User }>("/api/me", {
+      const data = await requestCurrentUser({
         method: "PATCH",
         body: JSON.stringify({
           display_name: currentUser.display_name,
@@ -50,7 +49,6 @@
           },
         }),
       });
-      reconcileAppearancePreferences(data.user);
       savedUser = data.user;
       onUserUpdated?.(data.user);
       status = "Saved";

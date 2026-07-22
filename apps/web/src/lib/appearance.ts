@@ -60,7 +60,17 @@ export const DENSITIES: { id: Density; label: string; blurb: string }[] = [
 
 let appearanceSyncUserID = "";
 let appearanceWriteQueue = Promise.resolve();
+let appearanceRevision = 0;
+let appearanceSettledRevision = 0;
+let appearanceAccountGeneration = 0;
 const migratedAppearanceUsers = new Set<string>();
+
+type AppearanceRequestState = {
+  userID: string;
+  revision: number;
+  settledRevision: number;
+  accountGeneration: number;
+};
 
 function isColorMode(value: string | null): value is ColorMode {
   return value === "light" || value === "dark" || value === "system";
@@ -248,7 +258,39 @@ export function applyServerPreferences(preferences: AppearancePreferences) {
   setLocalDensity(preferences.density || DEFAULT_DENSITY);
 }
 
-export function reconcileAppearancePreferences(user: User) {
+export async function requestCurrentUser(init: RequestInit = {}): Promise<{ user: User }> {
+  const requestState: AppearanceRequestState = {
+    userID: appearanceSyncUserID,
+    revision: appearanceRevision,
+    settledRevision: appearanceSettledRevision,
+    accountGeneration: appearanceAccountGeneration,
+  };
+  const data = await api<{ user: User }>("/api/me", init);
+  reconcileAppearancePreferences(data.user, requestState);
+  return data;
+}
+
+function reconcileAppearancePreferences(user: User, requestState?: AppearanceRequestState) {
+  if (requestState && appearanceSyncUserID && requestState.userID !== appearanceSyncUserID) {
+    return;
+  }
+
+  const sameUser = appearanceSyncUserID === user.id;
+  if (
+    sameUser &&
+    requestState &&
+    (requestState.accountGeneration !== appearanceAccountGeneration ||
+      requestState.revision !== appearanceRevision ||
+      requestState.revision !== requestState.settledRevision)
+  ) {
+    return;
+  }
+
+  if (!sameUser) {
+    appearanceAccountGeneration += 1;
+    appearanceRevision = 0;
+    appearanceSettledRevision = 0;
+  }
   appearanceSyncUserID = user.id;
   const cacheUserID = loadAppearanceCacheUser();
 
@@ -278,15 +320,34 @@ export function reconcileAppearancePreferences(user: User) {
 function queueAppearancePatch(patch: AppearancePreferencesPatch) {
   const userID = appearanceSyncUserID;
   if (!userID || Object.keys(patch).length === 0) return;
+  const revision = ++appearanceRevision;
+  const accountGeneration = appearanceAccountGeneration;
   appearanceWriteQueue = appearanceWriteQueue.then(async () => {
-    if (appearanceSyncUserID !== userID) return;
+    if (appearanceSyncUserID !== userID || appearanceAccountGeneration !== accountGeneration) {
+      return;
+    }
     try {
-      await api<{ user: User }>("/api/me", {
+      const data = await api<{ user: User }>("/api/me", {
         method: "PATCH",
         body: JSON.stringify({ appearance_preferences: patch }),
       });
+      if (
+        appearanceSyncUserID !== userID ||
+        appearanceAccountGeneration !== accountGeneration ||
+        data.user.id !== userID
+      ) {
+        return;
+      }
+      appearanceSettledRevision = Math.max(appearanceSettledRevision, revision);
+      if (appearanceRevision === revision) {
+        applyServerPreferences(data.user.appearance_preferences ?? {});
+        rememberAppearanceCacheUser();
+      }
     } catch {
       // The local cache remains active; a later change or reload can retry.
+      if (appearanceSyncUserID === userID && appearanceAccountGeneration === accountGeneration) {
+        appearanceSettledRevision = Math.max(appearanceSettledRevision, revision);
+      }
     }
   });
 }
