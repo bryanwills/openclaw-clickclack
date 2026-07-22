@@ -158,6 +158,51 @@ func TestMutationAndEphemeralEndpoints(t *testing.T) {
 	if clearedNotifications.User.NotificationSettings == nil || clearedNotifications.User.NotificationSettings.PushoverEnabled || clearedNotifications.User.NotificationSettings.PushoverUserKey != "" {
 		t.Fatalf("expected cleared profile notification settings, got %#v", clearedNotifications.User)
 	}
+	beforeAppearanceProfile, err := st.GetUser(ctx, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	appearanceOnly := patchJSON[struct {
+		User currentUserPayload `json:"user"`
+	}](t, server.URL+"/api/me", map[string]any{
+		"appearance_preferences": map[string]any{
+			"color_mode":     "dark",
+			"board_theme":    "moss",
+			"message_layout": "outlined",
+			"density":        "compact",
+		},
+	})
+	if appearanceOnly.User.AppearancePreferences == nil ||
+		appearanceOnly.User.AppearancePreferences.ColorMode != "dark" ||
+		appearanceOnly.User.AppearancePreferences.BoardTheme != "moss" ||
+		appearanceOnly.User.AppearancePreferences.MessageLayout != "outlined" ||
+		appearanceOnly.User.AppearancePreferences.Density != "compact" {
+		t.Fatalf("appearance preferences missing from update response: %#v", appearanceOnly.User)
+	}
+	if appearanceOnly.User.DisplayName != beforeAppearanceProfile.DisplayName ||
+		appearanceOnly.User.Handle != beforeAppearanceProfile.Handle ||
+		appearanceOnly.User.AvatarURL != beforeAppearanceProfile.AvatarURL {
+		t.Fatalf("appearance-only update changed profile: before=%#v after=%#v", beforeAppearanceProfile, appearanceOnly.User.User)
+	}
+	partialAppearance := patchJSON[struct {
+		User currentUserPayload `json:"user"`
+	}](t, server.URL+"/api/me", map[string]any{
+		"appearance_preferences": map[string]any{"board_theme": "signal"},
+	})
+	if partialAppearance.User.AppearancePreferences == nil ||
+		partialAppearance.User.AppearancePreferences.ColorMode != "dark" ||
+		partialAppearance.User.AppearancePreferences.BoardTheme != "" ||
+		partialAppearance.User.AppearancePreferences.MessageLayout != "outlined" ||
+		partialAppearance.User.AppearancePreferences.Density != "compact" {
+		t.Fatalf("appearance partial merge lost fields: %#v", partialAppearance.User.AppearancePreferences)
+	}
+	meWithAppearance := getJSON[struct {
+		User currentUserPayload `json:"user"`
+	}](t, server.URL+"/api/me")
+	if meWithAppearance.User.AppearancePreferences == nil || meWithAppearance.User.AppearancePreferences.Density != "compact" {
+		t.Fatalf("GET /api/me omitted persisted appearance preferences: %#v", meWithAppearance.User)
+	}
+
 	beforeFailedProfile, err := st.GetUser(ctx, owner.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -169,6 +214,34 @@ func TestMutationAndEphemeralEndpoints(t *testing.T) {
 	}
 	if afterFailedProfile.DisplayName != beforeFailedProfile.DisplayName || afterFailedProfile.NotificationSettings == nil || beforeFailedProfile.NotificationSettings == nil || afterFailedProfile.NotificationSettings.PushoverUserKey != beforeFailedProfile.NotificationSettings.PushoverUserKey {
 		t.Fatalf("failed profile update partially applied: before=%#v after=%#v", beforeFailedProfile, afterFailedProfile)
+	}
+	expectStatus(t, http.MethodPatch, server.URL+"/api/me", strings.NewReader(`{"display_name":"Leaky","appearance_preferences":{"density":"roomy"}}`), http.StatusBadRequest)
+	afterFailedAppearance, err := st.GetUser(ctx, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	persistedAppearance, err := st.GetAppearancePreferences(ctx, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterFailedAppearance.DisplayName != beforeFailedProfile.DisplayName || persistedAppearance == nil || persistedAppearance.Density != "compact" {
+		t.Fatalf("failed appearance update partially applied: user=%#v appearance=%#v", afterFailedAppearance, persistedAppearance)
+	}
+
+	secondBoard := "iris"
+	if _, err := st.UpdateAppearancePreferences(ctx, store.UpdateAppearancePreferencesInput{
+		UserID: second.ID,
+		Patch:  store.AppearancePreferencesPatch{BoardTheme: &secondBoard},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	memberPage := getJSON[map[string]any](t, server.URL+"/api/workspaces/"+workspaces[0].ID+"/members")
+	encodedMemberPage, err := json.Marshal(memberPage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(encodedMemberPage, []byte("appearance_preferences")) {
+		t.Fatalf("appearance preferences leaked through member payload: %s", encodedMemberPage)
 	}
 	expectStatus(t, http.MethodPatch, server.URL+"/api/channels/"+channels[0].ID, bytes.NewReader([]byte(`{`)), http.StatusBadRequest)
 	expectStatus(t, http.MethodPatch, server.URL+"/api/channels/missing", bytes.NewReader([]byte(`{"name":"missing"}`)), http.StatusBadRequest)

@@ -57,10 +57,13 @@ func TestChatAPIVerticalSlice(t *testing.T) {
 	expectStatus(t, http.MethodHead, server.URL+"/", nil, http.StatusOK)
 
 	me := getJSON[struct {
-		User store.User `json:"user"`
+		User currentUserPayload `json:"user"`
 	}](t, server.URL+"/api/me")
 	if me.User.ID != owner.ID {
 		t.Fatalf("expected owner %s, got %s", owner.ID, me.User.ID)
+	}
+	if me.User.AppearancePreferences != nil {
+		t.Fatalf("missing appearance row should be omitted, got %#v", me.User.AppearancePreferences)
 	}
 	profile := patchJSON[struct {
 		User store.User `json:"user"`

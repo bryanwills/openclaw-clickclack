@@ -400,7 +400,11 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"user": act.user})
+	preferences, err := s.store.GetAppearancePreferences(r.Context(), act.user.ID)
+	writeResult(w, map[string]any{"user": currentUserPayload{
+		User:                  act.user,
+		AppearancePreferences: preferences,
+	}}, err)
 }
 
 func (s *Server) updateMe(w http.ResponseWriter, r *http.Request) {
@@ -414,23 +418,33 @@ func (s *Server) updateMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		DisplayName          string                      `json:"display_name"`
-		Handle               string                      `json:"handle"`
-		AvatarURL            string                      `json:"avatar_url"`
-		NotificationSettings *store.NotificationSettings `json:"notification_settings"`
+		DisplayName           *string                           `json:"display_name"`
+		Handle                *string                           `json:"handle"`
+		AvatarURL             *string                           `json:"avatar_url"`
+		NotificationSettings  *store.NotificationSettings       `json:"notification_settings"`
+		AppearancePreferences *store.AppearancePreferencesPatch `json:"appearance_preferences"`
 	}
 	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	updated, err := s.store.UpdateUserProfileAndNotificationSettings(r.Context(), store.UpdateUserProfileAndNotificationSettingsInput{
-		UserID:               act.user.ID,
-		DisplayName:          body.DisplayName,
-		Handle:               body.Handle,
-		AvatarURL:            body.AvatarURL,
-		NotificationSettings: body.NotificationSettings,
+	updated, err := s.store.UpdateCurrentUser(r.Context(), store.UpdateCurrentUserInput{
+		UserID:                act.user.ID,
+		DisplayName:           body.DisplayName,
+		Handle:                body.Handle,
+		AvatarURL:             body.AvatarURL,
+		NotificationSettings:  body.NotificationSettings,
+		AppearancePreferences: body.AppearancePreferences,
 	})
-	writeResult(w, map[string]any{"user": updated}, err)
+	writeResult(w, map[string]any{"user": currentUserPayload{
+		User:                  updated.User,
+		AppearancePreferences: updated.AppearancePreferences,
+	}}, err)
+}
+
+type currentUserPayload struct {
+	store.User
+	AppearancePreferences *store.AppearancePreferences `json:"appearance_preferences,omitempty"`
 }
 
 func (s *Server) listWorkspaces(w http.ResponseWriter, r *http.Request) {

@@ -1117,12 +1117,13 @@ export interface components {
       code_verifier: string;
     };
     UpdateMeRequest: {
-      display_name: string;
+      display_name?: string;
       /** @description Unique user handle. Accepts an optional leading @ and stores the normalized value without it. */
       handle?: string;
       /** Format: uri */
       avatar_url?: string;
       notification_settings?: components["schemas"]["NotificationSettings"];
+      appearance_preferences?: components["schemas"]["AppearancePreferencesPatch"];
     };
     User: {
       id: string;
@@ -1146,6 +1147,7 @@ export interface components {
       /** Format: date-time */
       created_at: string;
       notification_settings?: components["schemas"]["NotificationSettings"];
+      appearance_preferences?: components["schemas"]["AppearancePreferences"];
     };
     BotToken: {
       id: string;
@@ -1530,6 +1532,28 @@ export interface components {
       pushover_enabled: boolean;
       /** @description Current user's Pushover user key. Must be set when Pushover notifications are enabled. */
       pushover_user_key: string;
+    };
+    /** @description Current user's complete appearance preference snapshot. Empty properties use client defaults. */
+    AppearancePreferences: {
+      /** @enum {string} */
+      color_mode?: "" | "light" | "dark";
+      /** @enum {string} */
+      board_theme?: "" | "ember" | "moss" | "iris";
+      /** @enum {string} */
+      message_layout?: "" | "outlined";
+      /** @enum {string} */
+      density?: "" | "compact";
+    };
+    /** @description Partial appearance update. Omitted properties are unchanged and empty strings reset to defaults. */
+    AppearancePreferencesPatch: {
+      /** @enum {string} */
+      color_mode?: "" | "system" | "light" | "dark";
+      /** @enum {string} */
+      board_theme?: "" | "signal" | "ember" | "moss" | "iris";
+      /** @enum {string} */
+      message_layout?: "" | "standard" | "outlined";
+      /** @enum {string} */
+      density?: "" | "comfortable" | "compact";
     };
     CreateChannelRequest: {
       name: string;

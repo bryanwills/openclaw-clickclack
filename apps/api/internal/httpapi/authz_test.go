@@ -209,7 +209,7 @@ func TestHTTPBotTokenWorkspaceIsolation(t *testing.T) {
 	expectStatusWithBearer(t, token.Token, http.MethodPatch, server.URL+"/api/channels/"+channels[0].ID, strings.NewReader(`{"name":"bot-updated"}`), http.StatusOK)
 	expectStatusWithBearer(t, token.Token, http.MethodDelete, server.URL+"/api/dms/"+ownDM.ID, nil, http.StatusForbidden)
 	expectStatusWithBearer(t, token.Token, http.MethodPost, server.URL+"/api/dms/"+ownDM.ID+"/open", nil, http.StatusForbidden)
-	expectStatusWithBearer(t, token.Token, http.MethodPatch, server.URL+"/api/me", strings.NewReader(`{"display_name":"Bot"}`), http.StatusForbidden)
+	expectStatusWithBearer(t, token.Token, http.MethodPatch, server.URL+"/api/me", strings.NewReader(`{"appearance_preferences":{"color_mode":"dark"}}`), http.StatusForbidden)
 	expectStatusWithBearer(t, token.Token, http.MethodPost, server.URL+"/api/workspaces", strings.NewReader(`{"name":"Nope"}`), http.StatusForbidden)
 	expectStatusWithBearer(t, token.Token, http.MethodGet, server.URL+"/api/workspaces/"+otherWorkspace.ID, nil, http.StatusForbidden)
 	expectStatusWithBearer(t, token.Token, http.MethodGet, server.URL+"/api/workspaces/"+otherWorkspace.ID+"/channels", nil, http.StatusForbidden)

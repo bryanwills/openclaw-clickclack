@@ -1676,7 +1676,6 @@ components:
           pattern: "^[A-Za-z0-9_-]+$"
     UpdateMeRequest:
       type: object
-      required: [display_name]
       properties:
         display_name:
           type: string
@@ -1690,6 +1689,8 @@ components:
           format: uri
         notification_settings:
           $ref: "#/components/schemas/NotificationSettings"
+        appearance_preferences:
+          $ref: "#/components/schemas/AppearancePreferencesPatch"
     User:
       type: object
       required: [id, kind, display_name, handle, avatar_url, created_at]
@@ -1721,6 +1722,8 @@ components:
           format: date-time
         notification_settings:
           $ref: "#/components/schemas/NotificationSettings"
+        appearance_preferences:
+          $ref: "#/components/schemas/AppearancePreferences"
     BotToken:
       type: object
       required: [id, bot_user_id, workspace_id, name, scopes, created_at]
@@ -2461,6 +2464,38 @@ components:
           type: string
           description: Current user's Pushover user key. Must be set when Pushover notifications are enabled.
           pattern: "^$|^[A-Za-z0-9]{30}$"
+    AppearancePreferences:
+      type: object
+      description: Current user's complete appearance preference snapshot. Empty properties use client defaults.
+      properties:
+        color_mode:
+          type: string
+          enum: ["", light, dark]
+        board_theme:
+          type: string
+          enum: ["", ember, moss, iris]
+        message_layout:
+          type: string
+          enum: ["", outlined]
+        density:
+          type: string
+          enum: ["", compact]
+    AppearancePreferencesPatch:
+      type: object
+      description: Partial appearance update. Omitted properties are unchanged and empty strings reset to defaults.
+      properties:
+        color_mode:
+          type: string
+          enum: ["", system, light, dark]
+        board_theme:
+          type: string
+          enum: ["", signal, ember, moss, iris]
+        message_layout:
+          type: string
+          enum: ["", standard, outlined]
+        density:
+          type: string
+          enum: ["", comfortable, compact]
     CreateChannelRequest:
       type: object
       required: [name]
