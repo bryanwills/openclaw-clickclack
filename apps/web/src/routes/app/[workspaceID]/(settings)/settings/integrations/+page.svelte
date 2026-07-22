@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { api, APIError } from "$lib/api";
+  import { reconcileAppearancePreferences } from "$lib/appearance";
   import {
     activeOnly,
     attachedTo,
@@ -127,7 +128,10 @@
       if (botsResult.status === "fulfilled") bots = botsResult.value;
       if (channelsResult.status === "fulfilled") channels = channelsResult.value.channels ?? [];
       if (eventTypesResult.status === "fulfilled") eventTypes = eventTypesResult.value;
-      if (meResult.status === "fulfilled") me = meResult.value.user;
+      if (meResult.status === "fulfilled") {
+        me = meResult.value.user;
+        reconcileAppearancePreferences(me);
+      }
       loaded = {
         installations: loaded.installations || installationsResult.status === "fulfilled",
         commands: loaded.commands || commandsResult.status === "fulfilled",

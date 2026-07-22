@@ -5,7 +5,7 @@
   import MessageList, { type MessageListHandle } from "../messages/MessageList.svelte";
   import { markdownImageViewerURL } from "../../lib/actions/markdown";
   import { APIError, api, apiResourceURL, readableAPIError } from "../../lib/api";
-  import { initAppearance } from "../../lib/appearance";
+  import { reconcileAppearancePreferences } from "../../lib/appearance";
   import {
     MessageEditController,
     type MessageEditSession,
@@ -172,6 +172,7 @@
     errorText = "";
     try {
       const me = await api<{ user: User }>("/api/me");
+      reconcileAppearancePreferences(me.user);
       const resolved = await api<{ route: RouteTarget }>(
         `/api/routes/${encodeURIComponent(workspaceRouteID)}/${encodeURIComponent(channelRouteID)}`,
       );
@@ -426,7 +427,6 @@
   }
 
   onMount(() => {
-    initAppearance();
     void loadChannel();
     window.addEventListener("focus", retryAuthOnFocus);
     document.addEventListener("visibilitychange", retryAuthOnFocus);

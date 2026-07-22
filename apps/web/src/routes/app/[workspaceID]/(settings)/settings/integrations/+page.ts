@@ -2,6 +2,7 @@ export const prerender = false;
 export const ssr = false;
 
 import { api } from "$lib/api";
+import { reconcileAppearancePreferences } from "$lib/appearance";
 import {
   integrationsLoadErrorMessage,
   listAppInstallations,
@@ -67,7 +68,10 @@ export async function load({
   if (botsResult.status === "fulfilled") bots = botsResult.value;
   if (channelsResult.status === "fulfilled") channels = channelsResult.value.channels ?? [];
   if (eventTypesResult.status === "fulfilled") eventTypes = eventTypesResult.value;
-  if (meResult.status === "fulfilled") me = meResult.value.user;
+  if (meResult.status === "fulfilled") {
+    me = meResult.value.user;
+    reconcileAppearancePreferences(me);
+  }
 
   const failureMessages = [
     installationsResult,

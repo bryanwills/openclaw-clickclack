@@ -2,6 +2,7 @@ export const prerender = false;
 export const ssr = false;
 
 import { api, APIError } from "$lib/api";
+import { reconcileAppearancePreferences } from "$lib/appearance";
 import {
   listWorkspaceBots,
   botLoadErrorMessage,
@@ -32,6 +33,7 @@ export async function load({
     ]);
     bots = botsResult;
     me = meResult.user;
+    reconcileAppearancePreferences(me);
   } catch (err) {
     if (err instanceof APIError && (err.status === 401 || err.status === 403)) {
       loadError = botLoadErrorMessage(err);

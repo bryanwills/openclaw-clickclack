@@ -7,6 +7,7 @@
   import MyBotsSection from "./MyBotsSection.svelte";
   import AppearanceSection from "./AppearanceSection.svelte";
   import { api, APIError } from "../../lib/api";
+  import { reconcileAppearancePreferences } from "../../lib/appearance";
   import {
     ACCOUNT_SETTINGS_SECTIONS,
     DEFAULT_ACCOUNT_SETTINGS_SECTION,
@@ -73,6 +74,7 @@
     userStatus = "loading";
     try {
       const data = await api<{ user: User }>("/api/me");
+      reconcileAppearancePreferences(data.user);
       refreshedUser = data.user;
       onUserUpdated?.(data.user);
       userStatus = "ready";

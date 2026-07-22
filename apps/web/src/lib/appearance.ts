@@ -1,11 +1,11 @@
 // Appearance preferences: color mode, board theme, message layout, and density.
 //
-// All preferences are personal, device-local values stored in localStorage and
-// applied as data attributes on <html>. The style sheets map those attributes
-// to color, token, and layout changes. An inline script in app.html applies
-// the stored values before first paint so a forced mode or non-default board
-// never flashes; this module is the single writer afterwards. Keep the
-// storage keys and attribute names in sync with that script.
+// Preferences roam with the account. localStorage remains the pre-paint cache,
+// and data attributes on <html> drive the active styles. The inline app.html
+// script reads these storage keys before hydration; keep them in sync.
+
+import { api } from "./api";
+import type { AppearancePreferences, AppearancePreferencesPatch, User } from "./types";
 
 export type ColorMode = "light" | "dark" | "system";
 export type BoardTheme = "signal" | "ember" | "moss" | "iris";
@@ -16,6 +16,7 @@ export const COLOR_MODE_STORAGE_KEY = "clickclack:color-mode:v1";
 export const BOARD_THEME_STORAGE_KEY = "clickclack:board-theme:v1";
 export const MESSAGE_LAYOUT_STORAGE_KEY = "clickclack:message-layout:v1";
 export const DENSITY_STORAGE_KEY = "clickclack:density:v1";
+const APPEARANCE_CACHE_USER_STORAGE_KEY = "clickclack:appearance-user:v1";
 
 export const DEFAULT_COLOR_MODE: ColorMode = "system";
 export const DEFAULT_BOARD_THEME: BoardTheme = "signal";
@@ -56,6 +57,10 @@ export const DENSITIES: { id: Density; label: string; blurb: string }[] = [
     blurb: "Tighter rows fit more messages on screen",
   },
 ];
+
+let appearanceSyncUserID = "";
+let appearanceWriteQueue = Promise.resolve();
+const migratedAppearanceUsers = new Set<string>();
 
 function isColorMode(value: string | null): value is ColorMode {
   return value === "light" || value === "dark" || value === "system";
@@ -151,7 +156,7 @@ export function applyDensity(density: Density) {
   }
 }
 
-export function setColorMode(mode: ColorMode) {
+function setLocalColorMode(mode: ColorMode) {
   applyColorMode(mode);
   try {
     if (mode === DEFAULT_COLOR_MODE) window.localStorage.removeItem(COLOR_MODE_STORAGE_KEY);
@@ -161,7 +166,7 @@ export function setColorMode(mode: ColorMode) {
   }
 }
 
-export function setBoardTheme(board: BoardTheme) {
+function setLocalBoardTheme(board: BoardTheme) {
   applyBoardTheme(board);
   try {
     if (board === DEFAULT_BOARD_THEME) window.localStorage.removeItem(BOARD_THEME_STORAGE_KEY);
@@ -171,7 +176,7 @@ export function setBoardTheme(board: BoardTheme) {
   }
 }
 
-export function setMessageLayout(layout: MessageLayout) {
+function setLocalMessageLayout(layout: MessageLayout) {
   applyMessageLayout(layout);
   try {
     if (layout === DEFAULT_MESSAGE_LAYOUT) {
@@ -184,7 +189,7 @@ export function setMessageLayout(layout: MessageLayout) {
   }
 }
 
-export function setDensity(density: Density) {
+function setLocalDensity(density: Density) {
   applyDensity(density);
   try {
     if (density === DEFAULT_DENSITY) {
@@ -194,6 +199,112 @@ export function setDensity(density: Density) {
     }
   } catch {
     // Ignore unavailable storage; the in-memory pref still applies this session.
+  }
+}
+
+export function setColorMode(mode: ColorMode) {
+  setLocalColorMode(mode);
+  rememberAppearanceCacheUser();
+  queueAppearancePatch({ color_mode: mode === DEFAULT_COLOR_MODE ? "" : mode });
+}
+
+export function setBoardTheme(board: BoardTheme) {
+  setLocalBoardTheme(board);
+  rememberAppearanceCacheUser();
+  queueAppearancePatch({ board_theme: board === DEFAULT_BOARD_THEME ? "" : board });
+}
+
+export function setMessageLayout(layout: MessageLayout) {
+  setLocalMessageLayout(layout);
+  rememberAppearanceCacheUser();
+  queueAppearancePatch({
+    message_layout: layout === DEFAULT_MESSAGE_LAYOUT ? "" : layout,
+  });
+}
+
+export function setDensity(density: Density) {
+  setLocalDensity(density);
+  rememberAppearanceCacheUser();
+  queueAppearancePatch({ density: density === DEFAULT_DENSITY ? "" : density });
+}
+
+export function serializeAppearancePreferences(): AppearancePreferences {
+  const colorMode = loadColorMode();
+  const boardTheme = loadBoardTheme();
+  const messageLayout = loadMessageLayout();
+  const density = loadDensity();
+  return {
+    color_mode: colorMode === "system" ? "" : colorMode,
+    board_theme: boardTheme === "signal" ? "" : boardTheme,
+    message_layout: messageLayout === "standard" ? "" : messageLayout,
+    density: density === "comfortable" ? "" : density,
+  };
+}
+
+export function applyServerPreferences(preferences: AppearancePreferences) {
+  setLocalColorMode(preferences.color_mode || DEFAULT_COLOR_MODE);
+  setLocalBoardTheme(preferences.board_theme || DEFAULT_BOARD_THEME);
+  setLocalMessageLayout(preferences.message_layout || DEFAULT_MESSAGE_LAYOUT);
+  setLocalDensity(preferences.density || DEFAULT_DENSITY);
+}
+
+export function reconcileAppearancePreferences(user: User) {
+  appearanceSyncUserID = user.id;
+  const cacheUserID = loadAppearanceCacheUser();
+
+  if (user.appearance_preferences !== undefined) {
+    applyServerPreferences(user.appearance_preferences);
+    rememberAppearanceCacheUser();
+    return;
+  }
+
+  if (cacheUserID && cacheUserID !== user.id) {
+    applyServerPreferences({});
+    rememberAppearanceCacheUser();
+    return;
+  }
+
+  rememberAppearanceCacheUser();
+  if (migratedAppearanceUsers.has(user.id)) return;
+  migratedAppearanceUsers.add(user.id);
+
+  const preferences = serializeAppearancePreferences();
+  const patch = Object.fromEntries(
+    Object.entries(preferences).filter(([, value]) => value !== ""),
+  ) as AppearancePreferencesPatch;
+  if (Object.keys(patch).length > 0) queueAppearancePatch(patch);
+}
+
+function queueAppearancePatch(patch: AppearancePreferencesPatch) {
+  const userID = appearanceSyncUserID;
+  if (!userID || Object.keys(patch).length === 0) return;
+  appearanceWriteQueue = appearanceWriteQueue.then(async () => {
+    if (appearanceSyncUserID !== userID) return;
+    try {
+      await api<{ user: User }>("/api/me", {
+        method: "PATCH",
+        body: JSON.stringify({ appearance_preferences: patch }),
+      });
+    } catch {
+      // The local cache remains active; a later change or reload can retry.
+    }
+  });
+}
+
+function loadAppearanceCacheUser(): string {
+  try {
+    return window.localStorage.getItem(APPEARANCE_CACHE_USER_STORAGE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function rememberAppearanceCacheUser() {
+  if (!appearanceSyncUserID) return;
+  try {
+    window.localStorage.setItem(APPEARANCE_CACHE_USER_STORAGE_KEY, appearanceSyncUserID);
+  } catch {
+    // Storage can be unavailable while the in-memory and DOM state still work.
   }
 }
 

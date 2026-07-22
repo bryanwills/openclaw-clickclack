@@ -4,7 +4,7 @@
   import ThreadPanel from "../thread/ThreadPanel.svelte";
   import { markdownImageViewerURL } from "../../lib/actions/markdown";
   import { APIError, api, apiResourceURL, readableAPIError } from "../../lib/api";
-  import { initAppearance } from "../../lib/appearance";
+  import { reconcileAppearancePreferences } from "../../lib/appearance";
   import { dmTitle } from "../../lib/chat/people";
   import {
     MessageEditController,
@@ -173,6 +173,7 @@
     errorText = "";
     try {
       const me = await api<{ user: User }>("/api/me");
+      reconcileAppearancePreferences(me.user);
       const resolved = await api<{ route: RouteTarget }>(
         `/api/routes/${encodeURIComponent(workspaceRouteID)}/${encodeURIComponent(messageRouteID)}`,
       );
@@ -368,7 +369,6 @@
   }
 
   onMount(() => {
-    initAppearance();
     void loadThread();
     window.addEventListener("focus", retryAuthOnFocus);
     document.addEventListener("visibilitychange", retryAuthOnFocus);

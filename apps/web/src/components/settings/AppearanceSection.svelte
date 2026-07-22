@@ -24,12 +24,18 @@
   const previewName = $derived(user.display_name || user.handle || "You");
   const previewInitial = $derived((previewName[0] ?? "Y").toUpperCase());
 
-  // Appearance is a device-local pref with no server state, so the section
-  // owns it directly instead of prop-drilling through ChatApp.
   let colorMode = $state<ColorMode>(loadColorMode());
   let boardTheme = $state<BoardTheme>(loadBoardTheme());
   let messageLayout = $state<MessageLayout>(loadMessageLayout());
   let density = $state<Density>(loadDensity());
+
+  $effect(() => {
+    void user.appearance_preferences;
+    colorMode = loadColorMode();
+    boardTheme = loadBoardTheme();
+    messageLayout = loadMessageLayout();
+    density = loadDensity();
+  });
 
   function pickMode(mode: ColorMode) {
     colorMode = mode;
@@ -90,7 +96,7 @@
   <p class="settings-page__eyebrow">Account</p>
   <h2 class="settings-page__h1">Appearance</h2>
   <p class="settings-page__lead">
-    Changes apply instantly, everywhere in the app, and stay on this device.
+    Changes apply instantly and follow your account on every device.
   </p>
 </header>
 

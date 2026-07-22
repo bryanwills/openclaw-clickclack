@@ -1,6 +1,7 @@
 <script lang="ts">
   import BrowserNotificationSetting from "./BrowserNotificationSetting.svelte";
   import { api } from "../../lib/api";
+  import { reconcileAppearancePreferences } from "../../lib/appearance";
   import type { User } from "../../lib/types";
 
   type Props = {
@@ -49,6 +50,7 @@
           },
         }),
       });
+      reconcileAppearancePreferences(data.user);
       savedUser = data.user;
       onUserUpdated?.(data.user);
       status = "Saved";

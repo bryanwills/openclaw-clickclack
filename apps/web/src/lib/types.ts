@@ -9,11 +9,26 @@ export type User = {
   avatar_url: string;
   created_at: string;
   notification_settings?: NotificationSettings;
+  appearance_preferences?: AppearancePreferences;
 };
 
 export type NotificationSettings = {
   pushover_enabled: boolean;
   pushover_user_key: string;
+};
+
+export type AppearancePreferences = {
+  color_mode?: "" | "light" | "dark";
+  board_theme?: "" | "ember" | "moss" | "iris";
+  message_layout?: "" | "outlined";
+  density?: "" | "compact";
+};
+
+export type AppearancePreferencesPatch = {
+  color_mode?: "" | "system" | "light" | "dark";
+  board_theme?: "" | "signal" | "ember" | "moss" | "iris";
+  message_layout?: "" | "standard" | "outlined";
+  density?: "" | "comfortable" | "compact";
 };
 
 export type Workspace = {
