@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { zipSync } from "fflate";
 import { deflateRawSync } from "node:zlib";
 import { classifyArtifact } from "../../apps/web/src/lib/artifacts";
-import { parseSpreadsheet } from "../../apps/web/src/lib/office-parser";
+import { parsePresentation, parseSpreadsheet } from "../../apps/web/src/lib/office-parser";
 import {
   SPREADSHEET_CELL_TEXT_LIMIT,
   SPREADSHEET_TOTAL_TEXT_LIMIT,
@@ -571,6 +571,12 @@ test("bounds cumulative Office XML work across package parts", () => {
   );
 });
 
+test("rejects presentation paragraph floods deterministically", () => {
+  expect(() => parsePresentation(new Uint8Array(paragraphFloodPresentation()))).toThrow(
+    "too many paragraphs",
+  );
+});
+
 test("opens spreadsheets and slide decks with navigation", async ({ page }) => {
   const { channel } = await seedArtifacts(page, [
     {
@@ -662,11 +668,6 @@ test("opens spreadsheets and slide decks with navigation", async ({ page }) => {
       filename: "shared-string-flood.xlsx",
       contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       body: sharedStringFloodWorkbook(),
-    },
-    {
-      filename: "paragraph-flood.pptx",
-      contentType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-      body: paragraphFloodPresentation(),
     },
     {
       filename: "media-heavy.pptx",
@@ -801,10 +802,6 @@ test("opens spreadsheets and slide decks with navigation", async ({ page }) => {
 
   await page.getByRole("button", { name: "Open shared-string-flood.xlsx" }).click();
   await expect(viewer.getByRole("alert")).toContainText("too many shared strings");
-  await closeViewer();
-
-  await page.getByRole("button", { name: "Open paragraph-flood.pptx" }).click();
-  await expect(viewer.getByRole("alert")).toContainText("too many paragraphs");
   await closeViewer();
 
   await page.getByRole("button", { name: "Open media-heavy.pptx" }).click();
