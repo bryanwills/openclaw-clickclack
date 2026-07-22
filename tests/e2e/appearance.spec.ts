@@ -1,10 +1,62 @@
 import { expect, test } from "@playwright/test";
 import { waitForAppReady } from "./app-ready";
 
-// Appearance prefs are device-local: the settings modal writes localStorage
-// and data attributes on <html>; base.css maps those to color-scheme and
-// board token overrides. These tests drive the real UI and assert the
-// attribute + persistence contract.
+// Appearance prefs apply locally first, persist to the account, and use
+// localStorage as the pre-paint cache. These tests drive the real UI and assert
+// local rendering, migration, reload, and cross-context roaming.
+
+type ServerAppearancePreferences = {
+  color_mode?: "" | "light" | "dark";
+  board_theme?: "" | "ember" | "moss" | "iris";
+  message_layout?: "" | "outlined";
+  density?: "" | "compact";
+};
+
+const appearanceStorageKeys = [
+  "clickclack:color-mode:v1",
+  "clickclack:board-theme:v1",
+  "clickclack:message-layout:v1",
+  "clickclack:density:v1",
+  "clickclack:appearance-user:v1",
+];
+
+async function serverAppearance(page: import("@playwright/test").Page) {
+  return page.evaluate(async () => {
+    const response = await fetch("/api/me");
+    const body = (await response.json()) as {
+      user: { appearance_preferences?: ServerAppearancePreferences };
+    };
+    return body.user.appearance_preferences ?? null;
+  });
+}
+
+async function resetAppearance(page: import("@playwright/test").Page) {
+  if (page.isClosed()) return;
+  await page
+    .evaluate(async (keys) => {
+      for (const key of keys) localStorage.removeItem(key);
+      await fetch("/api/me", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "X-ClickClack-CSRF": "1",
+        },
+        body: JSON.stringify({
+          appearance_preferences: {
+            color_mode: "",
+            board_theme: "",
+            message_layout: "",
+            density: "",
+          },
+        }),
+      });
+    }, appearanceStorageKeys)
+    .catch(() => {});
+}
+
+test.afterEach(async ({ page }) => {
+  await resetAppearance(page);
+});
 
 async function openAppearanceSettings(page: import("@playwright/test").Page) {
   await page.goto("/app");
@@ -26,6 +78,73 @@ async function openAppearanceSettings(page: import("@playwright/test").Page) {
   await modal.getByRole("button", { name: "Appearance" }).click();
   await expect(appearanceHeading).toBeVisible();
 }
+
+test("migrates an existing local appearance cache once", async ({ page }) => {
+  let appearancePatchCount = 0;
+  page.on("request", (request) => {
+    if (
+      request.method() === "PATCH" &&
+      new URL(request.url()).pathname === "/api/me" &&
+      request.postData()?.includes("appearance_preferences")
+    ) {
+      appearancePatchCount += 1;
+    }
+  });
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem("appearance-migration-seeded")) return;
+    sessionStorage.setItem("appearance-migration-seeded", "1");
+    localStorage.setItem("clickclack:board-theme:v1", "moss");
+    localStorage.setItem("clickclack:density:v1", "compact");
+  });
+
+  await page.goto("/app");
+  await waitForAppReady(page);
+  await expect
+    .poll(() => serverAppearance(page))
+    .toMatchObject({ board_theme: "moss", density: "compact" });
+  await expect.poll(() => Promise.resolve(appearancePatchCount)).toBe(1);
+
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await waitForAppReady(page);
+  await expect(page.locator("html")).toHaveAttribute("data-board", "moss");
+  await expect(page.locator("html")).toHaveAttribute("data-density", "compact");
+  await expect.poll(() => Promise.resolve(appearancePatchCount)).toBe(1);
+});
+
+test("appearance choices survive cache loss and roam to a second browser context", async ({
+  browser,
+  page,
+}) => {
+  await openAppearanceSettings(page);
+  const html = page.locator("html");
+
+  await page.getByRole("radio", { name: /^Ember/ }).click();
+  await page.getByRole("radio", { name: /^Moss/ }).click();
+  await page.getByRole("radio", { name: /^Iris/ }).click();
+  await page.getByRole("radio", { name: /^Compact/ }).click();
+  await expect
+    .poll(() => serverAppearance(page))
+    .toMatchObject({ board_theme: "iris", density: "compact" });
+
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await waitForAppReady(page);
+  await expect(html).toHaveAttribute("data-board", "iris");
+  await expect(html).toHaveAttribute("data-density", "compact");
+
+  const secondContext = await browser.newContext();
+  try {
+    await secondContext.addCookies(await page.context().cookies());
+    const secondPage = await secondContext.newPage();
+    await secondPage.goto("/app");
+    await waitForAppReady(secondPage);
+    await expect(secondPage.locator("html")).toHaveAttribute("data-board", "iris");
+    await expect(secondPage.locator("html")).toHaveAttribute("data-density", "compact");
+  } finally {
+    await secondContext.close();
+  }
+});
 
 test("forced color mode applies instantly and survives reload", async ({ page }) => {
   await openAppearanceSettings(page);
