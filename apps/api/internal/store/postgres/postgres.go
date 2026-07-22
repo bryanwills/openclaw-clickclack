@@ -244,9 +244,23 @@ func (s *Store) UpdateUserProfile(ctx context.Context, input store.UpdateUserPro
 }
 
 func (s *Store) UpdateUserProfileAndNotificationSettings(ctx context.Context, input store.UpdateUserProfileAndNotificationSettingsInput) (store.User, error) {
-	displayName, handle, avatarURL, err := normalizeUserProfile(input.DisplayName, input.Handle, input.AvatarURL)
+	result, err := s.UpdateCurrentUser(ctx, store.UpdateCurrentUserInput{
+		UserID:               input.UserID,
+		DisplayName:          &input.DisplayName,
+		Handle:               &input.Handle,
+		AvatarURL:            &input.AvatarURL,
+		NotificationSettings: input.NotificationSettings,
+	})
 	if err != nil {
 		return store.User{}, err
+	}
+	return result.User, nil
+}
+
+func (s *Store) UpdateCurrentUser(ctx context.Context, input store.UpdateCurrentUserInput) (store.CurrentUserState, error) {
+	displayName, handle, avatarURL, err := normalizeUserProfilePatch(input.DisplayName, input.Handle, input.AvatarURL)
+	if err != nil {
+		return store.CurrentUserState{}, err
 	}
 	var settings store.NotificationSettings
 	var settingsEnabled int64
@@ -258,40 +272,71 @@ func (s *Store) UpdateUserProfileAndNotificationSettings(ctx context.Context, in
 		}
 		settings, settingsEnabled, err = normalizeNotificationSettings(settingsInput)
 		if err != nil {
-			return store.User{}, err
+			return store.CurrentUserState{}, err
+		}
+	}
+	var appearancePatch store.AppearancePreferencesPatch
+	if input.AppearancePreferences != nil {
+		appearancePatch, err = store.NormalizeAppearancePreferencesPatch(*input.AppearancePreferences)
+		if err != nil {
+			return store.CurrentUserState{}, err
 		}
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return store.User{}, err
+		return store.CurrentUserState{}, err
 	}
 	defer tx.Rollback()
 	qtx := s.q.WithTx(tx)
-	if err := qtx.UpdateUserProfile(ctx, storedb.UpdateUserProfileParams{
-		DisplayName: displayName,
-		Handle:      handle,
-		AvatarUrl:   avatarURL,
-		ID:          input.UserID,
-	}); err != nil {
-		return store.User{}, profileUpdateError(err)
+	profileChanged := displayName != nil || handle != nil || avatarURL != nil
+	if displayName != nil {
+		if err := qtx.UpdateUserDisplayName(ctx, storedb.UpdateUserDisplayNameParams{
+			DisplayName: *displayName,
+			ID:          input.UserID,
+		}); err != nil {
+			return store.CurrentUserState{}, err
+		}
 	}
-	if avatarURL == "" {
+	if handle != nil {
+		if err := qtx.UpdateUserHandle(ctx, storedb.UpdateUserHandleParams{
+			Handle: *handle,
+			ID:     input.UserID,
+		}); err != nil {
+			return store.CurrentUserState{}, profileUpdateError(err)
+		}
+	}
+	if avatarURL != nil {
+		if err := qtx.UpdateUserAvatar(ctx, storedb.UpdateUserAvatarParams{
+			AvatarUrl: *avatarURL,
+			ID:        input.UserID,
+		}); err != nil {
+			return store.CurrentUserState{}, err
+		}
+	}
+	if avatarURL != nil && *avatarURL == "" {
 		fallbackURL, err := resolveProfileAvatarURL(ctx, qtx, input.UserID, "")
 		if err != nil {
-			return store.User{}, err
+			return store.CurrentUserState{}, err
 		}
 		if fallbackURL != "" {
 			if err := qtx.SetUserAvatarIfEmpty(ctx, storedb.SetUserAvatarIfEmptyParams{ID: input.UserID, AvatarUrl: fallbackURL}); err != nil {
-				return store.User{}, err
+				return store.CurrentUserState{}, err
 			}
 		}
 	}
-	if err := qtx.UpdateWorkspaceMemberSortKeys(ctx, storedb.UpdateWorkspaceMemberSortKeysParams{
-		DisplayName: displayName,
-		Handle:      handle,
-		UserID:      input.UserID,
-	}); err != nil {
-		return store.User{}, err
+	if profileChanged {
+		row, err := qtx.GetUser(ctx, input.UserID)
+		if err != nil {
+			return store.CurrentUserState{}, err
+		}
+		user := storeUserFromGetUser(row)
+		if err := qtx.UpdateWorkspaceMemberSortKeys(ctx, storedb.UpdateWorkspaceMemberSortKeysParams{
+			DisplayName: user.DisplayName,
+			Handle:      user.Handle,
+			UserID:      input.UserID,
+		}); err != nil {
+			return store.CurrentUserState{}, err
+		}
 	}
 	if input.NotificationSettings != nil {
 		if err := qtx.UpsertNotificationSettings(ctx, storedb.UpsertNotificationSettingsParams{
@@ -299,13 +344,57 @@ func (s *Store) UpdateUserProfileAndNotificationSettings(ctx context.Context, in
 			PushoverEnabled: settingsEnabled,
 			PushoverUserKey: settings.PushoverUserKey,
 		}); err != nil {
-			return store.User{}, err
+			return store.CurrentUserState{}, err
+		}
+	}
+	if input.AppearancePreferences != nil && !store.AppearancePreferencesPatchEmpty(appearancePatch) {
+		if err := updateAppearancePreferences(ctx, qtx, input.UserID, appearancePatch); err != nil {
+			return store.CurrentUserState{}, err
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		return store.User{}, err
+		return store.CurrentUserState{}, err
 	}
-	return s.GetUser(ctx, input.UserID)
+	user, err := s.GetUser(ctx, input.UserID)
+	if err != nil {
+		return store.CurrentUserState{}, err
+	}
+	preferences, err := s.GetAppearancePreferences(ctx, input.UserID)
+	if err != nil {
+		return store.CurrentUserState{}, err
+	}
+	return store.CurrentUserState{User: user, AppearancePreferences: preferences}, nil
+}
+
+func normalizeUserProfilePatch(displayNameInput, handleInput, avatarURLInput *string) (*string, *string, *string, error) {
+	var displayName *string
+	if displayNameInput != nil {
+		normalized := strings.TrimSpace(*displayNameInput)
+		if normalized == "" {
+			return nil, nil, nil, errors.New("display_name is required")
+		}
+		if len(normalized) > 80 {
+			return nil, nil, nil, errors.New("display_name is too long")
+		}
+		displayName = &normalized
+	}
+	var handle *string
+	if handleInput != nil {
+		normalized, err := normalizeHandle(*handleInput)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		handle = &normalized
+	}
+	var avatarURL *string
+	if avatarURLInput != nil {
+		normalized, err := normalizeAvatarURL(*avatarURLInput)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		avatarURL = &normalized
+	}
+	return displayName, handle, avatarURL, nil
 }
 
 func normalizeUserProfile(displayNameInput, handleInput, avatarURLInput string) (string, string, string, error) {

@@ -663,6 +663,20 @@ type UpdateUserProfileAndNotificationSettingsInput struct {
 	NotificationSettings *NotificationSettings
 }
 
+type UpdateCurrentUserInput struct {
+	UserID                string
+	DisplayName           *string
+	Handle                *string
+	AvatarURL             *string
+	NotificationSettings  *NotificationSettings
+	AppearancePreferences *AppearancePreferencesPatch
+}
+
+type CurrentUserState struct {
+	User                  User
+	AppearancePreferences *AppearancePreferences
+}
+
 type CreateWorkspaceInput struct {
 	Name string
 	Slug string
@@ -1039,6 +1053,7 @@ type Store interface {
 	UpsertIdentityUser(ctx context.Context, input UpsertIdentityUserInput) (User, error)
 	UpdateUserProfile(ctx context.Context, input UpdateUserProfileInput) (User, error)
 	UpdateUserProfileAndNotificationSettings(ctx context.Context, input UpdateUserProfileAndNotificationSettingsInput) (User, error)
+	UpdateCurrentUser(ctx context.Context, input UpdateCurrentUserInput) (CurrentUserState, error)
 	UpdateNotificationSettings(ctx context.Context, input UpdateNotificationSettingsInput) (NotificationSettings, error)
 	GetAppearancePreferences(ctx context.Context, userID string) (*AppearancePreferences, error)
 	UpdateAppearancePreferences(ctx context.Context, input UpdateAppearancePreferencesInput) (*AppearancePreferences, error)

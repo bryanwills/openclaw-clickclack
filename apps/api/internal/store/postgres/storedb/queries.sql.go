@@ -5139,6 +5139,54 @@ func (q *Queries) UpdateThreadState(ctx context.Context, arg UpdateThreadStatePa
 	return err
 }
 
+const updateUserAvatar = `-- name: UpdateUserAvatar :exec
+UPDATE users
+SET avatar_url = $1
+WHERE id = $2
+`
+
+type UpdateUserAvatarParams struct {
+	AvatarUrl string `json:"avatar_url"`
+	ID        string `json:"id"`
+}
+
+func (q *Queries) UpdateUserAvatar(ctx context.Context, arg UpdateUserAvatarParams) error {
+	_, err := q.db.ExecContext(ctx, updateUserAvatar, arg.AvatarUrl, arg.ID)
+	return err
+}
+
+const updateUserDisplayName = `-- name: UpdateUserDisplayName :exec
+UPDATE users
+SET display_name = $1
+WHERE id = $2
+`
+
+type UpdateUserDisplayNameParams struct {
+	DisplayName string `json:"display_name"`
+	ID          string `json:"id"`
+}
+
+func (q *Queries) UpdateUserDisplayName(ctx context.Context, arg UpdateUserDisplayNameParams) error {
+	_, err := q.db.ExecContext(ctx, updateUserDisplayName, arg.DisplayName, arg.ID)
+	return err
+}
+
+const updateUserHandle = `-- name: UpdateUserHandle :exec
+UPDATE users
+SET handle = $1
+WHERE id = $2
+`
+
+type UpdateUserHandleParams struct {
+	Handle string `json:"handle"`
+	ID     string `json:"id"`
+}
+
+func (q *Queries) UpdateUserHandle(ctx context.Context, arg UpdateUserHandleParams) error {
+	_, err := q.db.ExecContext(ctx, updateUserHandle, arg.Handle, arg.ID)
+	return err
+}
+
 const updateUserProfile = `-- name: UpdateUserProfile :exec
 UPDATE users
 SET display_name = $1,

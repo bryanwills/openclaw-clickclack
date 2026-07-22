@@ -85,6 +85,43 @@ func TestAppearancePreferencesLifecycle(t *testing.T) {
 		t.Fatalf("invalid update changed preferences: %#v", preferences)
 	}
 
+	beforeAccountUpdate, err := st.GetUser(ctx, user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changedName := "Should Not Persist"
+	if _, err := st.UpdateCurrentUser(ctx, store.UpdateCurrentUserInput{
+		UserID:                user.ID,
+		DisplayName:           &changedName,
+		AppearancePreferences: &store.AppearancePreferencesPatch{ColorMode: &invalid},
+	}); err == nil {
+		t.Fatal("expected invalid appearance update to roll back profile changes")
+	}
+	afterFailedUpdate, err := st.GetUser(ctx, user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterFailedUpdate.DisplayName != beforeAccountUpdate.DisplayName {
+		t.Fatalf("failed appearance update changed profile: before=%#v after=%#v", beforeAccountUpdate, afterFailedUpdate)
+	}
+
+	newHandle := "@appearance-user"
+	dark := "dark"
+	account, err := st.UpdateCurrentUser(ctx, store.UpdateCurrentUserInput{
+		UserID:                user.ID,
+		Handle:                &newHandle,
+		AppearancePreferences: &store.AppearancePreferencesPatch{ColorMode: &dark},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if account.User.DisplayName != beforeAccountUpdate.DisplayName || account.User.Handle != "appearance-user" {
+		t.Fatalf("partial account update clobbered profile fields: %#v", account.User)
+	}
+	if account.AppearancePreferences == nil || account.AppearancePreferences.ColorMode != "dark" || account.AppearancePreferences.Density != "compact" {
+		t.Fatalf("partial account update lost appearance fields: %#v", account.AppearancePreferences)
+	}
+
 	if _, err := st.db.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, user.ID); err != nil {
 		t.Fatal(err)
 	}
