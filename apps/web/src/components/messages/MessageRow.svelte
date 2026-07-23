@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick } from "svelte";
+  import { onDestroy, tick } from "svelte";
   import { threadActivityLabel, threadActivityTime, threadSummary } from "../../lib/chat/messages";
   import { enhanceMarkdown } from "../../lib/actions/markdown";
   import { time, markdown } from "../../lib/format";
@@ -158,6 +158,7 @@
 
   let showReactPicker = $state(false);
   let showMenu = $state(false);
+  let copyStatus = $state<"copied" | "failed" | "">("");
   let reactPickerUp = $state(false);
   let menuUp = $state(false);
   let rowEl = $state<HTMLDivElement>();
@@ -165,6 +166,7 @@
   let menuWrap = $state<HTMLDivElement>();
   let addReactionButton = $state<HTMLButtonElement>();
   let moreButton = $state<HTMLButtonElement>();
+  let copyStatusTimer: number | undefined;
   let reactPickerId = $derived(`toolbar-reaction-picker-${message.id}`);
   let reactionPending = $derived(reactionController.pending(message.id));
   let cannotReact = $derived(
@@ -240,9 +242,24 @@
     items[nextIndex]?.focus();
   }
 
-  function copyMessageText() {
+  function setCopyStatus(status: "copied" | "failed") {
+    copyStatus = status;
+    if (copyStatusTimer) window.clearTimeout(copyStatusTimer);
+    copyStatusTimer = window.setTimeout(() => {
+      copyStatus = "";
+      copyStatusTimer = undefined;
+    }, 1800);
+  }
+
+  async function copyMessageText() {
     closeMenu();
-    void navigator.clipboard?.writeText(message.body ?? "");
+    try {
+      if (!navigator.clipboard) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(message.body ?? "");
+      setCopyStatus("copied");
+    } catch {
+      setCopyStatus("failed");
+    }
   }
 
   function menuEdit() {
@@ -282,6 +299,10 @@
 
   $effect(() => {
     if (cannotReact) showReactPicker = false;
+  });
+
+  onDestroy(() => {
+    if (copyStatusTimer) window.clearTimeout(copyStatusTimer);
   });
 
   // Virtua item wrappers carry `contain: layout style`, so each is its own
@@ -400,6 +421,14 @@
   </div>
   {#if !preambleBlock && !isDeleted}
   <div class="message-actions" aria-label="Message actions">
+    {#if copyStatus}
+      <span
+        class="message-copy-status"
+        class:is-error={copyStatus === "failed"}
+        role="status"
+        aria-live="polite"
+      >{copyStatus === "copied" ? "Copied" : "Couldn't copy"}</span>
+    {/if}
     {#each QUICK_REACTS as emoji}
       <button
         type="button"

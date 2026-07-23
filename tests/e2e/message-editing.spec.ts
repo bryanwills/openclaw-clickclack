@@ -1,4 +1,4 @@
-import { expect, test, type Locator } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { waitForAppReady } from "./app-ready";
@@ -17,17 +17,17 @@ async function openTimelineEditor(row: Locator) {
   await row.getByRole("menuitem", { name: "Edit message" }).click();
 }
 
-test("message action menu supports standard keyboard navigation", async ({ page }) => {
+async function createOwnedMessage(page: Page, label: string) {
   const suffix = randomUUID().replaceAll("-", "").slice(0, 12);
   const workspaceResponse = await page.request.post("/api/workspaces", {
-    data: { name: `Menu Keyboard ${suffix}` },
+    data: { name: `${label} ${suffix}` },
   });
   expect(workspaceResponse.ok()).toBe(true);
   const { workspace } = (await workspaceResponse.json()) as {
     workspace: { id: string; route_id: string };
   };
   const channelResponse = await page.request.post(`/api/workspaces/${workspace.id}/channels`, {
-    data: { name: `menu-keyboard-${suffix}`, kind: "public" },
+    data: { name: `${label.toLowerCase().replaceAll(" ", "-")}-${suffix}`, kind: "public" },
   });
   expect(channelResponse.ok()).toBe(true);
   const { channel } = (await channelResponse.json()) as {
@@ -36,11 +36,16 @@ test("message action menu supports standard keyboard navigation", async ({ page 
 
   await page.goto(`/app/${workspace.route_id}/${channel.route_id}`);
   await waitForAppReady(page);
-  const body = `Keyboard menu ${suffix}`;
+  const body = `${label} ${suffix}`;
   await page.getByLabel("Message body").fill(body);
   await page.getByRole("button", { name: "Send" }).click();
   const row = page.locator(".message-row:not(.is-pending)", { hasText: body });
   await expect(row).toBeVisible();
+  return { body, row };
+}
+
+test("message action menu supports standard keyboard navigation", async ({ page }) => {
+  const { row } = await createOwnedMessage(page, "Keyboard menu");
   const trigger = row.getByRole("button", { name: "More actions" });
   await trigger.click();
 
@@ -68,6 +73,43 @@ test("message action menu supports standard keyboard navigation", async ({ page 
   await expect(copy).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(row.getByRole("menu", { name: "More actions" })).toHaveCount(0);
+});
+
+test("copy message text reports success and failure", async ({ page }) => {
+  const { body, row } = await createOwnedMessage(page, "Clipboard feedback");
+  const pageErrors: Error[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error));
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (value: string) => {
+          Object.assign(window, { copiedMessageText: value });
+        },
+      },
+    });
+  });
+
+  const trigger = row.getByRole("button", { name: "More actions" });
+  await trigger.click();
+  await row.getByRole("menuitem", { name: "Copy text" }).click();
+  await expect(row.locator(".message-copy-status")).toHaveText("Copied");
+  await expect.poll(() => page.evaluate(() => Reflect.get(window, "copiedMessageText"))).toBe(body);
+
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async () => {
+          throw new Error("clipboard denied");
+        },
+      },
+    });
+  });
+  await trigger.click();
+  await row.getByRole("menuitem", { name: "Copy text" }).click();
+  await expect(row.locator(".message-copy-status")).toHaveText("Couldn't copy");
+  expect(pageErrors).toEqual([]);
 });
 
 test("message edits persist in channels and threads", async ({ page }) => {
