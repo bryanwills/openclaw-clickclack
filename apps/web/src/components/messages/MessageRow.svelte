@@ -167,6 +167,7 @@
   let addReactionButton = $state<HTMLButtonElement>();
   let moreButton = $state<HTMLButtonElement>();
   let copyStatusTimer: number | undefined;
+  let destroyed = false;
   let reactPickerId = $derived(`toolbar-reaction-picker-${message.id}`);
   let reactionPending = $derived(reactionController.pending(message.id));
   let cannotReact = $derived(
@@ -243,6 +244,7 @@
   }
 
   function setCopyStatus(status: "copied" | "failed") {
+    if (destroyed) return;
     copyStatus = status;
     if (copyStatusTimer) window.clearTimeout(copyStatusTimer);
     copyStatusTimer = window.setTimeout(() => {
@@ -302,6 +304,7 @@
   });
 
   onDestroy(() => {
+    destroyed = true;
     if (copyStatusTimer) window.clearTimeout(copyStatusTimer);
   });
 
@@ -534,6 +537,7 @@
             type="button"
             role="menuitem"
             class="message-menu-touch-only"
+            disabled={isPending || isFailed}
             onclick={menuOpenThread}
           >
             <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
@@ -545,6 +549,7 @@
             type="button"
             role="menuitem"
             class="message-menu-touch-only"
+            disabled={isPending || isFailed}
             onclick={menuReply}
           >
             <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
