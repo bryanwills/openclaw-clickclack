@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick } from "svelte";
+  import EmojiPicker from "./EmojiPicker.svelte";
   import type { ReactionSummary } from "../../lib/types";
 
   let {
@@ -25,18 +25,13 @@
   );
 
   let showPicker = $state(false);
-  let pickerRef = $state<HTMLDivElement>();
+  let pickerWrapRef = $state<HTMLDivElement>();
   let addButtonRef = $state<HTMLButtonElement>();
   let pickerId = $derived(`reaction-picker-${messageId}`);
 
-  const QUICK_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🙏", "🎉", "🔥", "💯", "👀", "🚀", "✅"];
-
-  async function togglePicker() {
+  function togglePicker() {
     if (disabled || pending) return;
     showPicker = !showPicker;
-    if (!showPicker) return;
-    await tick();
-    pickerRef?.querySelector<HTMLButtonElement>(".emoji-option")?.focus();
   }
 
   function chooseReaction(emoji: string) {
@@ -45,17 +40,15 @@
     showPicker = false;
   }
 
-  function handleClickOutside(e: MouseEvent) {
-    if (pickerRef && !pickerRef.contains(e.target as Node)) {
-      showPicker = false;
-    }
-  }
-
-  function handlePickerKeydown(event: KeyboardEvent) {
-    if (event.key !== "Escape") return;
-    event.preventDefault();
+  function closePicker() {
     showPicker = false;
     addButtonRef?.focus();
+  }
+
+  function handleClickOutside(e: MouseEvent) {
+    if (pickerWrapRef && !pickerWrapRef.contains(e.target as Node)) {
+      showPicker = false;
+    }
   }
 
   $effect(() => {
@@ -70,65 +63,58 @@
   });
 </script>
 
-<div class="reactions-bar">
-  {#each groupedEntries as { emoji, count, reacted_by_me }}
-    <button
-      class="reaction-btn"
-      class:me={reacted_by_me}
-      onclick={() => onToggle(emoji)}
-      disabled={disabled || pending}
-      aria-pressed={reacted_by_me}
-      aria-label="{emoji} — {count} reaction{count !== 1 ? 's' : ''}"
-      title="{emoji}"
-    >
-      <span class="reaction-emoji">{emoji}</span>
-      {#if count > 1}
-        <span class="reaction-count">{count}</span>
-      {/if}
-    </button>
-  {/each}
-
-  <div class="picker-wrapper" bind:this={pickerRef}>
-    <button
-      bind:this={addButtonRef}
-      class="reaction-btn add-btn"
-      onclick={togglePicker}
-      aria-label="Add reaction"
-      aria-controls={pickerId}
-      aria-expanded={showPicker}
-      disabled={disabled || pending}
-    >
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-      </svg>
-    </button>
-
-    {#if showPicker}
-      <div
-        class="emoji-grid"
-        id={pickerId}
-        role="group"
-        aria-label="Choose a reaction"
+{#if groupedEntries.length > 0 || error}
+  <div class="reactions-bar">
+    {#each groupedEntries as { emoji, count, reacted_by_me }}
+      <button
+        class="reaction-btn"
+        class:me={reacted_by_me}
+        onclick={() => onToggle(emoji)}
+        disabled={disabled || pending}
+        aria-pressed={reacted_by_me}
+        aria-label="{emoji} — {count} reaction{count !== 1 ? 's' : ''}"
+        title="{emoji}"
       >
-        {#each QUICK_EMOJIS as emoji}
-          <button
-            class="emoji-option"
-            onclick={() => {
-              chooseReaction(emoji);
-            }}
-            aria-label={`React with ${emoji}`}
-            title={emoji}
+        <span class="reaction-emoji">{emoji}</span>
+        {#if count > 1}
+          <span class="reaction-count">{count}</span>
+        {/if}
+      </button>
+    {/each}
+
+    {#if groupedEntries.length > 0 && !disabled}
+      <div class="picker-wrapper" bind:this={pickerWrapRef}>
+        <button
+          bind:this={addButtonRef}
+          class="reaction-btn add-btn"
+          onclick={togglePicker}
+          aria-label="Add another reaction"
+          aria-controls={pickerId}
+          aria-expanded={showPicker}
+          disabled={disabled || pending}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="9"/>
+            <path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01"/>
+          </svg>
+          <svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </button>
+
+        {#if showPicker}
+          <EmojiPicker
+            id={pickerId}
             disabled={disabled || pending}
-            onkeydown={handlePickerKeydown}
-          >
-            {emoji}
-          </button>
-        {/each}
+            onPick={chooseReaction}
+            onEscape={closePicker}
+          />
+        {/if}
       </div>
     {/if}
+    {#if error}<span class="reaction-error" role="status">{error}</span>{/if}
   </div>
-  {#if error}<span class="reaction-error" role="status">{error}</span>{/if}
-</div>
+{/if}
 
 <style>
   .reactions-bar {
@@ -136,23 +122,22 @@
     flex-wrap: wrap;
     gap: 4px;
     align-items: center;
-    margin-top: 4px;
-    min-height: 28px;
+    margin-top: 5px;
   }
 
   .reaction-btn {
     display: inline-flex;
     align-items: center;
-    gap: 3px;
-    padding: 2px 6px;
-    border: 1px solid var(--border, color-mix(in srgb, var(--line, #e0e0e0) 50%, transparent));
-    border-radius: var(--radius, 8px);
-    background: transparent;
+    gap: 4px;
+    padding: 2px 8px;
+    border: 1px solid var(--line-strong, rgba(16, 21, 29, 0.17));
+    border-radius: 999px;
+    background: var(--panel, #fff);
     cursor: pointer;
-    font-size: 13px;
+    font-size: 12.5px;
     line-height: 1.4;
     transition: background 0.1s, border-color 0.1s;
-    color: var(--text-muted, #666);
+    color: var(--muted, #666);
   }
 
   .reaction-btn:hover {
@@ -166,8 +151,9 @@
   }
 
   .reaction-btn.me {
-    background: color-mix(in srgb, var(--accent, #5865f2) 15%, transparent);
-    border-color: color-mix(in srgb, var(--accent, #5865f2) 40%, transparent);
+    background: var(--accent-soft, rgba(0, 128, 196, 0.13));
+    border-color: var(--accent, #0080c4);
+    color: var(--text-strong, #10151d);
   }
 
   .reaction-emoji {
@@ -176,63 +162,30 @@
   }
 
   .reaction-count {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-muted, #666);
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--muted, #666);
   }
 
   .reaction-btn.me .reaction-count {
     color: var(--accent, #5865f2);
   }
 
+  /* The add-chip only appears next to existing chips (Slack model): dashed,
+     quiet, and never rendered under a message without reactions. */
   .add-btn {
-    opacity: 0.6;
-    padding: 2px 4px;
+    padding: 2px 7px;
+    border-style: dashed;
+    background: transparent;
+    color: var(--muted-2, #8b94a3);
   }
 
   .add-btn:hover {
-    opacity: 1;
+    color: var(--muted, #666);
   }
 
   .picker-wrapper {
     position: relative;
-  }
-
-  .emoji-grid {
-    position: absolute;
-    bottom: 100%;
-    left: 0;
-    margin-bottom: 4px;
-    display: grid;
-    grid-template-columns: repeat(6, 1fr);
-    gap: 2px;
-    padding: 6px;
-    background: var(--panel, #fff);
-    border: 1px solid var(--border, #e0e0e0);
-    border-radius: var(--radius, 8px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
-    z-index: 100;
-    min-width: 200px;
-  }
-
-  .emoji-option {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    padding: 0;
-    border: none;
-    border-radius: 4px;
-    background: transparent;
-    cursor: pointer;
-    font-size: 18px;
-    line-height: 1;
-    transition: background 0.1s;
-  }
-
-  .emoji-option:hover {
-    background: color-mix(in srgb, var(--accent, #5865f2) 12%, transparent);
   }
 
   .reaction-error {
