@@ -17,6 +17,59 @@ async function openTimelineEditor(row: Locator) {
   await row.getByRole("menuitem", { name: "Edit message" }).click();
 }
 
+test("message action menu supports standard keyboard navigation", async ({ page }) => {
+  const suffix = randomUUID().replaceAll("-", "").slice(0, 12);
+  const workspaceResponse = await page.request.post("/api/workspaces", {
+    data: { name: `Menu Keyboard ${suffix}` },
+  });
+  expect(workspaceResponse.ok()).toBe(true);
+  const { workspace } = (await workspaceResponse.json()) as {
+    workspace: { id: string; route_id: string };
+  };
+  const channelResponse = await page.request.post(`/api/workspaces/${workspace.id}/channels`, {
+    data: { name: `menu-keyboard-${suffix}`, kind: "public" },
+  });
+  expect(channelResponse.ok()).toBe(true);
+  const { channel } = (await channelResponse.json()) as {
+    channel: { route_id: string };
+  };
+
+  await page.goto(`/app/${workspace.route_id}/${channel.route_id}`);
+  await waitForAppReady(page);
+  const body = `Keyboard menu ${suffix}`;
+  await page.getByLabel("Message body").fill(body);
+  await page.getByRole("button", { name: "Send" }).click();
+  const row = page.locator(".message-row:not(.is-pending)", { hasText: body });
+  await expect(row).toBeVisible();
+  const trigger = row.getByRole("button", { name: "More actions" });
+  await trigger.click();
+
+  const copy = row.getByRole("menuitem", { name: "Copy text" });
+  const edit = row.getByRole("menuitem", { name: "Edit message" });
+  const remove = row.getByRole("menuitem", { name: "Delete message" });
+  await expect(copy).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(edit).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(remove).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(copy).toBeFocused();
+  await page.keyboard.press("ArrowUp");
+  await expect(remove).toBeFocused();
+  await page.keyboard.press("Home");
+  await expect(copy).toBeFocused();
+  await page.keyboard.press("End");
+  await expect(remove).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(trigger).toBeFocused();
+  await expect(row.getByRole("menu", { name: "More actions" })).toHaveCount(0);
+
+  await trigger.click();
+  await expect(copy).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(row.getByRole("menu", { name: "More actions" })).toHaveCount(0);
+});
+
 test("message edits persist in channels and threads", async ({ page }) => {
   const suffix = randomUUID().replaceAll("-", "").slice(0, 12);
   const workspaceResponse = await page.request.post("/api/workspaces", {

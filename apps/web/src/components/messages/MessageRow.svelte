@@ -198,7 +198,7 @@
     showMenu = !showMenu;
     if (!showMenu) return;
     await tick();
-    menuWrap?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
+    menuItems()[0]?.focus();
   }
 
   function closeMenu(refocus = true) {
@@ -206,10 +206,38 @@
     if (refocus) moreButton?.focus();
   }
 
+  function menuItems() {
+    return [...(menuWrap?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? [])]
+      .filter((item) => item.getClientRects().length > 0);
+  }
+
   function handleMenuKeydown(event: KeyboardEvent) {
-    if (event.key !== "Escape") return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeMenu();
+      return;
+    }
+    if (event.key === "Tab") {
+      closeMenu(false);
+      return;
+    }
+
+    const items = menuItems();
+    if (items.length === 0) return;
+    const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
+    let nextIndex: number | undefined;
+    if (event.key === "ArrowDown") {
+      nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % items.length;
+    } else if (event.key === "ArrowUp") {
+      nextIndex = currentIndex <= 0 ? items.length - 1 : currentIndex - 1;
+    } else if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = items.length - 1;
+    }
+    if (nextIndex === undefined) return;
     event.preventDefault();
-    closeMenu();
+    items[nextIndex]?.focus();
   }
 
   function copyMessageText() {
