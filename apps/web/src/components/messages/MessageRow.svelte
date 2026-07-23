@@ -222,6 +222,16 @@
     handleEditStart();
   }
 
+  function menuOpenThread() {
+    closeMenu(false);
+    onOpenThread(message);
+  }
+
+  function menuReply() {
+    closeMenu(false);
+    onReply(message, replyContext);
+  }
+
   function menuDelete() {
     closeMenu(false);
     onDeleteMessage?.(message);
@@ -405,7 +415,7 @@
     <button
       type="button"
       aria-label="Open thread"
-      class="tooltip"
+      class="message-action-thread tooltip"
       data-tooltip={threadSummary(message, selectedThreadID)}
       disabled={isPending || isFailed}
       onclick={() => onOpenThread(message)}
@@ -417,7 +427,7 @@
     <button
       type="button"
       aria-label="Reply"
-      class="tooltip"
+      class="message-action-reply tooltip"
       data-tooltip="Reply"
       disabled={isPending || isFailed}
       onclick={() => onReply(message, replyContext)}
@@ -462,6 +472,28 @@
               </g>
             </svg>
             Copy text
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            class="message-menu-touch-only"
+            onclick={menuOpenThread}
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+              <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 12a8 8 0 0 1-11.6 7.16L3 21l1.84-6.4A8 8 0 1 1 21 12Z"/>
+            </svg>
+            Open thread
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            class="message-menu-touch-only"
+            onclick={menuReply}
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+              <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M9 17 4 12l5-5M4 12h11a5 5 0 0 1 5 5v3"/>
+            </svg>
+            Reply
           </button>
           {#if canEditMessage && editController && editScope && !editing}
             <div class="menu-sep" role="separator"></div>

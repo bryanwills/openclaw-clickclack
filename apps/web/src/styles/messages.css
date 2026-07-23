@@ -1182,9 +1182,28 @@
   z-index: 6;
 }
 
+.message-menu .message-menu-touch-only {
+  display: none;
+}
+
 @media (hover: none), (pointer: coarse) {
   .message-actions {
+    position: static;
+    width: max-content;
+    margin: 4px 0 0 auto;
     opacity: 1;
+    transform: none;
+  }
+
+  .message-actions > .message-action-react,
+  .message-actions > .message-action-thread,
+  .message-actions > .message-action-reply,
+  .message-actions > .action-sep {
+    display: none;
+  }
+
+  .message-menu .message-menu-touch-only {
+    display: flex;
   }
 }
 

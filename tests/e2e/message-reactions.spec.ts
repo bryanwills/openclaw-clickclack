@@ -102,6 +102,64 @@ test("reaction mutations are accessible, authoritative, persistent, and realtime
   expect(messageRefreshes).toBe(0);
 });
 
+test("touch message actions stay compact and clear of message content", async ({
+  browser,
+  page,
+}) => {
+  const { suffix, workspace, channel } = await openReactionChannel(page);
+  const body = `Touch action layout ${suffix}`;
+  await sendMessage(page, body);
+
+  const mobileContext = await browser.newContext({
+    baseURL: new URL(page.url()).origin,
+    hasTouch: true,
+    isMobile: true,
+    viewport: { width: 390, height: 844 },
+  });
+  const mobilePage = await mobileContext.newPage();
+  await mobilePage.goto(`/app/${workspace.route_id}/${channel.route_id}`);
+  await waitForAppReady(mobilePage);
+  const row = mobilePage.locator(".message-row:not(.is-pending)", { hasText: body });
+  await expect(row).toBeVisible();
+
+  for (const width of [390, 320]) {
+    await mobilePage.setViewportSize({ width, height: 844 });
+    await row.scrollIntoViewIfNeeded();
+    const geometry = await row.evaluate((element) => {
+      const content = element.querySelector<HTMLElement>(".message-content");
+      const actions = element.querySelector<HTMLElement>(".message-actions");
+      if (!content || !actions) throw new Error("missing message action geometry");
+      const contentBox = content.getBoundingClientRect();
+      const actionBox = actions.getBoundingClientRect();
+      const visibleActions = [...actions.querySelectorAll<HTMLButtonElement>("button")]
+        .filter((button) => getComputedStyle(button).display !== "none")
+        .map((button) => button.getAttribute("aria-label"));
+      return {
+        actionTop: actionBox.top,
+        actionRight: actionBox.right,
+        contentBottom: contentBox.bottom,
+        rowRight: element.getBoundingClientRect().right,
+        scrollWidth: document.documentElement.scrollWidth,
+        viewportWidth: window.innerWidth,
+        visibleActions,
+      };
+    });
+    expect(geometry.actionTop).toBeGreaterThanOrEqual(geometry.contentBottom - 0.5);
+    expect(geometry.actionRight).toBeLessThanOrEqual(geometry.rowRight + 0.5);
+    expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.viewportWidth);
+    expect(geometry.visibleActions).toEqual(["Add reaction", "More actions"]);
+  }
+
+  await row.getByRole("button", { name: "Add reaction" }).click();
+  await expect(row.getByRole("group", { name: "Choose a reaction" })).toBeVisible();
+  await mobilePage.keyboard.press("Escape");
+  await row.getByRole("button", { name: "More actions" }).click();
+  const menu = row.getByRole("menu", { name: "More actions" });
+  await expect(menu.getByRole("menuitem", { name: "Open thread" })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Reply" })).toBeVisible();
+  await mobileContext.close();
+});
+
 test("a newer realtime event wins over a delayed mutation response", async ({ page }) => {
   const { suffix } = await openReactionChannel(page);
   const row = await sendMessage(page, `Reaction mutation race ${suffix}`);
