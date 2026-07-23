@@ -17,6 +17,7 @@
   import MessageEditor from "../messages/MessageEditor.svelte";
   import QuoteBlock from "../messages/QuoteBlock.svelte";
   import ReactionsBar from "../messages/ReactionsBar.svelte";
+  import AddReactionButton from "../messages/AddReactionButton.svelte";
 
   type Props = {
     root: Message;
@@ -182,6 +183,13 @@
         {#if userHandle(root.author)}<span>{handleLabel(userHandle(root.author))}</span>{/if}
         <time>{time(root.created_at)}</time>
         {#if !root.deleted_at && !isEditing(root)}
+          <AddReactionButton
+            messageId={root.id}
+            disabled={reactionsDisabled || !currentUserID}
+            pending={reactionController.pending(root.id)}
+            buttonClass="thread-action-btn"
+            onToggle={(emoji) => void reactionController.toggle(root, emoji)}
+          />
           <button
             type="button"
             class="reply-quote-btn"
@@ -281,6 +289,13 @@
             {#if userHandle(reply.author)}<span>{handleLabel(userHandle(reply.author))}</span>{/if}
             <time>{time(reply.created_at)}</time>
             {#if !reply.deleted_at && !isEditing(reply)}
+              <AddReactionButton
+                messageId={reply.id}
+                disabled={reactionsDisabled || !currentUserID}
+                pending={reactionController.pending(reply.id)}
+                buttonClass="thread-action-btn"
+                onToggle={(emoji) => void reactionController.toggle(reply, emoji)}
+              />
               <button
                 type="button"
                 class="reply-quote-btn"
