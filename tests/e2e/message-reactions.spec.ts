@@ -35,7 +35,10 @@ async function sendMessage(page: Page, body: string): Promise<Locator> {
 
 async function pickReaction(scope: Locator, emoji: string) {
   await scope.getByRole("button", { name: "Add reaction" }).click();
-  await scope.getByRole("button", { name: `React with ${emoji}` }).click();
+  await scope
+    .getByRole("group", { name: "Choose a reaction" })
+    .getByRole("button", { name: `React with ${emoji}` })
+    .click();
 }
 
 test("reaction mutations are accessible, authoritative, persistent, and realtime", async ({
@@ -50,7 +53,7 @@ test("reaction mutations are accessible, authoritative, persistent, and realtime
   await addButton.click();
   const picker = row.getByRole("group", { name: "Choose a reaction" });
   await expect(picker).toBeVisible();
-  await expect(row.getByRole("button", { name: "React with 👍" })).toBeFocused();
+  await expect(picker.getByRole("button", { name: "React with 👍" })).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(picker).toHaveCount(0);
   await expect(addButton).toBeFocused();
