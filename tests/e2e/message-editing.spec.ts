@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { waitForAppReady } from "./app-ready";
@@ -8,6 +8,13 @@ function clickclack(args: string[]): string {
     cwd: process.cwd(),
     encoding: "utf8",
   }).trim();
+}
+
+// Timeline rows expose editing through the ⋮ overflow menu.
+async function openTimelineEditor(row: Locator) {
+  await row.hover();
+  await row.getByRole("button", { name: "More actions" }).click();
+  await row.getByRole("menuitem", { name: "Edit message" }).click();
 }
 
 test("message edits persist in channels and threads", async ({ page }) => {
@@ -49,8 +56,7 @@ test("message edits persist in channels and threads", async ({ page }) => {
   });
   expect(reactionResponse.ok()).toBe(true);
   await expect(channelRow.getByRole("button", { name: "✅ — 1 reaction" })).toBeVisible();
-  await channelRow.hover();
-  await channelRow.getByRole("button", { name: "Edit message" }).click();
+  await openTimelineEditor(channelRow);
   const channelEditor = channelRow.getByLabel("Edit message");
   await expect(channelEditor).toBeFocused();
   await expect(channelEditor).toHaveValue(originalBody);
@@ -88,13 +94,15 @@ test("message edits persist in channels and threads", async ({ page }) => {
   await channelRow.getByRole("button", { name: "Open thread" }).click();
   const threadPane = page.getByLabel("Thread pane", { exact: true });
   await expect(threadPane).toBeVisible();
-  await channelRow.getByRole("button", { name: "Edit message" }).focus();
+  await channelRow.hover();
+  await channelRow.getByRole("button", { name: "More actions" }).focus();
   await expect(channelRow.locator(".message-actions")).toHaveCSS("opacity", "1");
-  await channelRow.getByRole("button", { name: "Edit message" }).click();
+  await channelRow.getByRole("button", { name: "More actions" }).click();
+  await channelRow.getByRole("menuitem", { name: "Edit message" }).click();
   await expect(page.locator('textarea[aria-label="Edit message"]')).toHaveCount(1);
   await expect(channelRow.getByLabel("Edit message")).toBeFocused();
   await channelRow.getByLabel("Edit message").press("Escape");
-  await expect(channelRow.getByRole("button", { name: "Edit message" })).toBeFocused();
+  await expect(channelRow.getByRole("button", { name: "More actions" })).toBeFocused();
   const threadRoot = threadPane.locator(`.thread-root[data-message-id="${channelMessageID}"]`);
   await threadRoot.hover();
   await threadRoot.getByRole("button", { name: "Edit message" }).click();
@@ -118,8 +126,7 @@ test("message edits persist in channels and threads", async ({ page }) => {
   );
   await expect(reopenedThreadRoot.locator(".markdown table")).toContainText("preserved");
   await threadPane.getByRole("button", { name: "Close thread" }).click();
-  await channelRow.hover();
-  await channelRow.getByRole("button", { name: "Edit message" }).click();
+  await openTimelineEditor(channelRow);
   await expect(channelRow.getByLabel("Edit message")).toBeFocused();
   await channelRow.getByLabel("Edit message").press("Escape");
   await channelRow.getByRole("button", { name: "Open thread" }).click();
@@ -190,8 +197,7 @@ test("message edits submit boundary whitespace to server normalization", async (
   await page.goto(`/app/${workspace.route_id}/${channel.route_id}`);
   await waitForAppReady(page);
   const row = page.locator(`[data-message-id="${message.id}"]`);
-  await row.hover();
-  await row.getByRole("button", { name: "Edit message" }).click();
+  await openTimelineEditor(row);
   const whitespaceBody = `    indented code ${suffix}\n`;
   await row.getByLabel("Edit message").fill(whitespaceBody);
   const submittedEdit = page.waitForResponse(
@@ -256,8 +262,7 @@ test("edit sessions reject empty shortcuts and keep save failures visible", asyn
   const firstRow = page.locator(`[data-message-id="${firstMessage.id}"]`);
   const secondRow = page.locator(`[data-message-id="${secondMessage.id}"]`);
 
-  await firstRow.hover();
-  await firstRow.getByRole("button", { name: "Edit message" }).click();
+  await openTimelineEditor(firstRow);
   const unsavedDraft = `Unsaved first edit ${suffix}`;
   await firstRow.getByLabel("Edit message").fill(unsavedDraft);
   await page.getByRole("link", { name: `# ${alternateChannel.name}` }).click();
@@ -266,12 +271,11 @@ test("edit sessions reject empty shortcuts and keep save failures visible", asyn
   await page.getByRole("link", { name: `# ${channel.name}` }).click();
   await expect(page.getByRole("heading", { name: `#${channel.name}` })).toBeVisible();
   await expect(firstRow.getByLabel("Edit message")).toHaveValue(unsavedDraft);
-  await secondRow.hover();
-  await secondRow.getByRole("button", { name: "Edit message" }).click();
+  await openTimelineEditor(secondRow);
   await expect(firstRow.getByLabel("Edit message")).toHaveValue(unsavedDraft);
   await expect(secondRow.locator('textarea[aria-label="Edit message"]')).toHaveCount(0);
   await firstRow.getByLabel("Edit message").press("Escape");
-  await expect(firstRow.getByRole("button", { name: "Edit message" })).toBeFocused();
+  await expect(firstRow.getByRole("button", { name: "More actions" })).toBeFocused();
 
   let patchCount = 0;
   page.on("request", (request) => {
@@ -279,8 +283,7 @@ test("edit sessions reject empty shortcuts and keep save failures visible", asyn
       patchCount += 1;
     }
   });
-  await secondRow.hover();
-  await secondRow.getByRole("button", { name: "Edit message" }).click();
+  await openTimelineEditor(secondRow);
   await secondRow.getByLabel("Edit message").fill("\u0085");
   await secondRow.getByLabel("Edit message").press("Control+Enter");
   await expect(secondRow.getByLabel("Edit message")).toHaveValue("\u0085");
@@ -292,8 +295,7 @@ test("edit sessions reject empty shortcuts and keep save failures visible", asyn
   await expect(secondRow.locator('textarea[aria-label="Edit message"]')).toHaveCount(0);
   expect(patchCount).toBe(0);
 
-  await secondRow.hover();
-  await secondRow.getByRole("button", { name: "Edit message" }).click();
+  await openTimelineEditor(secondRow);
   await secondRow.getByLabel("Edit message").fill("\ufeff");
   await secondRow.getByRole("button", { name: "Save" }).click();
   await expect(secondRow.locator('textarea[aria-label="Edit message"]')).toHaveCount(0);
@@ -324,14 +326,12 @@ test("edit sessions reject empty shortcuts and keep save failures visible", asyn
     });
   });
 
-  await firstRow.hover();
-  await firstRow.getByRole("button", { name: "Edit message" }).click();
+  await openTimelineEditor(firstRow);
   await firstRow.getByLabel("Edit message").fill(`Saved first edit ${suffix}`);
   await firstRow.getByRole("button", { name: "Save" }).click();
   await firstSaveStarted;
 
-  await secondRow.hover();
-  await secondRow.getByRole("button", { name: "Edit message" }).click();
+  await openTimelineEditor(secondRow);
   await expect(firstRow.getByLabel("Edit message")).toHaveValue(`Saved first edit ${suffix}`);
   await expect(secondRow.locator('textarea[aria-label="Edit message"]')).toHaveCount(0);
   releaseFirstSave();
@@ -390,8 +390,7 @@ test("virtualized edit rows retain and reveal their unsaved draft", async ({ pag
 
   const firstRow = page.locator(`[data-message-id="${created[0].id}"]`);
   await expect(firstRow).toBeVisible();
-  await firstRow.hover();
-  await firstRow.getByRole("button", { name: "Edit message" }).click();
+  await openTimelineEditor(firstRow);
   const draft = `retained virtualized draft ${suffix}`;
   await firstRow.getByLabel("Edit message").fill(draft);
   await firstRow.getByLabel("Edit message").blur();
@@ -408,8 +407,7 @@ test("virtualized edit rows retain and reveal their unsaved draft", async ({ pag
   const competingMessageID = created[created.length - 1].id;
   const competingRow = page.locator(`[data-message-id="${competingMessageID}"]`);
   await expect(competingRow).toBeVisible();
-  await competingRow.hover();
-  await competingRow.getByRole("button", { name: "Edit message" }).click();
+  await openTimelineEditor(competingRow);
 
   await expect(firstRow.getByLabel("Edit message")).toHaveValue(draft);
   await expect(firstRow.getByLabel("Edit message")).toBeFocused();
@@ -458,8 +456,7 @@ test("message editing works in direct conversations", async ({ page }) => {
   await waitForAppReady(page);
   const row = page.locator(`[data-message-id="${message.id}"]`);
   await expect(row).toContainText(originalBody);
-  await row.hover();
-  await row.getByRole("button", { name: "Edit message" }).click();
+  await openTimelineEditor(row);
   const editedBody = `Edited direct message ${suffix}`;
   await row.getByLabel("Edit message").fill(editedBody);
   await row.getByRole("button", { name: "Save" }).click();

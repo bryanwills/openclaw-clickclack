@@ -1738,7 +1738,8 @@ test("confirms message deletion in the app modal", async ({ page }) => {
   });
   await expect(row).toBeVisible();
   await row.hover();
-  await row.getByRole("button", { name: "Delete message" }).click();
+  await row.getByRole("button", { name: "More actions" }).click();
+  await row.getByRole("menuitem", { name: "Delete message" }).click();
 
   const dialog = page.getByRole("dialog", { name: "Delete message" });
   await expect(dialog).toBeVisible();
@@ -1748,7 +1749,8 @@ test("confirms message deletion in the app modal", async ({ page }) => {
   await expect(row.getByText(body, { exact: true })).toBeVisible();
 
   await row.hover();
-  await row.getByRole("button", { name: "Delete message" }).click();
+  await row.getByRole("button", { name: "More actions" }).click();
+  await row.getByRole("menuitem", { name: "Delete message" }).click();
   await dialog.getByRole("button", { name: "Delete", exact: true }).click();
   await expect(dialog).toBeHidden();
   await expect(page.getByText("This message was deleted.", { exact: true })).toBeVisible();

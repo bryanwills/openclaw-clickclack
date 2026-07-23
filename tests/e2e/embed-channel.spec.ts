@@ -49,7 +49,8 @@ test("embedded channel loads, sends idempotently, and follows realtime updates",
 
   const uiEditedBody = `${initialBody} edited in embed`;
   await initialRow.hover();
-  await initialRow.getByRole("button", { name: "Edit message" }).click();
+  await initialRow.getByRole("button", { name: "More actions" }).click();
+  await initialRow.getByRole("menuitem", { name: "Edit message" }).click();
   await initialRow.getByLabel("Edit message").fill(uiEditedBody);
   await initialRow.getByRole("button", { name: "Save" }).click();
   await expect(initialRow.locator(".markdown")).toContainText(uiEditedBody);
