@@ -6,6 +6,8 @@
   import type { MessageEditController } from "../../lib/messageEditing.svelte";
   import { uploadURL } from "../../lib/uploads";
   import ReactionsBar from "./ReactionsBar.svelte";
+  import EmojiPicker from "./EmojiPicker.svelte";
+  import { shouldOpenUpward } from "../../lib/popover";
   import type { ReactionController } from "../../lib/reactions.svelte";
   import type { Message, Upload } from "../../lib/types";
   import MediaAttachment from "../MediaAttachment.svelte";
@@ -65,24 +67,24 @@
     onDeleteMessage,
   }: Props = $props();
 
-  let editButton = $state<HTMLButtonElement>();
   let editSession = $derived(editController?.session(editScope));
   let editing = $derived(
     editSession?.surface === "timeline" && editSession.messageID === message.id,
   );
 
-  async function restoreEditButtonFocus() {
+  // Editing now starts from the ⋮ menu, so focus lands back on its trigger.
+  async function restoreEditEntryFocus() {
     await tick();
-    editButton?.focus();
+    moreButton?.focus();
   }
 
   function handleEditStart() {
     const result = editController?.start(editScope, message, "timeline");
-    if (result === "cancelled") void restoreEditButtonFocus();
+    if (result === "cancelled") void restoreEditEntryFocus();
   }
 
   function handleEditCancel() {
-    if (editController?.cancel(editScope, "timeline")) void restoreEditButtonFocus();
+    if (editController?.cancel(editScope, "timeline")) void restoreEditEntryFocus();
   }
 
   async function handleEditSave() {
@@ -90,7 +92,7 @@
     const result = await editController.save(editScope, message, (updated) =>
       onMessageEdited?.(updated),
     );
-    if (result === "saved" || result === "cancelled") await restoreEditButtonFocus();
+    if (result === "saved" || result === "cancelled") await restoreEditEntryFocus();
   }
 
   let isPending = $derived(message.status === "pending");
@@ -150,9 +152,119 @@
       },
     };
   }
+
+  // ---- Hover toolbar: quick reacts + full picker + ⋮ overflow menu ----
+  const QUICK_REACTS = ["👍", "✅", "👀"];
+
+  let showReactPicker = $state(false);
+  let showMenu = $state(false);
+  let reactPickerUp = $state(false);
+  let menuUp = $state(false);
+  let rowEl = $state<HTMLDivElement>();
+  let reactPickerWrap = $state<HTMLDivElement>();
+  let menuWrap = $state<HTMLDivElement>();
+  let addReactionButton = $state<HTMLButtonElement>();
+  let moreButton = $state<HTMLButtonElement>();
+  let reactPickerId = $derived(`toolbar-reaction-picker-${message.id}`);
+  let reactionPending = $derived(reactionController.pending(message.id));
+  let cannotReact = $derived(
+    reactionsDisabled || !currentUserID || isPending || isFailed || reactionPending,
+  );
+
+  function quickReact(emoji: string) {
+    if (cannotReact) return;
+    void reactionController.toggle(message, emoji);
+  }
+
+  function toggleReactPicker() {
+    if (cannotReact) return;
+    if (!showReactPicker) reactPickerUp = shouldOpenUpward(reactPickerWrap, 130);
+    showReactPicker = !showReactPicker;
+  }
+
+  function chooseToolbarReaction(emoji: string) {
+    if (cannotReact) return;
+    void reactionController.toggle(message, emoji);
+    showReactPicker = false;
+  }
+
+  function closeReactPicker() {
+    showReactPicker = false;
+    addReactionButton?.focus();
+  }
+
+  async function toggleMenu() {
+    if (!showMenu) menuUp = shouldOpenUpward(menuWrap, 160);
+    showMenu = !showMenu;
+    if (!showMenu) return;
+    await tick();
+    menuWrap?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
+  }
+
+  function closeMenu(refocus = true) {
+    showMenu = false;
+    if (refocus) moreButton?.focus();
+  }
+
+  function handleMenuKeydown(event: KeyboardEvent) {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    closeMenu();
+  }
+
+  function copyMessageText() {
+    closeMenu();
+    void navigator.clipboard?.writeText(message.body ?? "");
+  }
+
+  function menuEdit() {
+    closeMenu(false);
+    handleEditStart();
+  }
+
+  function menuDelete() {
+    closeMenu(false);
+    onDeleteMessage?.(message);
+  }
+
+  $effect(() => {
+    if (!showReactPicker && !showMenu) return;
+    const onDocClick = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (showReactPicker && reactPickerWrap && !reactPickerWrap.contains(target)) {
+        showReactPicker = false;
+      }
+      if (showMenu && menuWrap && !menuWrap.contains(target)) {
+        showMenu = false;
+      }
+    };
+    document.addEventListener("click", onDocClick);
+    return () => document.removeEventListener("click", onDocClick);
+  });
+
+  $effect(() => {
+    if (cannotReact) showReactPicker = false;
+  });
+
+  // Virtua item wrappers carry `contain: layout style`, so each is its own
+  // stacking context — a z-index inside one row can never beat a later
+  // sibling item's (invisible) hover toolbar. While a popover is open, lift
+  // the enclosing virtualized item itself.
+  $effect(() => {
+    if (!(showMenu || showReactPicker) || !rowEl) return;
+    let item: HTMLElement | null = rowEl.parentElement;
+    while (item && item.style.position !== "absolute") item = item.parentElement;
+    if (!item) return;
+    const previous = item.style.zIndex;
+    item.style.zIndex = "10";
+    return () => {
+      item.style.zIndex = previous;
+    };
+  });
 </script>
 
 <div
+  bind:this={rowEl}
   class="message-row"
   class:selected
   class:is-pending={isPending}
@@ -165,6 +277,7 @@
   class:after-preamble={followsPreamble}
   class:can-open-thread={canOpenThread}
   class:editing={editing}
+  class:menu-open={showMenu}
   data-message-id={message.id}
   use:openThreadOnClick
 >
@@ -249,18 +362,46 @@
   </div>
   {#if !preambleBlock && !isDeleted}
   <div class="message-actions" aria-label="Message actions">
-    <button
-      type="button"
-      aria-label="Reply"
-      class="tooltip"
-      data-tooltip="Reply"
-      disabled={isPending || isFailed}
-      onclick={() => onReply(message, replyContext)}
-    >
-      <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-        <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M9 17 4 12l5-5M4 12h11a5 5 0 0 1 5 5v3"/>
-      </svg>
-    </button>
+    {#each QUICK_REACTS as emoji}
+      <button
+        type="button"
+        class="message-action-react tooltip"
+        aria-label={`React with ${emoji}`}
+        data-tooltip={`React with ${emoji}`}
+        disabled={cannotReact}
+        onclick={() => quickReact(emoji)}
+      >{emoji}</button>
+    {/each}
+    <div class="picker-wrapper" bind:this={reactPickerWrap}>
+      <button
+        bind:this={addReactionButton}
+        type="button"
+        aria-label="Add reaction"
+        class="tooltip"
+        data-tooltip="Add reaction"
+        aria-controls={reactPickerId}
+        aria-expanded={showReactPicker}
+        disabled={cannotReact}
+        onclick={toggleReactPicker}
+      >
+        <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+          <g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <circle cx="12" cy="12" r="9"/>
+            <path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01"/>
+          </g>
+        </svg>
+      </button>
+      {#if showReactPicker}
+        <EmojiPicker
+          id={reactPickerId}
+          placement={reactPickerUp ? "above-right" : "below"}
+          disabled={cannotReact}
+          onPick={chooseToolbarReaction}
+          onEscape={closeReactPicker}
+        />
+      {/if}
+    </div>
+    <span class="action-sep" aria-hidden="true"></span>
     <button
       type="button"
       aria-label="Open thread"
@@ -273,35 +414,76 @@
         <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 12a8 8 0 0 1-11.6 7.16L3 21l1.84-6.4A8 8 0 1 1 21 12Z"/>
       </svg>
     </button>
-    {#if canEditMessage && editController && editScope && !editing}
-        <button
-          bind:this={editButton}
-          type="button"
-          aria-label="Edit message"
-          class="tooltip message-action-edit"
-          data-tooltip="Edit message"
-          disabled={isPending || isFailed}
-          onclick={handleEditStart}
-        >
-          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-            <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
-          </svg>
-        </button>
-    {/if}
-    {#if canDeleteMessage && onDeleteMessage}
-        <button
-          type="button"
-          aria-label="Delete message"
-          class="tooltip message-action-danger"
-          data-tooltip="Delete message"
-          disabled={isPending || isFailed || deleting}
-          onclick={() => onDeleteMessage?.(message)}
-        >
-          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-            <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M3 6h18M8 6V4h8v2m-1 5v6M9 11v6m-3-11 1 14h10l1-14"/>
-          </svg>
-        </button>
-    {/if}
+    <button
+      type="button"
+      aria-label="Reply"
+      class="tooltip"
+      data-tooltip="Reply"
+      disabled={isPending || isFailed}
+      onclick={() => onReply(message, replyContext)}
+    >
+      <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+        <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M9 17 4 12l5-5M4 12h11a5 5 0 0 1 5 5v3"/>
+      </svg>
+    </button>
+    <span class="action-sep" aria-hidden="true"></span>
+    <div class="message-more" bind:this={menuWrap}>
+      <button
+        bind:this={moreButton}
+        type="button"
+        aria-label="More actions"
+        class="tooltip"
+        data-tooltip="More actions"
+        aria-haspopup="menu"
+        aria-expanded={showMenu}
+        disabled={isPending || isFailed}
+        onclick={toggleMenu}
+      >
+        <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+          <g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <circle cx="12" cy="5" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="12" cy="19" r="1.2"/>
+          </g>
+        </svg>
+      </button>
+      {#if showMenu}
+        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+        <div class="message-menu" class:above={menuUp} role="menu" aria-label="More actions" onkeydown={handleMenuKeydown}>
+          <button type="button" role="menuitem" onclick={copyMessageText}>
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+              <g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>
+              </g>
+            </svg>
+            Copy text
+          </button>
+          {#if canEditMessage && editController && editScope && !editing}
+            <div class="menu-sep" role="separator"></div>
+            <button type="button" role="menuitem" onclick={menuEdit}>
+              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+                <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+              </svg>
+              Edit message
+            </button>
+          {/if}
+          {#if canDeleteMessage && onDeleteMessage}
+            <div class="menu-sep" role="separator"></div>
+            <button
+              type="button"
+              role="menuitem"
+              class="menu-danger"
+              aria-label="Delete message"
+              disabled={deleting}
+              onclick={menuDelete}
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+                <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M3 6h18M8 6V4h8v2m-1 5v6M9 11v6m-3-11 1 14h10l1-14"/>
+              </svg>
+              Delete message…
+            </button>
+          {/if}
+        </div>
+      {/if}
+    </div>
   </div>
   {/if}
 </div>

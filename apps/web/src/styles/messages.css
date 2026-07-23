@@ -539,10 +539,6 @@
   position: relative;
 }
 
-.message-group:hover {
-  background: var(--hover);
-}
-
 .avatar {
   width: 38px;
   height: 38px;
@@ -604,6 +600,14 @@
   align-items: baseline;
   gap: 8px;
   margin-bottom: 2px;
+}
+
+/* In the channel timeline the header bleeds into the avatar gutter and right
+   padding so the hover highlight reads as one continuous band with the first
+   message row. Thread-panel headers reuse .group-body but keep normal flow. */
+.message-group .group-body > header {
+  margin: 0 -18px 0 -56px;
+  padding: 0 18px 2px 56px;
 }
 
 .group-body > header strong {
@@ -671,7 +675,8 @@
 
 .message-row {
   margin-left: -56px;
-  padding: 1px 0 1px 56px;
+  margin-right: -18px;
+  padding: 1px 18px 1px 56px;
   position: relative;
   border-radius: 0;
   transition: background 80ms ease;
@@ -679,6 +684,20 @@
 
 .message-row:not(:first-child) {
   margin-top: 1px;
+}
+
+/* Row-level hover (Slack model): only the hovered message highlights, not the
+   whole group. Hovering the group header joins it with its first row so the
+   two read as one message. */
+.message-row:hover,
+.message-group .group-body > header:hover,
+.message-group .group-body > header:hover + .message-row,
+.message-group .group-body > header:has(+ .message-row:hover) {
+  background: var(--hover);
+}
+
+.message-group .group-body > header:hover + .message-row .message-actions {
+  opacity: 1;
 }
 
 .message-row.selected {
@@ -829,6 +848,16 @@
 :root[data-user-align="right"] .message-group.is-self .group-body > header,
 :root[data-other-align="right"] .message-group:not(.is-self) .group-body > header {
   justify-content: flex-end;
+  margin: 0 -56px 0 -18px;
+  padding: 0 56px 2px 18px;
+}
+
+:root[data-user-align="right"] .message-group.is-self .message-row,
+:root[data-other-align="right"] .message-group:not(.is-self) .message-row {
+  margin-left: -18px;
+  margin-right: -56px;
+  padding-left: 18px;
+  padding-right: 56px;
 }
 
 :root[data-user-align="right"] .message-group.is-self .message-content,
@@ -1065,18 +1094,21 @@
   min-width: 0;
 }
 
+/* Thread summary as a quiet link row (Slack model): plain text at rest —
+   accent reply count + muted last-activity time — gaining a soft border only
+   on hover. */
 .thread-hint {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   min-height: 22px;
-  margin-top: 5px;
-  padding: 2px 7px;
-  border: 1px solid color-mix(in srgb, var(--line-strong) 70%, transparent);
+  margin-top: 4px;
+  padding: 3px 8px;
+  border: 1px solid transparent;
   border-radius: 8px;
-  background: color-mix(in srgb, var(--panel) 70%, transparent);
+  background: transparent;
   color: var(--muted-2);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   line-height: 1;
   cursor: pointer;
@@ -1091,28 +1123,25 @@
 }
 
 .thread-hint time {
-  color: var(--muted-2);
-  font-size: 10px;
-  font-weight: 700;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 
 .thread-hint.has-replies,
 .thread-hint.is-open {
-  border-color: color-mix(in srgb, var(--accent) 48%, var(--line-strong));
-  background: color-mix(in srgb, var(--accent-soft) 70%, transparent);
-  color: var(--text-strong);
+  color: var(--accent);
 }
 
-.thread-hint.has-replies time,
-.thread-hint.is-open time {
-  color: var(--muted);
+.thread-hint.is-open {
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent-soft) 70%, transparent);
 }
 
 .thread-hint:hover {
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--line-strong));
-  background: var(--hover-strong);
-  color: var(--text-strong);
+  border-color: var(--line-strong);
+  background: var(--panel);
 }
 
 .thread-hint:disabled {
@@ -1142,8 +1171,15 @@
 
 .message-row:hover .message-actions,
 .message-row:focus-within .message-actions,
-.message-row.selected .message-actions {
+.message-row.selected .message-actions,
+.message-row.menu-open .message-actions {
   opacity: 1;
+}
+
+/* Lift the row with an open ⋮ menu above later siblings so the menu is not
+   covered by their (transparent) hover toolbars. */
+.message-row.menu-open {
+  z-index: 6;
 }
 
 @media (hover: none), (pointer: coarse) {
@@ -1168,14 +1204,89 @@
   color: var(--text-strong);
 }
 
-.message-actions .message-action-danger:hover {
-  background: color-mix(in srgb, var(--danger) 12%, transparent);
+.message-actions button:disabled {
+  opacity: 0.45;
+}
+
+.message-actions .message-action-react {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.message-actions .action-sep {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 18px;
+  margin: 0 3px;
+  align-self: center;
+  background: var(--line);
+}
+
+.message-actions .picker-wrapper,
+.message-actions .message-more {
+  position: relative;
+}
+
+/* ⋮ overflow menu: copy/edit up top, delete isolated behind a divider. */
+.message-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  min-width: 190px;
+  padding: 5px;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  font-size: 13px;
+}
+
+.message-menu.above {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
+
+.message-menu button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  height: auto;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.message-menu button:hover {
+  background: var(--hover-strong);
+  color: var(--text-strong);
+}
+
+.message-menu button svg {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.message-menu .menu-sep {
+  margin: 5px 4px;
+  border-top: 1px solid var(--line);
+}
+
+.message-menu .menu-danger,
+.message-menu .menu-danger svg {
   color: var(--danger);
 }
 
-.message-actions .message-action-edit:hover {
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  color: var(--accent);
+.message-menu .menu-danger:hover {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
 }
 
 /* ---------- MESSAGE EDITING ---------- */
@@ -1974,7 +2085,32 @@
 
   .message-row {
     margin-left: -44px;
+    margin-right: -12px;
     padding-left: 44px;
+    padding-right: 12px;
+  }
+
+  :root[data-user-align="right"] .message-group.is-self .message-row,
+  :root[data-other-align="right"] .message-group:not(.is-self) .message-row {
+    margin-left: -12px;
+    margin-right: -44px;
+    padding-left: 12px;
+    padding-right: 44px;
+  }
+
+  .message-group .group-body > header {
+    margin-left: -44px;
+    margin-right: -12px;
+    padding-left: 44px;
+    padding-right: 12px;
+  }
+
+  :root[data-user-align="right"] .message-group.is-self .group-body > header,
+  :root[data-other-align="right"] .message-group:not(.is-self) .group-body > header {
+    margin-left: -12px;
+    margin-right: -44px;
+    padding-left: 12px;
+    padding-right: 44px;
   }
 
   .row-stamp {
@@ -1999,7 +2135,17 @@
 
 :root[data-message-layout="outlined"] .message-group .message-row {
   margin-left: 0;
+  margin-right: 0;
   padding: 0;
+}
+
+/* Outlined rows carry their own borders; the header stays inside the content
+   column with them. */
+:root[data-message-layout="outlined"] .message-group .group-body > header {
+  margin-left: 0;
+  margin-right: 0;
+  padding-left: 0;
+  padding-right: 0;
 }
 
 :root[data-message-layout="outlined"][data-user-align="right"]
@@ -2121,6 +2267,25 @@
   margin-bottom: 0;
 }
 
+:root[data-density="compact"] .message-group .group-body > header {
+  margin-left: -42px;
+  padding-left: 42px;
+}
+
+:root[data-density="compact"][data-user-align="right"]
+  .message-group.is-self
+  .group-body
+  > header,
+:root[data-density="compact"][data-other-align="right"]
+  .message-group:not(.is-self)
+  .group-body
+  > header {
+  margin-left: -18px;
+  margin-right: -42px;
+  padding-left: 18px;
+  padding-right: 42px;
+}
+
 :root[data-density="compact"] .group-body > header strong,
 :root[data-density="compact"] .author-name {
   font-size: 13px;
@@ -2135,13 +2300,22 @@
   padding-left: 42px;
 }
 
+:root[data-density="compact"][data-user-align="right"] .message-group.is-self .message-row,
+:root[data-density="compact"][data-other-align="right"]
+  .message-group:not(.is-self)
+  .message-row {
+  margin-left: -18px;
+  margin-right: -42px;
+  padding-left: 18px;
+  padding-right: 42px;
+}
+
 :root[data-density="compact"] .markdown {
   font-size: 13.5px;
   line-height: 1.42;
 }
 
 :root[data-density="compact"] .reactions-bar {
-  min-height: 22px;
   margin-top: 2px;
 }
 
@@ -2172,4 +2346,27 @@
     padding-right: 12px;
     padding-left: 12px;
   }
+}
+
+/* Outlined rows and headers never bleed into the gutters, in any alignment or
+   density combination. Kept last so it outranks the standard and compact
+   right-aligned bleed rules above. */
+:root[data-message-layout="outlined"][data-user-align="right"]
+  .message-group.is-self
+  .message-row,
+:root[data-message-layout="outlined"][data-other-align="right"]
+  .message-group:not(.is-self)
+  .message-row,
+:root[data-message-layout="outlined"][data-user-align="right"]
+  .message-group.is-self
+  .group-body
+  > header,
+:root[data-message-layout="outlined"][data-other-align="right"]
+  .message-group:not(.is-self)
+  .group-body
+  > header {
+  margin-left: 0;
+  margin-right: 0;
+  padding-left: 0;
+  padding-right: 0;
 }
