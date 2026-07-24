@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import { portal } from "../../lib/actions/portal";
-  import { QUICK_EMOJIS } from "./EmojiPicker.svelte";
+  import { SHEET_QUICK_REACTS } from "./EmojiPicker.svelte";
 
   type CopyStatus = "copied" | "failed" | "";
 
@@ -129,7 +129,7 @@
   >
     <div class="sheet-grabber" aria-hidden="true"></div>
     <div class="sheet-emoji-row" role="group" aria-label="Choose a reaction">
-      {#each QUICK_EMOJIS.slice(0, 6) as emoji}
+      {#each SHEET_QUICK_REACTS as emoji}
         <button
           type="button"
           aria-label={`React with ${emoji}`}

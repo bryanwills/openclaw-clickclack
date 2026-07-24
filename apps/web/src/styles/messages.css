@@ -29,7 +29,11 @@
   transition: opacity 0ms;
 }
 
-/* Spacer above the Virtualizer so a short list aligns to the bottom. */
+/* Spacer above the Virtualizer so a short list aligns to the bottom. It must
+   collapse to 0 when history overflows: virtua's startMargin only accounts for
+   the history loader, so any residual height here skews scroll-to-bottom.
+   Toolbar headroom at the top of history comes from the day divider that
+   always precedes the first group (18px margin + pointer-events: none). */
 .messages-spacer {
   flex-grow: 1;
 }
@@ -698,6 +702,7 @@
 
 .message-group .group-body > header:hover + .message-row .message-actions {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .message-row.selected {
@@ -1095,15 +1100,6 @@
   min-width: 0;
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .message-row:has(.message-actions) .message-content::before {
-    content: "";
-    float: right;
-    width: calc(var(--message-actions-width, 260px) + 8px);
-    height: 34px;
-  }
-}
-
 /* Thread summary as a quiet link row (Slack model): plain text at rest —
    accent reply count + muted last-activity time — gaining a soft border only
    on hover. */
@@ -1164,9 +1160,15 @@
   align-items: flex-start;
   gap: 4px;
   opacity: 0;
+  /* Pure overlay straddling the row's top edge (Slack model): never reserves
+     layout space, never reflows text, and while hidden it must not intercept
+     the pointer, so hovering/clicking the row above keeps working. Most of
+     the toolbar hangs above the row — only its lower third dips into the
+     row, so it never covers more than the tail of the first line. */
+  pointer-events: none;
   position: absolute;
   right: 8px;
-  top: 1px;
+  top: -24px;
   background: var(--panel);
   border: 1px solid var(--line-strong);
   border-radius: 8px;
@@ -1176,10 +1178,22 @@
 }
 
 .message-row:hover .message-actions,
-.message-row:focus-within .message-actions,
+/* Keyboard focus only: a mouse click leaves the clicked button focused, and
+   plain :focus-within would pin that row's toolbar open forever (two toolbars
+   at once when the next row is hovered). */
+.message-row:has(:focus-visible) .message-actions,
 .message-row.selected .message-actions,
 .message-row.menu-open .message-actions {
   opacity: 1;
+  pointer-events: auto;
+}
+
+/* A row flush with the scrollport's top edge has no headroom for the upward
+   straddle (overflow would clip it), so mirror the toolbar to straddle the
+   row's bottom edge instead. MessageRow measures this on hover/focus. */
+.message-row.actions-flip .message-actions {
+  top: auto;
+  bottom: -24px;
 }
 
 /* Lift the row with an open ⋮ menu above later siblings so the menu is not
@@ -1188,22 +1202,53 @@
   z-index: 6;
 }
 
+/* A revealed toolbar straddles a neighboring row (above normally, below when
+   flipped at the scrollport top). Lift the active row above its in-group
+   siblings so the toolbar paints and hit-tests above them. */
+.message-row:hover,
+.message-row:has(:focus-visible),
+.message-row.selected {
+  z-index: 5;
+}
+
+/* While a row has an open popover (⋮ menu or reaction picker), hovering other
+   rows must not reveal a second toolbar — one popover means one active row. */
+.messages:has(.message-row.menu-open) .message-row:hover:not(.menu-open) .message-actions,
+.messages:has(.message-row.menu-open)
+  .message-group
+  .group-body
+  > header:hover
+  + .message-row:not(.menu-open)
+  .message-actions {
+  opacity: 0;
+  pointer-events: none;
+}
+
 @media (hover: none), (pointer: coarse) {
   /* Touch devices use the long-press action sheet instead of the hover toolbar. */
   .message-actions {
     width: 1px;
     height: 1px;
+    top: 1px;
+    bottom: auto;
     padding: 0;
     border: 0;
     background: transparent;
     box-shadow: none;
     opacity: 1;
+    pointer-events: auto;
     overflow: visible;
     transform: none;
   }
 
   .message-actions > :not(.message-more) {
     display: none;
+  }
+
+  /* The desktop flip must not move the collapsed 1px touch anchor. */
+  .message-row.actions-flip .message-actions {
+    top: 1px;
+    bottom: auto;
   }
 
   .message-actions .message-more {

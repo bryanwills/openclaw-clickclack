@@ -13,6 +13,15 @@
     "🚀",
     "✅",
   ];
+
+  /* Quick reacts shared by the hover toolbar and the touch action sheet. */
+  export const QUICK_REACTS = ["👍", "✅", "👀"];
+
+  /* Sheet quick-react row: toolbar reacts first, topped up from the picker. */
+  export const SHEET_QUICK_REACTS = [
+    ...QUICK_REACTS,
+    ...QUICK_EMOJIS.filter((emoji) => !QUICK_REACTS.includes(emoji)),
+  ].slice(0, 6);
 </script>
 
 <script lang="ts">

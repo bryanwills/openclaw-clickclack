@@ -6,7 +6,7 @@
   import type { MessageEditController } from "../../lib/messageEditing.svelte";
   import { uploadURL } from "../../lib/uploads";
   import ReactionsBar from "./ReactionsBar.svelte";
-  import EmojiPicker from "./EmojiPicker.svelte";
+  import EmojiPicker, { QUICK_REACTS } from "./EmojiPicker.svelte";
   import MessageActionSheet from "./MessageActionSheet.svelte";
   import { shouldOpenUpward } from "../../lib/popover";
   import type { ReactionController } from "../../lib/reactions.svelte";
@@ -156,7 +156,6 @@
   }
 
   // ---- Hover toolbar: quick reacts + full picker + ⋮ overflow menu ----
-  const QUICK_REACTS = ["👍", "✅", "👀"];
 
   let showReactPicker = $state(false);
   let showMenu = $state(false);
@@ -164,7 +163,25 @@
   let reactPickerUp = $state(false);
   let menuUp = $state(false);
   let rowEl = $state<HTMLDivElement>();
-  let actionsEl = $state<HTMLDivElement>();
+  let rowHovered = $state(false);
+  let rowFocused = $state(false);
+  let rowActive = $derived(rowHovered || rowFocused || selected);
+  /* The hover toolbar straddles the row's top edge (top: -24px). When the row
+     is flush with the scrollport's top edge that straddle would be clipped by
+     overflow, so flip it to straddle the bottom edge instead. Measured when
+     the row becomes hovered/focused — scrolling moves the pointer to another
+     row, which re-measures. */
+  let actionsFlipped = $state(false);
+
+  function updateActionsFlip() {
+    const scroller = rowEl?.closest(".messages-scroll");
+    if (!rowEl || !scroller) {
+      actionsFlipped = false;
+      return;
+    }
+    const headroom = rowEl.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+    actionsFlipped = headroom < 26;
+  }
   let reactPickerWrap = $state<HTMLDivElement>();
   let menuWrap = $state<HTMLDivElement>();
   let addReactionButton = $state<HTMLButtonElement>();
@@ -465,23 +482,6 @@
     if (cannotReact) showReactPicker = false;
   });
 
-  $effect(() => {
-    if (!rowEl || !actionsEl || typeof ResizeObserver === "undefined") return;
-    const updateWidth = () => {
-      rowEl?.style.setProperty(
-        "--message-actions-width",
-        `${Math.ceil(actionsEl?.getBoundingClientRect().width ?? 0)}px`,
-      );
-    };
-    const observer = new ResizeObserver(updateWidth);
-    observer.observe(actionsEl);
-    updateWidth();
-    return () => {
-      observer.disconnect();
-      rowEl?.style.removeProperty("--message-actions-width");
-    };
-  });
-
   onDestroy(() => {
     destroyed = true;
     if (copyStatusTimer) window.clearTimeout(copyStatusTimer);
@@ -491,10 +491,11 @@
 
   // Virtua item wrappers carry `contain: layout style`, so each is its own
   // stacking context — a z-index inside one row can never beat a later
-  // sibling item's (invisible) hover toolbar. While a popover is open, lift
-  // the enclosing virtualized item itself.
+  // sibling item's toolbar. While a popover is open or the toolbar is shown
+  // (it straddles the row's top edge, overlapping the neighboring item),
+  // lift the enclosing virtualized item itself.
   $effect(() => {
-    if (!(showMenu || showReactPicker) || !rowEl) return;
+    if (!(showMenu || showReactPicker || rowActive) || !rowEl) return;
     let item: HTMLElement | null = rowEl.parentElement;
     while (item && item.style.position !== "absolute") item = item.parentElement;
     if (!item) return;
@@ -521,11 +522,27 @@
   class:after-preamble={followsPreamble}
   class:can-open-thread={canOpenThread}
   class:editing={editing}
-  class:menu-open={showMenu}
+  class:menu-open={showMenu || showReactPicker}
+  class:actions-flip={actionsFlipped}
   data-message-id={message.id}
   use:openThreadOnClick
   onpointerdown={handleRowPointerDown}
   oncontextmenu={handleRowContextMenu}
+  onmouseenter={() => {
+    // Measure only on the inactive → active transition. Re-measuring while
+    // already active (e.g. focusin from clicking a toolbar button) could flip
+    // the toolbar mid-click and teleport the button out from under the pointer.
+    if (!rowHovered && !rowFocused) updateActionsFlip();
+    rowHovered = true;
+  }}
+  onmouseleave={() => (rowHovered = false)}
+  onfocusin={() => {
+    if (!rowHovered && !rowFocused) updateActionsFlip();
+    rowFocused = true;
+  }}
+  onfocusout={(event) => {
+    if (!rowEl?.contains(event.relatedTarget as Node | null)) rowFocused = false;
+  }}
 >
   <span class="row-stamp" aria-hidden="true">{index === 0 ? "" : time(message.created_at)}</span>
   <div class="message-content">
@@ -607,7 +624,7 @@
     {/if}
   </div>
   {#if !preambleBlock && !isDeleted}
-  <div bind:this={actionsEl} class="message-actions" aria-label="Message actions">
+  <div class="message-actions" aria-label="Message actions">
     {#if copyStatus}
       <span
         class="message-copy-status"
