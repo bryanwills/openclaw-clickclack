@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick } from "svelte";
+  import { onDestroy, tick } from "svelte";
   import Avatar from "../avatar/Avatar.svelte";
   import { enhanceMarkdown } from "../../lib/actions/markdown";
   import {
@@ -18,6 +18,7 @@
   import QuoteBlock from "../messages/QuoteBlock.svelte";
   import ReactionsBar from "../messages/ReactionsBar.svelte";
   import AddReactionButton from "../messages/AddReactionButton.svelte";
+  import MessageActionSheet from "../messages/MessageActionSheet.svelte";
 
   type Props = {
     root: Message;
@@ -93,6 +94,7 @@
 
   let threadScroll = $state<HTMLDivElement>();
   let editSession = $derived(editController?.session(editScope));
+  const editReturnFocus = new Map<string, HTMLElement>();
   const canDelete = (message: Message) =>
     canDeleteAnyMessage ||
     (Boolean(currentUserID) && (message.author?.id || message.author_id) === currentUserID);
@@ -103,13 +105,23 @@
 
   async function restoreEditButtonFocus(messageID: string) {
     await tick();
-    threadScroll
-      ?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(messageID)}"]`)
-      ?.querySelector<HTMLButtonElement>('button[aria-label="Edit message"]')
-      ?.focus();
+    const messageElement = threadScroll?.querySelector<HTMLElement>(
+      `[data-message-id="${CSS.escape(messageID)}"]`,
+    );
+    const preferredTarget =
+      editReturnFocus.get(messageID) ??
+      messageElement?.querySelector<HTMLButtonElement>(".thread-more-actions");
+    editReturnFocus.delete(messageID);
+    if (preferredTarget?.isConnected && preferredTarget.getClientRects().length > 0) {
+      preferredTarget.focus();
+      return;
+    }
+    messageElement?.querySelector<HTMLButtonElement>('button[aria-label="Edit message"]')?.focus();
   }
 
-  function startEdit(message: Message) {
+  function startEdit(message: Message, returnFocus?: HTMLElement) {
+    if (returnFocus) editReturnFocus.set(message.id, returnFocus);
+    else editReturnFocus.delete(message.id);
     const result = editController?.start(editScope, message, "thread");
     if (result === "cancelled") void restoreEditButtonFocus(message.id);
   }
@@ -127,6 +139,166 @@
       await restoreEditButtonFocus(message.id);
     }
   }
+
+  const LONG_PRESS_MS = 450;
+  const LONG_PRESS_SLOP_PX = 10;
+  const MESSAGE_INTERACTIVE_TARGETS =
+    "a, button, input, textarea, select, .attachment-grid, .media-tile, .markdown img, .gif-player, .markdown-table-scroll";
+  let actionMessage = $state<Message>();
+  let actionSheetReturnFocus = $state<HTMLElement>();
+  let actionCopyStatus = $state<"copied" | "failed" | "">("");
+  let longPressTimer: number | undefined;
+  let longPressCleanup: (() => void) | undefined;
+  let sheetCloseTimer: number | undefined;
+  let actionSheetGeneration = 0;
+  let destroyed = false;
+
+  function actionSheetID(message: Message) {
+    return `thread-message-action-sheet-${message.id}`;
+  }
+
+  function clearLongPressTimer() {
+    if (longPressTimer === undefined) return;
+    window.clearTimeout(longPressTimer);
+    longPressTimer = undefined;
+  }
+
+  function stopLongPressTracking() {
+    longPressCleanup?.();
+    longPressCleanup = undefined;
+  }
+
+  function clearSheetCloseTimer() {
+    if (sheetCloseTimer === undefined) return;
+    window.clearTimeout(sheetCloseTimer);
+    sheetCloseTimer = undefined;
+  }
+
+  function openActionSheet(message: Message, returnFocus?: HTMLElement) {
+    clearSheetCloseTimer();
+    actionSheetGeneration += 1;
+    actionMessage = message;
+    actionSheetReturnFocus = returnFocus;
+    actionCopyStatus = "";
+  }
+
+  function closeActionSheet() {
+    clearSheetCloseTimer();
+    actionSheetGeneration += 1;
+    actionMessage = undefined;
+  }
+
+  function handleMessagePointerDown(event: PointerEvent, message: Message) {
+    if (
+      event.pointerType !== "touch" ||
+      !event.isPrimary ||
+      event.button !== 0 ||
+      message.deleted_at ||
+      message.status === "pending" ||
+      message.status === "failed" ||
+      isEditing(message)
+    ) {
+      return;
+    }
+    const target = event.target as HTMLElement | null;
+    if (target?.closest(MESSAGE_INTERACTIVE_TARGETS)) return;
+
+    stopLongPressTracking();
+    const pointerID = event.pointerId;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    longPressTimer = window.setTimeout(() => {
+      longPressTimer = undefined;
+      openActionSheet(message);
+    }, LONG_PRESS_MS);
+    const onMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerID) return;
+      if (
+        Math.abs(moveEvent.clientX - startX) > LONG_PRESS_SLOP_PX ||
+        Math.abs(moveEvent.clientY - startY) > LONG_PRESS_SLOP_PX
+      ) {
+        cleanup();
+      }
+    };
+    const stop = (endEvent: PointerEvent) => {
+      if (endEvent.pointerId !== pointerID) return;
+      cleanup();
+    };
+    const cleanup = () => {
+      clearLongPressTimer();
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+      if (longPressCleanup === cleanup) longPressCleanup = undefined;
+    };
+    longPressCleanup = cleanup;
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
+  }
+
+  function handleMessageContextMenu(event: MouseEvent) {
+    if (actionMessage || longPressTimer !== undefined) event.preventDefault();
+  }
+
+  function sheetReact(emoji: string) {
+    const message = actionMessage;
+    closeActionSheet();
+    if (
+      !message ||
+      reactionsDisabled ||
+      !currentUserID ||
+      reactionController.pending(message.id)
+    ) {
+      return;
+    }
+    void reactionController.toggle(message, emoji);
+  }
+
+  function sheetReply() {
+    const message = actionMessage;
+    closeActionSheet();
+    if (message) onSetReplyTarget(message, "thread");
+  }
+
+  async function sheetCopy() {
+    const message = actionMessage;
+    if (!message) return;
+    clearSheetCloseTimer();
+    const generation = actionSheetGeneration;
+    try {
+      if (!navigator.clipboard) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(message.body ?? "");
+      if (destroyed || actionMessage?.id !== message.id) return;
+      actionCopyStatus = "copied";
+      sheetCloseTimer = window.setTimeout(() => {
+        sheetCloseTimer = undefined;
+        if (!destroyed && generation === actionSheetGeneration) closeActionSheet();
+      }, 900);
+    } catch {
+      if (!destroyed && actionMessage?.id === message.id) actionCopyStatus = "failed";
+    }
+  }
+
+  function sheetEdit() {
+    const message = actionMessage;
+    const returnFocus = actionSheetReturnFocus;
+    closeActionSheet();
+    if (message) startEdit(message, returnFocus);
+  }
+
+  function sheetDelete() {
+    const message = actionMessage;
+    closeActionSheet();
+    if (message) onDeleteMessage?.(message);
+  }
+
+  onDestroy(() => {
+    destroyed = true;
+    clearSheetCloseTimer();
+    stopLongPressTracking();
+    editReturnFocus.clear();
+  });
 </script>
 
 <header>
@@ -166,7 +338,13 @@
   onpointerdown={onActivateThreadComposer}
   onpointerup={onInlineImagePointerUp}
 >
-  <article class="thread-root" data-message-id={root.id}>
+  <!-- svelte-ignore a11y_no_static_element_interactions (Long-press supplements the focusable More actions button.) -->
+  <article
+    class="thread-root"
+    data-message-id={root.id}
+    onpointerdown={(event) => handleMessagePointerDown(event, root)}
+    oncontextmenu={handleMessageContextMenu}
+  >
     <Avatar
       class="avatar"
       id={root.author?.id || root.author_id}
@@ -228,6 +406,21 @@
               </svg>
             </button>
           {/if}
+          <button
+            type="button"
+            class="thread-action-btn thread-more-actions"
+            aria-label="More actions"
+            aria-haspopup="dialog"
+            aria-controls={actionSheetID(root)}
+            aria-expanded={actionMessage?.id === root.id}
+            onclick={(event) => openActionSheet(root, event.currentTarget)}
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+              <g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                <circle cx="12" cy="5" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="12" cy="19" r="1.2"/>
+              </g>
+            </svg>
+          </button>
         {/if}
       </header>
       {#if root.deleted_at}
@@ -272,7 +465,13 @@
   <div class="thread-divider"><span>{replies.length} {replies.length === 1 ? "reply" : "replies"}</span></div>
   <div class="reply-list">
     {#each replies as reply (reply.id)}
-      <article class="reply" data-message-id={reply.id}>
+      <!-- svelte-ignore a11y_no_static_element_interactions (Long-press supplements the focusable More actions button.) -->
+      <article
+        class="reply"
+        data-message-id={reply.id}
+        onpointerdown={(event) => handleMessagePointerDown(event, reply)}
+        oncontextmenu={handleMessageContextMenu}
+      >
         <Avatar
           class="avatar small"
           id={reply.author?.id || reply.author_id}
@@ -335,6 +534,22 @@
                   </svg>
                 </button>
               {/if}
+              <button
+                type="button"
+                class="thread-action-btn thread-more-actions"
+                aria-label="More actions"
+                aria-haspopup="dialog"
+                aria-controls={actionSheetID(reply)}
+                aria-expanded={actionMessage?.id === reply.id}
+                disabled={reply.status === "pending" || reply.status === "failed"}
+                onclick={(event) => openActionSheet(reply, event.currentTarget)}
+              >
+                <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+                  <g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                    <circle cx="12" cy="5" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="12" cy="19" r="1.2"/>
+                  </g>
+                </svg>
+              </button>
             {/if}
           </header>
           {#if reply.deleted_at}
@@ -380,6 +595,28 @@
     {/each}
   </div>
 </div>
+{#if actionMessage}
+  <MessageActionSheet
+    id={actionSheetID(actionMessage)}
+    canReact={Boolean(currentUserID) &&
+      !reactionsDisabled &&
+      !reactionController.pending(actionMessage.id)}
+    canReply={!replyDisabled}
+    showOpenThread={false}
+    canEdit={canEdit(actionMessage) && Boolean(editController) && Boolean(editScope)}
+    canDelete={canDelete(actionMessage) && Boolean(onDeleteMessage)}
+    deleting={deletingMessageIDs.has(actionMessage.id)}
+    copyStatus={actionCopyStatus}
+    onReact={sheetReact}
+    onOpenThread={() => {}}
+    onReply={sheetReply}
+    onCopy={sheetCopy}
+    onEdit={sheetEdit}
+    onDelete={sheetDelete}
+    onClose={closeActionSheet}
+    returnFocus={actionSheetReturnFocus}
+  />
+{/if}
 <ChatComposer
   value={replyBody}
   placeholder={replyDisabled ? "No active recipient" : "Reply in thread"}

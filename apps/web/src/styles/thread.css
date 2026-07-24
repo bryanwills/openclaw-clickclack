@@ -209,6 +209,50 @@
   color: var(--danger);
 }
 
+.thread .thread-more-actions {
+  display: none;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .thread .group-body > header {
+    position: relative;
+    min-height: 28px;
+    padding-right: 32px;
+  }
+
+  .thread .reply-quote-btn,
+  .thread .thread-action-btn:not(.thread-more-actions) {
+    display: none;
+  }
+
+  .thread .thread-more-actions {
+    position: absolute;
+    right: 0;
+    top: 0;
+    display: inline-grid;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .thread .thread-more-actions:focus-visible {
+    width: 28px;
+    height: 28px;
+    margin: 0;
+    overflow: visible;
+    clip: auto;
+    clip-path: none;
+    border: 1px solid var(--line-strong);
+    background: var(--panel);
+    box-shadow: var(--shadow);
+  }
+}
+
 .reply-composer {
   --composer-card-top: 10px;
   --composer-overlay-inset-x: 14px;

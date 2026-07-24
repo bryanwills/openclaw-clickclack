@@ -652,3 +652,66 @@ test("thread roots and replies share reaction controls and realtime state", asyn
   expect(replyReaction.ok()).toBe(true);
   await expect(threadReply.getByRole("button", { name: "✅ — 1 reaction" })).toBeVisible();
 });
+
+test("touch thread messages use accessible action sheets instead of persistent controls", async ({
+  browser,
+  page,
+}) => {
+  const { suffix, workspace, channel } = await openReactionChannel(page);
+  const rootBody = `Touch thread root ${suffix}`;
+  const replyBody = `Touch thread reply ${suffix}`;
+  const rootRow = await sendMessage(page, rootBody);
+  const rootID = await rootRow.getAttribute("data-message-id");
+  expect(rootID).toBeTruthy();
+  const replyResponse = await page.request.post(`/api/messages/${rootID}/thread/replies`, {
+    data: { body: replyBody },
+  });
+  expect(replyResponse.ok()).toBe(true);
+  const { message: reply } = (await replyResponse.json()) as { message: { id: string } };
+
+  const mobileContext = await browser.newContext({
+    baseURL: new URL(page.url()).origin,
+    hasTouch: true,
+    isMobile: true,
+    viewport: { width: 390, height: 844 },
+  });
+  const mobilePage = await mobileContext.newPage();
+  await mobilePage.goto(`/app/${workspace.route_id}/${channel.route_id}`);
+  await waitForAppReady(mobilePage);
+  await mobilePage.locator(".message-row:not(.is-pending)", { hasText: rootBody }).click();
+
+  const thread = mobilePage.locator(".thread.open");
+  const threadRoot = thread.locator(`[data-message-id="${rootID}"]`);
+  const threadReply = thread.locator(`[data-message-id="${reply.id}"]`);
+  await expect(threadRoot).toBeVisible();
+  await expect(threadReply).toBeVisible();
+  await expect(threadRoot.getByRole("button", { name: "Add reaction" })).toBeHidden();
+  await expect(threadRoot.getByRole("button", { name: "Reply" })).toBeHidden();
+  await expect(threadReply.getByRole("button", { name: "Add reaction" })).toBeHidden();
+
+  const rootMore = threadRoot.getByRole("button", { name: "More actions" });
+  const sheet = mobilePage.getByRole("dialog", { name: "Message actions" });
+  const hiddenGeometry = await rootMore.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return { width: rect.width, height: rect.height };
+  });
+  expect(hiddenGeometry.width).toBeLessThanOrEqual(1);
+  expect(hiddenGeometry.height).toBeLessThanOrEqual(1);
+
+  await rootMore.focus();
+  await mobilePage.keyboard.press("Enter");
+  await expect(sheet).toBeVisible();
+  await expect(sheet.getByRole("button", { name: "Open thread" })).toHaveCount(0);
+  await sheet.getByRole("button", { name: "React with 👍" }).click();
+  await expect(sheet).toBeHidden();
+  await expect(rootMore).toBeFocused();
+  await expect(threadRoot.getByRole("button", { name: "👍 — 1 reaction" })).toBeVisible();
+
+  await threadReply.locator(".markdown").click({ delay: 600 });
+  await expect(sheet).toBeVisible();
+  await expect(sheet.getByRole("button", { name: "Reply" })).toBeVisible();
+  await mobilePage.keyboard.press("Escape");
+  await expect(sheet).toBeHidden();
+
+  await mobileContext.close();
+});
