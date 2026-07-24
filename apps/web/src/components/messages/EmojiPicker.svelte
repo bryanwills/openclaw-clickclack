@@ -1,7 +1,5 @@
-<script lang="ts">
-  import { tick } from "svelte";
-
-  const QUICK_EMOJIS = [
+<script lang="ts" module>
+  export const QUICK_EMOJIS = [
     "👍",
     "❤️",
     "😂",
@@ -15,6 +13,10 @@
     "🚀",
     "✅",
   ];
+</script>
+
+<script lang="ts">
+  import { tick } from "svelte";
 
   let {
     id,
