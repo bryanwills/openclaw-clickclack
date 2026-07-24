@@ -193,6 +193,46 @@ test("touch long-press opens a message action sheet", async ({ browser, page }) 
   await mobileContext.close();
 });
 
+test("a stale copy timer cannot close a reopened touch action sheet", async ({ browser, page }) => {
+  const { suffix, workspace, channel } = await openReactionChannel(page);
+  const body = `Touch copy lifecycle ${suffix}`;
+  await sendMessage(page, body);
+
+  const mobileContext = await browser.newContext({
+    baseURL: new URL(page.url()).origin,
+    hasTouch: true,
+    isMobile: true,
+    viewport: { width: 390, height: 844 },
+  });
+  await mobileContext.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: async () => {} },
+    });
+  });
+  const mobilePage = await mobileContext.newPage();
+  await mobilePage.goto(`/app/${workspace.route_id}/${channel.route_id}`);
+  await waitForAppReady(mobilePage);
+
+  const row = mobilePage.locator(".message-row:not(.is-pending)", { hasText: body });
+  const trigger = row.getByRole("button", { name: "More actions" });
+  const sheet = mobilePage.getByRole("dialog", { name: "Message actions" });
+  await trigger.focus();
+  await mobilePage.keyboard.press("Enter");
+  await sheet.getByRole("button", { name: "Copy text" }).click();
+  await expect(sheet.getByText("Copied", { exact: true })).toBeVisible();
+
+  await mobilePage.getByRole("button", { name: "Close message actions" }).click();
+  await expect(sheet).toBeHidden();
+  await trigger.focus();
+  await mobilePage.keyboard.press("Enter");
+  await expect(sheet).toBeVisible();
+  await mobilePage.waitForTimeout(1_000);
+  await expect(sheet).toBeVisible();
+
+  await mobileContext.close();
+});
+
 test("a newer realtime event wins over a delayed mutation response", async ({ page }) => {
   const { suffix } = await openReactionChannel(page);
   const row = await sendMessage(page, `Reaction mutation race ${suffix}`);
