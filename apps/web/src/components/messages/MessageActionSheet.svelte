@@ -9,6 +9,7 @@
     id,
     canReact = false,
     canReply = false,
+    showOpenThread = true,
     canOpenThread = false,
     canEdit = false,
     canDelete = false,
@@ -26,6 +27,7 @@
     id: string;
     canReact?: boolean;
     canReply?: boolean;
+    showOpenThread?: boolean;
     canOpenThread?: boolean;
     canEdit?: boolean;
     canDelete?: boolean;
@@ -137,16 +139,18 @@
       {/each}
     </div>
     <div class="sheet-actions">
-      <button
-        type="button"
-        disabled={!canOpenThread}
-        onclick={() => runAndClose(onOpenThread)}
-      >
-        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-          <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 12a8 8 0 0 1-11.6 7.16L3 21l1.84-6.4A8 8 0 1 1 21 12Z"/>
-        </svg>
-        Open thread
-      </button>
+      {#if showOpenThread}
+        <button
+          type="button"
+          disabled={!canOpenThread}
+          onclick={() => runAndClose(onOpenThread)}
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+            <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 12a8 8 0 0 1-11.6 7.16L3 21l1.84-6.4A8 8 0 1 1 21 12Z"/>
+          </svg>
+          Open thread
+        </button>
+      {/if}
       <button type="button" disabled={!canReply} onclick={() => runAndClose(onReply)}>
         <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
           <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M9 17 4 12l5-5M4 12h11a5 5 0 0 1 5 5v3"/>
