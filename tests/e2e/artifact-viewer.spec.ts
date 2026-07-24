@@ -1278,6 +1278,8 @@ test("returns to the routed thread after closing an artifact", async ({ page }) 
 
   const message = page.locator(`[data-message-id="${messages["thread-proof.md"]}"]`);
   const parentPath = new URL(page.url()).pathname;
+  // The hover toolbar ignores pointer events until the row is really hovered.
+  await message.hover();
   await message.getByRole("button", { name: "Open thread", exact: true }).click();
   const thread = page.getByRole("complementary", { name: "Thread pane" });
   await expect(thread).toBeVisible();

@@ -1616,6 +1616,8 @@ test("sends messages, searches, uploads, opens a thread, and creates a DM", asyn
   const threadedRow = page
     .locator(".message-row")
     .filter({ has: page.locator(".markdown").filter({ hasText: "hello playwright" }) });
+  // The hover toolbar ignores pointer events until the row is really hovered.
+  await threadedRow.hover();
   await threadedRow.getByRole("button", { name: "Open thread" }).click();
   await expect(page.getByLabel("Thread pane")).toBeVisible();
 

@@ -47,6 +47,7 @@ async function createOwnedMessage(page: Page, label: string) {
 test("message action menu supports standard keyboard navigation", async ({ page }) => {
   const { row } = await createOwnedMessage(page, "Keyboard menu");
   const trigger = row.getByRole("button", { name: "More actions" });
+  await row.hover();
   await trigger.click();
 
   const copy = row.getByRole("menuitem", { name: "Copy text" });
@@ -91,6 +92,7 @@ test("copy message text reports success and failure", async ({ page }) => {
   });
 
   const trigger = row.getByRole("button", { name: "More actions" });
+  await row.hover();
   await trigger.click();
   await row.getByRole("menuitem", { name: "Copy text" }).click();
   await expect(row.locator(".message-copy-status")).toHaveText("Copied");
@@ -106,6 +108,7 @@ test("copy message text reports success and failure", async ({ page }) => {
       },
     });
   });
+  await row.hover();
   await trigger.click();
   await row.getByRole("menuitem", { name: "Copy text" }).click();
   await expect(row.locator(".message-copy-status")).toHaveText("Couldn't copy");
@@ -186,6 +189,7 @@ test("message edits persist in channels and threads", async ({ page }) => {
   await expect(channelRow.getByText("(edited)")).toBeVisible();
   await expect(channelRow.getByRole("button", { name: "✅ — 1 reaction" })).toBeVisible();
 
+  await channelRow.hover();
   await channelRow.getByRole("button", { name: "Open thread" }).click();
   const threadPane = page.getByLabel("Thread pane", { exact: true });
   await expect(threadPane).toBeVisible();
@@ -210,6 +214,7 @@ test("message edits persist in channels and threads", async ({ page }) => {
   await threadRoot.getByLabel("Edit message").fill("Discarded thread-root draft");
   await threadPane.getByRole("button", { name: "Close thread" }).click();
   await expect(threadRoot).not.toBeVisible();
+  await channelRow.hover();
   await channelRow.getByRole("button", { name: "Open thread" }).click();
   await expect(threadPane).toBeVisible();
   await expect(threadPane.locator('textarea[aria-label="Edit message"]')).toHaveCount(0);
@@ -224,6 +229,7 @@ test("message edits persist in channels and threads", async ({ page }) => {
   await openTimelineEditor(channelRow);
   await expect(channelRow.getByLabel("Edit message")).toBeFocused();
   await channelRow.getByLabel("Edit message").press("Escape");
+  await channelRow.hover();
   await channelRow.getByRole("button", { name: "Open thread" }).click();
   await expect(threadPane).toBeVisible();
   const originalReply = `Original thread reply ${suffix}`;
