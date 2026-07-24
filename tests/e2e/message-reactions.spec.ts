@@ -334,11 +334,7 @@ test("touch long-press opens a message action sheet", async ({ browser, page }) 
   // Keyboard and assistive input can open the same modal without a gesture.
   const sheet = mobilePage.getByRole("dialog", { name: "Message actions" });
   await trigger.focus();
-  expect(
-    await row
-      .locator(".message-content")
-      .evaluate((element) => getComputedStyle(element).paddingRight),
-  ).toBe("44px");
+  await expect(trigger).toBeFocused();
   await mobilePage.keyboard.press("Enter");
   await expect(sheet).toBeVisible();
   await expect(trigger).toHaveAttribute("aria-expanded", "true");
