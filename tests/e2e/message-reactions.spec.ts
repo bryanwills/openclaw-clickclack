@@ -102,6 +102,81 @@ test("reaction mutations are accessible, authoritative, persistent, and realtime
   expect(messageRefreshes).toBe(0);
 });
 
+test("desktop message actions stay clear of message content", async ({ page }) => {
+  const { suffix } = await openReactionChannel(page);
+  const row = await sendMessage(
+    page,
+    `Desktop action placement ${suffix} keeps the first line readable.`,
+  );
+  await row.hover();
+
+  const geometry = await row.evaluate((element) => {
+    const actions = element.querySelector<HTMLElement>(".message-actions");
+    const content = element.querySelector<HTMLElement>(".markdown");
+    if (!actions || !content) throw new Error("message actions missing");
+
+    const rowRect = element.getBoundingClientRect();
+    const actionsRect = actions.getBoundingClientRect();
+    const textRects: DOMRect[] = [];
+    const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      if (!node.textContent?.trim()) continue;
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      textRects.push(...range.getClientRects());
+    }
+
+    return {
+      actionsBottom: actionsRect.bottom,
+      rowTop: rowRect.top,
+      overlapsText: textRects.some(
+        (rect) =>
+          actionsRect.left < rect.right &&
+          actionsRect.right > rect.left &&
+          actionsRect.top < rect.bottom &&
+          actionsRect.bottom > rect.top,
+      ),
+    };
+  });
+
+  expect(geometry.actionsBottom).toBeLessThanOrEqual(geometry.rowTop + 0.5);
+  expect(geometry.overlapsText).toBe(false);
+});
+
+test("right-edge message action tooltips stay inside the message viewport", async ({ page }) => {
+  const { suffix } = await openReactionChannel(page);
+  const row = await sendMessage(page, `Desktop tooltip placement ${suffix}`);
+  await row.hover();
+  const trigger = row.getByRole("button", { name: "More actions" });
+  await trigger.hover();
+
+  const geometry = await trigger.evaluate((element) => {
+    const scroller = element.closest<HTMLElement>(".messages-scroll");
+    if (!scroller) throw new Error("message scroller missing");
+
+    const triggerRect = element.getBoundingClientRect();
+    const scrollerRect = scroller.getBoundingClientRect();
+    const tooltipStyle = getComputedStyle(element, "::before");
+    const tooltipWidth =
+      Number.parseFloat(tooltipStyle.width) +
+      Number.parseFloat(tooltipStyle.paddingLeft) +
+      Number.parseFloat(tooltipStyle.paddingRight) +
+      Number.parseFloat(tooltipStyle.borderLeftWidth) +
+      Number.parseFloat(tooltipStyle.borderRightWidth);
+    const tooltipRight = triggerRect.right - Number.parseFloat(tooltipStyle.right);
+    return {
+      tooltipLeft: tooltipRight - tooltipWidth,
+      tooltipRight,
+      scrollerLeft: scrollerRect.left,
+      scrollerRight: scrollerRect.right,
+    };
+  });
+
+  expect(geometry.tooltipLeft).toBeGreaterThanOrEqual(geometry.scrollerLeft - 0.5);
+  expect(geometry.tooltipRight).toBeLessThanOrEqual(geometry.scrollerRight + 0.5);
+});
+
 test("touch long-press opens a message action sheet", async ({ browser, page }) => {
   const { suffix, workspace, channel } = await openReactionChannel(page);
   const body = `Touch action layout ${suffix}`;
