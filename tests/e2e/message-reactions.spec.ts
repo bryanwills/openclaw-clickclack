@@ -233,6 +233,52 @@ test("a stale copy timer cannot close a reopened touch action sheet", async ({ b
   await mobileContext.close();
 });
 
+test("touch action sheets remain usable in short landscape viewports", async ({
+  browser,
+  page,
+}) => {
+  const { suffix, workspace, channel } = await openReactionChannel(page);
+  const body = `Touch landscape layout ${suffix}`;
+  await sendMessage(page, body);
+
+  const mobileContext = await browser.newContext({
+    baseURL: new URL(page.url()).origin,
+    hasTouch: true,
+    isMobile: true,
+    viewport: { width: 667, height: 240 },
+  });
+  const mobilePage = await mobileContext.newPage();
+  await mobilePage.goto(`/app/${workspace.route_id}/${channel.route_id}`);
+  await waitForAppReady(mobilePage);
+
+  const row = mobilePage.locator(".message-row:not(.is-pending)", { hasText: body });
+  await row.locator(".message-content").click({ delay: 600 });
+  const sheet = mobilePage.getByRole("dialog", { name: "Message actions" });
+  await expect(sheet).toBeVisible();
+
+  const geometry = await sheet.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    return {
+      top: box.top,
+      bottom: box.bottom,
+      viewportHeight: window.innerHeight,
+      clientHeight: element.clientHeight,
+      scrollHeight: element.scrollHeight,
+      overflowY: getComputedStyle(element).overflowY,
+    };
+  });
+  expect(geometry.top).toBeGreaterThanOrEqual(0);
+  expect(geometry.bottom).toBeLessThanOrEqual(geometry.viewportHeight + 0.5);
+  expect(geometry.scrollHeight).toBeGreaterThan(geometry.clientHeight);
+  expect(geometry.overflowY).toBe("auto");
+
+  const deleteButton = sheet.getByRole("button", { name: "Delete message" });
+  await deleteButton.scrollIntoViewIfNeeded();
+  await expect(deleteButton).toBeVisible();
+
+  await mobileContext.close();
+});
+
 test("a newer realtime event wins over a delayed mutation response", async ({ page }) => {
   const { suffix } = await openReactionChannel(page);
   const row = await sendMessage(page, `Reaction mutation race ${suffix}`);
