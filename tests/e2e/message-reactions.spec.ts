@@ -120,6 +120,7 @@ test("touch long-press opens a message action sheet", async ({ browser, page }) 
   await expect(row).toBeVisible();
 
   const trigger = row.getByRole("button", { name: "More actions" });
+  expect(await trigger.getAttribute("data-tooltip")).toBeNull();
 
   // Touch hides persistent controls without removing the accessible sheet trigger.
   for (const width of [390, 320]) {

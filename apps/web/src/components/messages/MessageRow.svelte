@@ -662,7 +662,7 @@
         type="button"
         aria-label="More actions"
         class="message-actions-trigger tooltip"
-        data-tooltip="More actions"
+        data-tooltip={coarsePointer ? undefined : "More actions"}
         aria-haspopup={coarsePointer ? "dialog" : "menu"}
         aria-controls={coarsePointer ? actionSheetId : undefined}
         aria-expanded={coarsePointer ? showActionSheet : showMenu}
