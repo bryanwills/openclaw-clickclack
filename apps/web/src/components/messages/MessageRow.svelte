@@ -7,6 +7,7 @@
   import { uploadURL } from "../../lib/uploads";
   import ReactionsBar from "./ReactionsBar.svelte";
   import EmojiPicker from "./EmojiPicker.svelte";
+  import MessageActionSheet from "./MessageActionSheet.svelte";
   import { shouldOpenUpward } from "../../lib/popover";
   import type { ReactionController } from "../../lib/reactions.svelte";
   import type { Message, Upload } from "../../lib/types";
@@ -131,6 +132,13 @@
   );
 
   function openThreadFromRow(event: MouseEvent) {
+    if (suppressRowClick || showActionSheet) {
+      // A long-press just opened the action sheet; swallow the synthetic click.
+      suppressRowClick = false;
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     if (!canOpenThread) return;
     if (window.getSelection()?.toString()) return;
     const target = event.target as HTMLElement | null;
@@ -167,6 +175,7 @@
   let addReactionButton = $state<HTMLButtonElement>();
   let moreButton = $state<HTMLButtonElement>();
   let copyStatusTimer: number | undefined;
+  let sheetCloseTimer: number | undefined;
   let destroyed = false;
   let reactPickerId = $derived(`toolbar-reaction-picker-${message.id}`);
   let reactionPending = $derived(reactionController.pending(message.id));
@@ -202,6 +211,14 @@
     if (!showMenu) return;
     await tick();
     menuItems()[0]?.focus();
+  }
+
+  function handleMoreActions() {
+    if (coarsePointer) {
+      openActionSheet(moreButton);
+      return;
+    }
+    void toggleMenu();
   }
 
   function closeMenu(refocus = true) {
@@ -255,12 +272,18 @@
 
   async function copyMessageText() {
     closeMenu();
+    await writeMessageToClipboard();
+  }
+
+  async function writeMessageToClipboard(): Promise<boolean> {
     try {
       if (!navigator.clipboard) throw new Error("Clipboard unavailable");
       await navigator.clipboard.writeText(message.body ?? "");
       setCopyStatus("copied");
+      return true;
     } catch {
       setCopyStatus("failed");
+      return false;
     }
   }
 
@@ -269,18 +292,149 @@
     handleEditStart();
   }
 
-  function menuOpenThread() {
+  function menuDelete() {
     closeMenu(false);
+    onDeleteMessage?.(message);
+  }
+
+  // ---- Touch: long-press opens a bottom action sheet ----
+  const LONG_PRESS_MS = 450;
+  const LONG_PRESS_SLOP_PX = 10;
+  const coarseQuery =
+    typeof window !== "undefined" ? window.matchMedia("(hover: none), (pointer: coarse)") : null;
+  let coarsePointer = $state(coarseQuery?.matches ?? false);
+  let showActionSheet = $state(false);
+  let longPressTimer: number | undefined;
+  let longPressCleanup: (() => void) | undefined;
+  let actionSheetGeneration = 0;
+  let actionSheetReturnFocus = $state<HTMLElement>();
+  let suppressRowClick = false;
+  let actionSheetId = $derived(`message-action-sheet-${message.id}`);
+
+  $effect(() => {
+    if (!coarseQuery) return;
+    const onChange = () => {
+      coarsePointer = coarseQuery.matches;
+    };
+    coarseQuery.addEventListener("change", onChange);
+    return () => coarseQuery.removeEventListener("change", onChange);
+  });
+
+  function clearLongPressTimer() {
+    if (longPressTimer === undefined) return;
+    window.clearTimeout(longPressTimer);
+    longPressTimer = undefined;
+  }
+
+  function stopLongPressTracking() {
+    longPressCleanup?.();
+    longPressCleanup = undefined;
+  }
+
+  function clearSheetCloseTimer() {
+    if (sheetCloseTimer === undefined) return;
+    window.clearTimeout(sheetCloseTimer);
+    sheetCloseTimer = undefined;
+  }
+
+  function openActionSheet(returnFocus?: HTMLElement) {
+    clearSheetCloseTimer();
+    actionSheetGeneration += 1;
+    actionSheetReturnFocus = returnFocus;
+    showMenu = false;
+    showReactPicker = false;
+    showActionSheet = true;
+  }
+
+  function handleRowPointerDown(event: PointerEvent) {
+    if (!coarsePointer || preambleBlock || isDeleted || isPending || isFailed || editing) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.closest("a, button, input, textarea, select")) return;
+    stopLongPressTracking();
+    const pointerID = event.pointerId;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    longPressTimer = window.setTimeout(() => {
+      longPressTimer = undefined;
+      suppressRowClick = true;
+      openActionSheet();
+    }, LONG_PRESS_MS);
+    const onMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerID) return;
+      if (
+        Math.abs(moveEvent.clientX - startX) > LONG_PRESS_SLOP_PX ||
+        Math.abs(moveEvent.clientY - startY) > LONG_PRESS_SLOP_PX
+      ) {
+        cleanup();
+      }
+    };
+    const stop = (endEvent: PointerEvent) => {
+      if (endEvent.pointerId !== pointerID) return;
+      cleanup();
+    };
+    const cleanup = () => {
+      clearLongPressTimer();
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+      if (longPressCleanup === cleanup) longPressCleanup = undefined;
+    };
+    longPressCleanup = cleanup;
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
+  }
+
+  function handleRowContextMenu(event: MouseEvent) {
+    // Long-press must not additionally pop the native context menu on touch.
+    if (coarsePointer && (showActionSheet || longPressTimer !== undefined)) {
+      event.preventDefault();
+    }
+  }
+
+  function closeActionSheet() {
+    clearSheetCloseTimer();
+    actionSheetGeneration += 1;
+    showActionSheet = false;
+    // The sheet's scrim can swallow the long-press mouseup, so the suppressed
+    // click may never reach the row — clear the flag on close either way.
+    suppressRowClick = false;
+  }
+
+  function sheetReact(emoji: string) {
+    closeActionSheet();
+    if (cannotReact) return;
+    void reactionController.toggle(message, emoji);
+  }
+
+  function sheetOpenThread() {
+    closeActionSheet();
     onOpenThread(message);
   }
 
-  function menuReply() {
-    closeMenu(false);
+  function sheetReply() {
+    closeActionSheet();
     onReply(message, replyContext);
   }
 
-  function menuDelete() {
-    closeMenu(false);
+  async function sheetCopy() {
+    clearSheetCloseTimer();
+    const generation = actionSheetGeneration;
+    const copied = await writeMessageToClipboard();
+    if (!copied || !showActionSheet || generation !== actionSheetGeneration) return;
+    sheetCloseTimer = window.setTimeout(() => {
+      sheetCloseTimer = undefined;
+      if (!destroyed && generation === actionSheetGeneration) closeActionSheet();
+    }, 900);
+  }
+
+  function sheetEdit() {
+    closeActionSheet();
+    handleEditStart();
+  }
+
+  function sheetDelete() {
+    closeActionSheet();
     onDeleteMessage?.(message);
   }
 
@@ -306,6 +460,8 @@
   onDestroy(() => {
     destroyed = true;
     if (copyStatusTimer) window.clearTimeout(copyStatusTimer);
+    clearSheetCloseTimer();
+    stopLongPressTracking();
   });
 
   // Virtua item wrappers carry `contain: layout style`, so each is its own
@@ -325,6 +481,7 @@
   });
 </script>
 
+<!-- svelte-ignore a11y_no_static_element_interactions (Long-press supplements the focusable More actions button.) -->
 <div
   bind:this={rowEl}
   class="message-row"
@@ -342,6 +499,8 @@
   class:menu-open={showMenu}
   data-message-id={message.id}
   use:openThreadOnClick
+  onpointerdown={handleRowPointerDown}
+  oncontextmenu={handleRowContextMenu}
 >
   <span class="row-stamp" aria-hidden="true">{index === 0 ? "" : time(message.created_at)}</span>
   <div class="message-content">
@@ -502,12 +661,13 @@
         bind:this={moreButton}
         type="button"
         aria-label="More actions"
-        class="tooltip"
+        class="message-actions-trigger tooltip"
         data-tooltip="More actions"
-        aria-haspopup="menu"
-        aria-expanded={showMenu}
+        aria-haspopup={coarsePointer ? "dialog" : "menu"}
+        aria-controls={coarsePointer ? actionSheetId : undefined}
+        aria-expanded={coarsePointer ? showActionSheet : showMenu}
         disabled={isPending || isFailed}
-        onclick={toggleMenu}
+        onclick={handleMoreActions}
       >
         <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
           <g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -532,30 +692,6 @@
               </g>
             </svg>
             Copy text
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            class="message-menu-touch-only"
-            disabled={isPending || isFailed}
-            onclick={menuOpenThread}
-          >
-            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-              <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 12a8 8 0 0 1-11.6 7.16L3 21l1.84-6.4A8 8 0 1 1 21 12Z"/>
-            </svg>
-            Open thread
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            class="message-menu-touch-only"
-            disabled={isPending || isFailed}
-            onclick={menuReply}
-          >
-            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-              <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M9 17 4 12l5-5M4 12h11a5 5 0 0 1 5 5v3"/>
-            </svg>
-            Reply
           </button>
           {#if canEditMessage && editController && editScope && !editing}
             <div class="menu-sep" role="separator"></div>
@@ -586,5 +722,25 @@
       {/if}
     </div>
   </div>
+  {/if}
+  {#if showActionSheet}
+    <MessageActionSheet
+      id={actionSheetId}
+      canReact={!cannotReact}
+      canReply={!isPending && !isFailed}
+      canOpenThread={canOpenThread}
+      canEdit={canEditMessage && Boolean(editController) && Boolean(editScope) && !editing}
+      canDelete={canDeleteMessage && Boolean(onDeleteMessage)}
+      {deleting}
+      {copyStatus}
+      onReact={sheetReact}
+      onOpenThread={sheetOpenThread}
+      onReply={sheetReply}
+      onCopy={sheetCopy}
+      onEdit={sheetEdit}
+      onDelete={sheetDelete}
+      onClose={closeActionSheet}
+      returnFocus={actionSheetReturnFocus}
+    />
   {/if}
 </div>

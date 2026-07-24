@@ -1182,28 +1182,61 @@
   z-index: 6;
 }
 
-.message-menu .message-menu-touch-only {
-  display: none;
-}
-
 @media (hover: none), (pointer: coarse) {
+  /* Touch devices use the long-press action sheet instead of the hover toolbar. */
   .message-actions {
-    position: static;
-    width: max-content;
-    margin: 4px 0 0 auto;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
     opacity: 1;
+    overflow: visible;
     transform: none;
   }
 
-  .message-actions > .message-action-react,
-  .message-actions > .message-action-thread,
-  .message-actions > .message-action-reply,
-  .message-actions > .action-sep {
+  .message-actions > :not(.message-more) {
     display: none;
   }
 
-  .message-menu .message-menu-touch-only {
-    display: flex;
+  .message-actions .message-more {
+    position: static;
+  }
+
+  .message-actions .message-actions-trigger {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .message-actions .message-actions-trigger:focus-visible {
+    right: 0;
+    top: 0;
+    width: 36px;
+    height: 36px;
+    margin: 0;
+    overflow: visible;
+    clip: auto;
+    clip-path: none;
+    border: 1px solid var(--line-strong);
+    background: var(--panel);
+    box-shadow: var(--shadow);
+  }
+
+  .message-row {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  .message-row .markdown {
+    -webkit-touch-callout: none;
   }
 }
 
@@ -1242,6 +1275,145 @@
 }
 
 .message-copy-status.is-error {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
+}
+
+/* Long-press bottom action sheet (touch devices). Portaled to <body>. */
+.message-sheet-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  background: rgba(5, 8, 15, 0.4);
+}
+
+.message-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.message-action-sheet {
+  position: relative;
+  z-index: 1;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: 16px 16px 0 0;
+  max-height: calc(100dvh - 16px - env(safe-area-inset-top, 0px));
+  padding: 8px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  animation: sheet-rise 160ms ease-out;
+}
+
+@keyframes sheet-rise {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .message-action-sheet {
+    animation: none;
+  }
+}
+
+.message-action-sheet .sheet-grabber {
+  width: 36px;
+  height: 4px;
+  margin: 0 auto 8px;
+  border-radius: 999px;
+  background: var(--line-strong);
+}
+
+.message-action-sheet .sheet-emoji-row {
+  display: flex;
+  justify-content: space-around;
+  gap: 4px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.message-action-sheet .sheet-emoji-row button {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.message-action-sheet .sheet-emoji-row button:active {
+  background: var(--hover-strong);
+}
+
+.message-action-sheet .sheet-actions {
+  display: flex;
+  flex-direction: column;
+  padding-top: 4px;
+}
+
+.message-action-sheet .sheet-actions button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-strong);
+  font-size: 15px;
+  text-align: left;
+}
+
+.message-action-sheet .sheet-actions button:active {
+  background: var(--hover-strong);
+}
+
+.message-action-sheet .sheet-actions button:disabled {
+  opacity: 0.45;
+}
+
+.message-action-sheet .sheet-actions svg {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.message-action-sheet .sheet-danger,
+.message-action-sheet .sheet-danger svg {
+  color: var(--danger);
+}
+
+.message-action-sheet .sheet-copy-status {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.message-action-sheet .sheet-copy-status.is-error {
   background: color-mix(in srgb, var(--danger) 10%, transparent);
   color: var(--danger);
 }
