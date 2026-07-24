@@ -1230,6 +1230,10 @@
     box-shadow: var(--shadow);
   }
 
+  .message-row:has(.message-actions-trigger:focus-visible) .message-content {
+    padding-right: 44px;
+  }
+
   .message-row {
     -webkit-user-select: none;
     user-select: none;

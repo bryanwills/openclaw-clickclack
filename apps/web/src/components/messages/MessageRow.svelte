@@ -661,7 +661,8 @@
         bind:this={moreButton}
         type="button"
         aria-label="More actions"
-        class="message-actions-trigger tooltip"
+        class="message-actions-trigger"
+        class:tooltip={!coarsePointer}
         data-tooltip={coarsePointer ? undefined : "More actions"}
         aria-haspopup={coarsePointer ? "dialog" : "menu"}
         aria-controls={coarsePointer ? actionSheetId : undefined}
