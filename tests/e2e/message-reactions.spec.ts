@@ -104,43 +104,57 @@ test("reaction mutations are accessible, authoritative, persistent, and realtime
 
 test("desktop message actions stay clear of message content", async ({ page }) => {
   const { suffix } = await openReactionChannel(page);
+  const previousRow = await sendMessage(page, `Desktop action neighbor ${suffix}`);
   const row = await sendMessage(
     page,
     `Desktop action placement ${suffix} keeps the first line readable.`,
   );
   await row.hover();
 
-  const geometry = await row.evaluate((element) => {
-    const actions = element.querySelector<HTMLElement>(".message-actions");
-    const content = element.querySelector<HTMLElement>(".markdown");
-    if (!actions || !content) throw new Error("message actions missing");
+  const geometry = await row.evaluate(
+    (element, previousMessageID) => {
+      const actions = element.querySelector<HTMLElement>(".message-actions");
+      const content = element.querySelector<HTMLElement>(".markdown");
+      const previous = document.querySelector<HTMLElement>(
+        `[data-message-id="${CSS.escape(previousMessageID)}"]`,
+      );
+      if (!actions || !content) throw new Error("message actions missing");
+      if (!previous) throw new Error("previous message missing");
 
-    const rowRect = element.getBoundingClientRect();
-    const actionsRect = actions.getBoundingClientRect();
-    const textRects: DOMRect[] = [];
-    const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT);
-    while (walker.nextNode()) {
-      const node = walker.currentNode;
-      if (!node.textContent?.trim()) continue;
-      const range = document.createRange();
-      range.selectNodeContents(node);
-      textRects.push(...range.getClientRects());
-    }
+      const rowRect = element.getBoundingClientRect();
+      const actionsRect = actions.getBoundingClientRect();
+      const textRects = [content, previous].flatMap((container) => {
+        const rects: DOMRect[] = [];
+        const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+        while (walker.nextNode()) {
+          const node = walker.currentNode;
+          if (!node.textContent?.trim()) continue;
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          rects.push(...range.getClientRects());
+        }
+        return rects;
+      });
 
-    return {
-      actionsBottom: actionsRect.bottom,
-      rowTop: rowRect.top,
-      overlapsText: textRects.some(
-        (rect) =>
-          actionsRect.left < rect.right &&
-          actionsRect.right > rect.left &&
-          actionsRect.top < rect.bottom &&
-          actionsRect.bottom > rect.top,
-      ),
-    };
-  });
+      return {
+        actionsTop: actionsRect.top,
+        actionsBottom: actionsRect.bottom,
+        rowTop: rowRect.top,
+        rowBottom: rowRect.bottom,
+        overlapsText: textRects.some(
+          (rect) =>
+            actionsRect.left < rect.right &&
+            actionsRect.right > rect.left &&
+            actionsRect.top < rect.bottom &&
+            actionsRect.bottom > rect.top,
+        ),
+      };
+    },
+    (await previousRow.getAttribute("data-message-id"))!,
+  );
 
-  expect(geometry.actionsBottom).toBeLessThanOrEqual(geometry.rowTop + 0.5);
+  expect(geometry.actionsTop).toBeGreaterThanOrEqual(geometry.rowTop - 0.5);
+  expect(geometry.actionsBottom).toBeLessThanOrEqual(geometry.rowBottom + 0.5);
   expect(geometry.overlapsText).toBe(false);
 });
 

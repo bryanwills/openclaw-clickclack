@@ -170,6 +170,7 @@
   let reactPickerUp = $state(false);
   let menuUp = $state(false);
   let rowEl = $state<HTMLDivElement>();
+  let actionsEl = $state<HTMLDivElement>();
   let reactPickerWrap = $state<HTMLDivElement>();
   let menuWrap = $state<HTMLDivElement>();
   let addReactionButton = $state<HTMLButtonElement>();
@@ -457,6 +458,23 @@
     if (cannotReact) showReactPicker = false;
   });
 
+  $effect(() => {
+    if (!rowEl || !actionsEl || typeof ResizeObserver === "undefined") return;
+    const updateWidth = () => {
+      rowEl?.style.setProperty(
+        "--message-actions-width",
+        `${Math.ceil(actionsEl?.getBoundingClientRect().width ?? 0)}px`,
+      );
+    };
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(actionsEl);
+    updateWidth();
+    return () => {
+      observer.disconnect();
+      rowEl?.style.removeProperty("--message-actions-width");
+    };
+  });
+
   onDestroy(() => {
     destroyed = true;
     if (copyStatusTimer) window.clearTimeout(copyStatusTimer);
@@ -582,7 +600,7 @@
     {/if}
   </div>
   {#if !preambleBlock && !isDeleted}
-  <div class="message-actions" aria-label="Message actions">
+  <div bind:this={actionsEl} class="message-actions" aria-label="Message actions">
     {#if copyStatus}
       <span
         class="message-copy-status"

@@ -1091,7 +1091,17 @@
 }
 
 .message-content {
+  display: flow-root;
   min-width: 0;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .message-row:has(.message-actions) .message-content::before {
+    content: "";
+    float: right;
+    width: calc(var(--message-actions-width, 260px) + 8px);
+    height: 34px;
+  }
 }
 
 /* Thread summary as a quiet link row (Slack model): plain text at rest —
@@ -1153,20 +1163,16 @@
   display: flex;
   align-items: flex-start;
   gap: 4px;
-  padding-right: 12px;
   opacity: 0;
-  transform: translateY(calc(-100% - 4px));
   position: absolute;
   right: 8px;
-  top: 0;
+  top: 1px;
   background: var(--panel);
   border: 1px solid var(--line-strong);
   border-radius: 8px;
   padding: 2px;
   box-shadow: var(--shadow);
-  transition:
-    opacity 100ms ease,
-    transform 100ms ease;
+  transition: opacity 100ms ease;
 }
 
 .message-row:hover .message-actions,
@@ -2486,10 +2492,7 @@
   padding-left: 42px;
 }
 
-:root[data-density="compact"][data-user-align="right"]
-  .message-group.is-self
-  .group-body
-  > header,
+:root[data-density="compact"][data-user-align="right"] .message-group.is-self .group-body > header,
 :root[data-density="compact"][data-other-align="right"]
   .message-group:not(.is-self)
   .group-body
@@ -2515,9 +2518,7 @@
 }
 
 :root[data-density="compact"][data-user-align="right"] .message-group.is-self .message-row,
-:root[data-density="compact"][data-other-align="right"]
-  .message-group:not(.is-self)
-  .message-row {
+:root[data-density="compact"][data-other-align="right"] .message-group:not(.is-self) .message-row {
   margin-left: -18px;
   margin-right: -42px;
   padding-left: 18px;
@@ -2565,9 +2566,7 @@
 /* Outlined rows and headers never bleed into the gutters, in any alignment or
    density combination. Kept last so it outranks the standard and compact
    right-aligned bleed rules above. */
-:root[data-message-layout="outlined"][data-user-align="right"]
-  .message-group.is-self
-  .message-row,
+:root[data-message-layout="outlined"][data-user-align="right"] .message-group.is-self .message-row,
 :root[data-message-layout="outlined"][data-other-align="right"]
   .message-group:not(.is-self)
   .message-row,
