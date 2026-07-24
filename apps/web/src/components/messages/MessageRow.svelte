@@ -663,6 +663,7 @@
         aria-label="More actions"
         class="message-actions-trigger"
         class:tooltip={!coarsePointer}
+        class:tooltip-align-end={!coarsePointer}
         data-tooltip={coarsePointer ? undefined : "More actions"}
         aria-haspopup={coarsePointer ? "dialog" : "menu"}
         aria-controls={coarsePointer ? actionSheetId : undefined}
