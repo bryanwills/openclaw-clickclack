@@ -142,13 +142,7 @@
     if (!canOpenThread) return;
     if (window.getSelection()?.toString()) return;
     const target = event.target as HTMLElement | null;
-    if (
-      target?.closest(
-        "a, button, input, textarea, select, .attachment-grid, .media-tile, .markdown img, .gif-player, .markdown-table-scroll, .message-actions, .message-failed"
-      )
-    ) {
-      return;
-    }
+    if (target?.closest(MESSAGE_INTERACTIVE_TARGETS)) return;
     onOpenThread(message);
   }
 
@@ -301,6 +295,8 @@
   // ---- Touch: long-press opens a bottom action sheet ----
   const LONG_PRESS_MS = 450;
   const LONG_PRESS_SLOP_PX = 10;
+  const MESSAGE_INTERACTIVE_TARGETS =
+    "a, button, input, textarea, select, .attachment-grid, .media-tile, .markdown img, .gif-player, .markdown-table-scroll, .message-actions, .message-failed";
   const coarseQuery =
     typeof window !== "undefined" ? window.matchMedia("(hover: none), (pointer: coarse)") : null;
   let coarsePointer = $state(coarseQuery?.matches ?? false);
@@ -348,9 +344,20 @@
   }
 
   function handleRowPointerDown(event: PointerEvent) {
-    if (!coarsePointer || preambleBlock || isDeleted || isPending || isFailed || editing) return;
+    if (
+      event.pointerType !== "touch" ||
+      !event.isPrimary ||
+      event.button !== 0 ||
+      preambleBlock ||
+      isDeleted ||
+      isPending ||
+      isFailed ||
+      editing
+    ) {
+      return;
+    }
     const target = event.target as HTMLElement | null;
-    if (target?.closest("a, button, input, textarea, select")) return;
+    if (target?.closest(MESSAGE_INTERACTIVE_TARGETS)) return;
     stopLongPressTracking();
     const pointerID = event.pointerId;
     const startX = event.clientX;
@@ -388,7 +395,7 @@
 
   function handleRowContextMenu(event: MouseEvent) {
     // Long-press must not additionally pop the native context menu on touch.
-    if (coarsePointer && (showActionSheet || longPressTimer !== undefined)) {
+    if (showActionSheet || longPressTimer !== undefined) {
       event.preventDefault();
     }
   }

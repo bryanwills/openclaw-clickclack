@@ -259,8 +259,21 @@ test("touch long-press opens a message action sheet", async ({ browser, page }) 
   await expect(trigger).toBeFocused();
   await expect(trigger).toHaveAttribute("aria-expanded", "false");
 
+  // A keyboard reaction restores the focusable entry point after the modal closes.
+  await mobilePage.keyboard.press("Enter");
+  await sheet.getByRole("button", { name: "React with ✅" }).click();
+  await expect(sheet).toBeHidden();
+  await expect(trigger).toBeFocused();
+  await expect(row.getByRole("button", { name: "✅ — 1 reaction" })).toBeVisible();
+
   // Long-press (click held past the 450ms threshold) opens the bottom sheet.
   const content = row.locator(".message-content");
+  const selectionStyle = await content.evaluate((element) => ({
+    userSelect: getComputedStyle(element).userSelect,
+    touchCallout: getComputedStyle(element).getPropertyValue("-webkit-touch-callout"),
+  }));
+  expect(selectionStyle.userSelect).not.toBe("none");
+  expect(selectionStyle.touchCallout).not.toBe("none");
   await content.click({ delay: 600 });
   await expect(sheet).toBeVisible();
   await expect(sheet.getByRole("button", { name: "Open thread" })).toBeVisible();
@@ -287,6 +300,94 @@ test("touch long-press opens a message action sheet", async ({ browser, page }) 
   await expect(sheet).toBeHidden();
 
   await mobileContext.close();
+});
+
+test("touch holds work on hybrid devices without hijacking mouse input or inline images", async ({
+  browser,
+  page,
+}) => {
+  const { suffix, workspace, channel } = await openReactionChannel(page);
+  const body = `Hybrid touch action ${suffix} ![Inline proof](/favicon.svg)`;
+  await sendMessage(page, body);
+
+  const hybridContext = await browser.newContext({
+    baseURL: new URL(page.url()).origin,
+    hasTouch: true,
+    viewport: { width: 900, height: 700 },
+  });
+  const hybridPage = await hybridContext.newPage();
+  await hybridPage.goto(`/app/${workspace.route_id}/${channel.route_id}`);
+  await waitForAppReady(hybridPage);
+
+  const row = hybridPage.locator(".message-row:not(.is-pending)", {
+    hasText: `Hybrid touch action ${suffix}`,
+  });
+  const content = row.locator(".message-content");
+  const sheet = hybridPage.getByRole("dialog", { name: "Message actions" });
+
+  await content.dispatchEvent("pointerdown", {
+    pointerId: 1,
+    pointerType: "mouse",
+    isPrimary: true,
+    button: 0,
+    clientX: 100,
+    clientY: 100,
+  });
+  await hybridPage.waitForTimeout(500);
+  await content.dispatchEvent("pointerup", {
+    pointerId: 1,
+    pointerType: "mouse",
+    isPrimary: true,
+    button: 0,
+    clientX: 100,
+    clientY: 100,
+  });
+  await expect(sheet).toBeHidden();
+
+  await content.dispatchEvent("pointerdown", {
+    pointerId: 2,
+    pointerType: "touch",
+    isPrimary: true,
+    button: 0,
+    clientX: 100,
+    clientY: 100,
+  });
+  await hybridPage.waitForTimeout(500);
+  await content.dispatchEvent("pointerup", {
+    pointerId: 2,
+    pointerType: "touch",
+    isPrimary: true,
+    button: 0,
+    clientX: 100,
+    clientY: 100,
+  });
+  await expect(sheet).toBeVisible();
+  await hybridPage.keyboard.press("Escape");
+
+  const inlineImage = row.getByRole("img", { name: "Inline proof" });
+  await inlineImage.dispatchEvent("pointerdown", {
+    pointerId: 3,
+    pointerType: "touch",
+    isPrimary: true,
+    button: 0,
+    clientX: 100,
+    clientY: 100,
+  });
+  await hybridPage.waitForTimeout(500);
+  await inlineImage.dispatchEvent("pointerup", {
+    pointerId: 3,
+    pointerType: "touch",
+    isPrimary: true,
+    button: 0,
+    clientX: 100,
+    clientY: 100,
+  });
+  await expect(sheet).toBeHidden();
+  await expect(
+    hybridPage.getByRole("dialog", { name: "Image viewer: Inline proof" }),
+  ).toBeVisible();
+
+  await hybridContext.close();
 });
 
 test("a stale copy timer cannot close a reopened touch action sheet", async ({ browser, page }) => {

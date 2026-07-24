@@ -1239,15 +1239,6 @@
   .message-row:has(.message-actions-trigger:focus-visible) .message-content {
     padding-right: 44px;
   }
-
-  .message-row {
-    -webkit-user-select: none;
-    user-select: none;
-  }
-
-  .message-row .markdown {
-    -webkit-touch-callout: none;
-  }
 }
 
 .message-actions button {

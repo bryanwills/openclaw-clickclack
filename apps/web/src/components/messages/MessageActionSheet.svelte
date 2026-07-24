@@ -73,8 +73,8 @@
     }
   }
 
-  function runAndClose(action: () => void) {
-    restoreFocus = false;
+  function runAndClose(action: () => void, shouldRestoreFocus = false) {
+    restoreFocus = shouldRestoreFocus;
     action();
   }
 
@@ -132,7 +132,7 @@
           type="button"
           aria-label={`React with ${emoji}`}
           disabled={!canReact}
-          onclick={() => runAndClose(() => onReact(emoji))}
+          onclick={() => runAndClose(() => onReact(emoji), true)}
         >{emoji}</button>
       {/each}
     </div>
