@@ -419,6 +419,7 @@ func TestHTTPBotDeletionReleasesHandle(t *testing.T) {
 	})
 	serviceBotConn := dialRealtimeWithBotToken(t, server.URL, workspace.ID, serviceBot.BotToken.Token)
 	t.Cleanup(func() { serviceBotConn.CloseNow() })
+	expectRealtimeLive(t, hub, events, serviceBotConn, workspace.ID)
 	deleteEndpoint := server.URL + "/api/bots/" + serviceBot.Bot.ID
 	expectStatusAsUser(t, member.ID, http.MethodDelete, deleteEndpoint, nil, http.StatusForbidden)
 	expectStatusWithBearer(t, serviceBot.BotToken.Token, http.MethodDelete, deleteEndpoint, nil, http.StatusForbidden)
@@ -443,6 +444,7 @@ func TestHTTPBotDeletionReleasesHandle(t *testing.T) {
 	}
 	replacementConn := dialRealtimeWithBotToken(t, server.URL, workspace.ID, serviceReplacement.BotToken.Token)
 	t.Cleanup(func() { replacementConn.CloseNow() })
+	expectRealtimeLive(t, hub, events, replacementConn, workspace.ID)
 	expectStatusAsUser(t, manager.ID, http.MethodDelete, server.URL+"/api/workspaces/"+workspace.ID+"/bots/"+serviceReplacement.Bot.ID+"/membership", nil, http.StatusNoContent)
 	expectBotMembershipRemovedEvent(t, events, workspace.ID, serviceReplacement.Bot.ID)
 	expectWorkspaceAccessRevokedClose(t, replacementConn)
@@ -487,6 +489,28 @@ func dialRealtimeWithBotToken(t *testing.T, serverURL, workspaceID, token string
 		t.Fatal(err)
 	}
 	return conn
+}
+
+func expectRealtimeLive(t *testing.T, hub *realtime.Hub, events <-chan store.Event, conn *websocket.Conn, workspaceID string) {
+	t.Helper()
+	sentinel := store.Event{
+		WorkspaceID: workspaceID,
+		Type:        "presence.changed",
+		Payload:     map[string]string{"status": "test-ready"},
+	}
+	hub.Publish(sentinel)
+
+	if event, ok := readEventTypeWithin(t, conn, sentinel.Type, 5*time.Second); !ok || event.WorkspaceID != workspaceID || event.Cursor != "" {
+		t.Fatalf("websocket did not enter live delivery: %#v ok=%v", event, ok)
+	}
+	select {
+	case event := <-events:
+		if event.Type != sentinel.Type || event.WorkspaceID != workspaceID || event.Cursor != "" {
+			t.Fatalf("unexpected readiness event: %#v", event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for realtime readiness event")
+	}
 }
 
 func expectWorkspaceAccessRevokedClose(t *testing.T, conn *websocket.Conn) {
