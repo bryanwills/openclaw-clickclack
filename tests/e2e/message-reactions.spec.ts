@@ -102,10 +102,7 @@ test("reaction mutations are accessible, authoritative, persistent, and realtime
   expect(messageRefreshes).toBe(0);
 });
 
-test("touch message actions stay compact and clear of message content", async ({
-  browser,
-  page,
-}) => {
+test("touch long-press opens a message action sheet", async ({ browser, page }) => {
   const { suffix, workspace, channel } = await openReactionChannel(page);
   const body = `Touch action layout ${suffix}`;
   await sendMessage(page, body);
@@ -122,41 +119,77 @@ test("touch message actions stay compact and clear of message content", async ({
   const row = mobilePage.locator(".message-row:not(.is-pending)", { hasText: body });
   await expect(row).toBeVisible();
 
+  const trigger = row.getByRole("button", { name: "More actions" });
+
+  // Touch hides persistent controls without removing the accessible sheet trigger.
   for (const width of [390, 320]) {
     await mobilePage.setViewportSize({ width, height: 844 });
     await row.scrollIntoViewIfNeeded();
     const geometry = await row.evaluate((element) => {
-      const content = element.querySelector<HTMLElement>(".message-content");
-      const actions = element.querySelector<HTMLElement>(".message-actions");
-      if (!content || !actions) throw new Error("missing message action geometry");
-      const contentBox = content.getBoundingClientRect();
-      const actionBox = actions.getBoundingClientRect();
-      const visibleActions = [...actions.querySelectorAll<HTMLButtonElement>("button")]
-        .filter((button) => getComputedStyle(button).display !== "none")
-        .map((button) => button.getAttribute("aria-label"));
+      const persistentActions = [
+        ...element.querySelectorAll<HTMLElement>(".message-actions > :not(.message-more)"),
+      ];
+      const trigger = element.querySelector<HTMLElement>(".message-actions-trigger");
       return {
-        actionTop: actionBox.top,
-        actionRight: actionBox.right,
-        contentBottom: contentBox.bottom,
-        rowRight: element.getBoundingClientRect().right,
+        persistentActionsHidden: persistentActions.every(
+          (action) => getComputedStyle(action).display === "none",
+        ),
+        triggerVisuallyHidden:
+          Boolean(trigger) &&
+          trigger!.getBoundingClientRect().width <= 1 &&
+          trigger!.getBoundingClientRect().height <= 1,
         scrollWidth: document.documentElement.scrollWidth,
         viewportWidth: window.innerWidth,
-        visibleActions,
       };
     });
-    expect(geometry.actionTop).toBeGreaterThanOrEqual(geometry.contentBottom - 0.5);
-    expect(geometry.actionRight).toBeLessThanOrEqual(geometry.rowRight + 0.5);
+    expect(geometry.persistentActionsHidden).toBe(true);
+    expect(geometry.triggerVisuallyHidden).toBe(true);
     expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.viewportWidth);
-    expect(geometry.visibleActions).toEqual(["Add reaction", "More actions"]);
   }
 
-  await row.getByRole("button", { name: "Add reaction" }).click();
-  await expect(row.getByRole("group", { name: "Choose a reaction" })).toBeVisible();
+  // Keyboard and assistive input can open the same modal without a gesture.
+  const sheet = mobilePage.getByRole("dialog", { name: "Message actions" });
+  await trigger.focus();
+  await mobilePage.keyboard.press("Enter");
+  await expect(sheet).toBeVisible();
+  await expect(trigger).toHaveAttribute("aria-expanded", "true");
+  await expect(sheet.getByRole("button", { name: "React with 👍" })).toBeFocused();
+  await mobilePage.keyboard.press("Shift+Tab");
+  await expect(sheet.getByRole("button", { name: "Delete message" })).toBeFocused();
+  await mobilePage.keyboard.press("Tab");
+  await expect(sheet.getByRole("button", { name: "React with 👍" })).toBeFocused();
   await mobilePage.keyboard.press("Escape");
-  await row.getByRole("button", { name: "More actions" }).click();
-  const menu = row.getByRole("menu", { name: "More actions" });
-  await expect(menu.getByRole("menuitem", { name: "Open thread" })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Reply" })).toBeVisible();
+  await expect(sheet).toBeHidden();
+  await expect(trigger).toBeFocused();
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+
+  // Long-press (click held past the 450ms threshold) opens the bottom sheet.
+  const content = row.locator(".message-content");
+  await content.click({ delay: 600 });
+  await expect(sheet).toBeVisible();
+  await expect(sheet.getByRole("button", { name: "Open thread" })).toBeVisible();
+  await expect(sheet.getByRole("button", { name: "Reply" })).toBeVisible();
+  await expect(sheet.getByRole("button", { name: "Copy text" })).toBeVisible();
+
+  // Escape closes; backdrop closes.
+  await mobilePage.keyboard.press("Escape");
+  await expect(sheet).toBeHidden();
+  await content.click({ delay: 600 });
+  await expect(sheet).toBeVisible();
+  await mobilePage.getByRole("button", { name: "Close message actions" }).click();
+  await expect(sheet).toBeHidden();
+
+  // Reacting from the sheet lands a real reaction chip.
+  await content.click({ delay: 600 });
+  await sheet.getByRole("button", { name: "React with 👍" }).click();
+  await expect(sheet).toBeHidden();
+  await expect(row.getByRole("button", { name: "👍 — 1 reaction" })).toBeVisible();
+
+  // A quick tap (no hold) still opens the thread instead of the sheet.
+  await content.click();
+  await expect(mobilePage.locator(".thread-root .markdown")).toContainText(body);
+  await expect(sheet).toBeHidden();
+
   await mobileContext.close();
 });
 
