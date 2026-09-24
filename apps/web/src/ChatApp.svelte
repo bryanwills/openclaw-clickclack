@@ -12,6 +12,8 @@
   import { requestCurrentUser } from "./lib/appearance";
   import { readBrowserNotificationsEnabled, writeBrowserNotificationsEnabled } from "./lib/browserNotifications";
   import { desktop } from "./lib/desktop";
+  import { healPushSubscription } from "./lib/webPush";
+  import { takePushLanding } from "./lib/push-landing";
   import { probeMediaDimensions } from "./lib/media";
   import { markdownImageViewerURL } from "./lib/actions/markdown";
   import {
@@ -216,6 +218,9 @@
   let activityClockSweeper: number | undefined;
   let activeRouteKey = "";
   let routeApplySerial = 0;
+  // The route the app is applying now; it settles once that route's messages
+  // have loaded or a later route has replaced it.
+  let routeApplication: Promise<void> = Promise.resolve();
   let messageLoadGeneration = 0;
   let workspacesLoadSerial = 0;
   let channelsLoadSerial = 0;
@@ -375,7 +380,7 @@
       activityClock = Date.now();
     }, 30_000);
     syncBrowserNotificationState();
-    void boot();
+    void boot(takePushLanding(window.location.href));
     const mobileNavMedia = window.matchMedia(MOBILE_NAV_MEDIA_QUERY);
     const handleMobileNavBreakpoint = () => {
       mobileNavOpen = false;
@@ -387,12 +392,45 @@
     });
     const stopDesktopQuickCompose = desktop?.onQuickCompose(() => focusActiveComposer());
     mobileNavMedia.addEventListener("change", handleMobileNavBreakpoint);
+    const handleServiceWorkerMessage = (event: MessageEvent) => {
+      const data = event.data as { type?: string; url?: string } | null;
+      if (data?.type === "clickclack:push-renew") {
+        // The browser replaced this device's subscription. Only this tab's
+        // account's own opt-in may register the replacement, and only while
+        // the server says that account is still the one signed in here.
+        if (user && !desktop) void healPushSubscription(user.id);
+        return;
+      }
+      if (data?.type !== "clickclack:notification-click") return;
+      if (typeof data.url !== "string" || !data.url.startsWith("/app")) return;
+      void openNotificationTarget(data.url);
+    };
+    navigator.serviceWorker?.addEventListener("message", handleServiceWorkerMessage);
     return () => {
       mobileNavMedia.removeEventListener("change", handleMobileNavBreakpoint);
+      navigator.serviceWorker?.removeEventListener("message", handleServiceWorkerMessage);
       stopDesktopNavigate?.();
       stopDesktopQuickCompose?.();
     };
   });
+
+  // The tap means "show me that message": land in its conversation, then at
+  // its newest message, even when the app was already there.
+  async function openNotificationTarget(url: string) {
+    await goto(url, { keepFocus: true, noScroll: true });
+    await landAtNewestMessage();
+  }
+
+  // Jumping before the route's window loads would scroll the conversation
+  // being left, so the jump waits for the route, and a navigation in the
+  // meantime cancels it.
+  async function landAtNewestMessage() {
+    await tick();
+    const serial = routeApplySerial;
+    await routeApplication;
+    if (serial !== routeApplySerial) return;
+    await jumpToLiveChat();
+  }
 
   function focusActiveComposer() {
     void tick().then(() => {
@@ -447,14 +485,23 @@
     syncArtifactModalInert(false, null);
   });
 
-  async function boot() {
+  async function boot(pushLanding: string | null = null) {
     try {
       const me = await requestCurrentUser();
       user = me.user;
       syncBrowserNotificationState();
+      // A key rotation gives this device a new endpoint, so re-register the
+      // one it holds now. The PUT replaces in place. A reinstall starts with
+      // empty storage and is a fresh opt-in from the settings row.
+      if (!desktop) void healPushSubscription(user.id);
       await loadWorkspaces();
+      // A tap that had to open this window marked its URL. The mark comes off
+      // before any route is admitted, and the window then lands the way a tap
+      // on an open one does.
+      if (pushLanding !== null) await goto(pushLanding, { replaceState: true, keepFocus: true, noScroll: true });
       // Let workspace projections settle before admitting routes in a later flush.
       appReady = true;
+      if (pushLanding !== null) void landAtNewestMessage();
     } catch (error) {
       handleAppLoadError(error);
     }
@@ -599,7 +646,7 @@
   }
 
   function followRoute(workspaceID: string, targetID: string) {
-    if (routeKey(workspaceID, targetID) !== activeRouteKey) void applyRoute(workspaceID, targetID);
+    if (routeKey(workspaceID, targetID) !== activeRouteKey) routeApplication = applyRoute(workspaceID, targetID);
   }
 
   function commitSelectedRoute() {

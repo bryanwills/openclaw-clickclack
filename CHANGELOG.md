@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added Web Push notifications with a web app manifest and home-screen icons, so an installed ClickClack can alert a phone with no third-party account, opt-in per device. Thanks @isaiahknight-va.
 - Discover OIDC authorization and token endpoints for providers such as Kanidm, validate issuer metadata, and preserve explicit endpoint overrides. Thanks @AdamClaassens.
 
 ## 0.5.2 - 2026-09-24

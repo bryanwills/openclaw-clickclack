@@ -26,6 +26,7 @@ import (
 	postgresstore "github.com/openclaw/clickclack/apps/api/internal/store/postgres"
 	sqlitestore "github.com/openclaw/clickclack/apps/api/internal/store/sqlite"
 	"github.com/openclaw/clickclack/apps/api/internal/uploadstore"
+	"github.com/openclaw/clickclack/apps/api/internal/webpush"
 )
 
 var (
@@ -152,6 +153,17 @@ func serve(args []string) error {
 	if err != nil {
 		return err
 	}
+	var webPushNotifier httpapi.PushNotifier
+	if cfg.WebPushEnabled() {
+		notifier := httpapi.NewWebPushNotifier(httpapi.WebPushConfig{
+			VAPIDPublicKey:  cfg.WebPushVAPIDPublicKey,
+			VAPIDPrivateKey: cfg.WebPushVAPIDPrivateKey,
+			Subject:         cfg.WebPushSubject,
+		}, st)
+		defer notifier.Close()
+		webPushNotifier = notifier
+		log.Printf("web push enabled: application server key %s", webpush.KeyFingerprint(cfg.WebPushVAPIDPublicKey))
+	}
 	log.Printf("ClickClack listening on %s", displayURL(cfg.Addr))
 	server := httpapi.New(st, realtime.NewHub(), httpapi.Options{
 		UploadStorage:       uploads,
@@ -174,12 +186,14 @@ func serve(args []string) error {
 			TeamDomain: cfg.AccessTeamDomain,
 			Audience:   cfg.AccessAUD,
 		},
-		PushNotifier:   pushNotifier,
-		MetricsEnabled: cfg.MetricsEnabled,
-		AccessLog:      accessLog,
-		Environment:    cfg.Environment,
-		Version:        version,
-		Commit:         commit,
+		PushNotifier:     pushNotifier,
+		WebPushNotifier:  webPushNotifier,
+		WebPushPublicKey: cfg.WebPushVAPIDPublicKey,
+		MetricsEnabled:   cfg.MetricsEnabled,
+		AccessLog:        accessLog,
+		Environment:      cfg.Environment,
+		Version:          version,
+		Commit:           commit,
 	})
 	if uploads != nil {
 		if err := server.CleanupPendingUploadObjects(ctx, 0); err != nil {
@@ -272,6 +286,11 @@ func admin(args []string) error {
 			return err
 		}
 		return json.NewEncoder(os.Stdout).Encode(manifest)
+	case "webpush":
+		if len(args) < 2 || args[1] != "keygen" {
+			return fmt.Errorf("usage: clickclack admin webpush keygen")
+		}
+		return adminWebPushKeygen(args[2:])
 	case "user":
 		if len(args) >= 2 && args[1] == "set-password" {
 			return adminUserSetPassword(args[2:])
